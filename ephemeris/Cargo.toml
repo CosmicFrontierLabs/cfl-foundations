@@ -1,0 +1,17 @@
+[package]
+name = "ephemeris"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Celestial body position and motion calculations"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Astronomy-specific dependencies
+nalgebra = "0.32"  # Linear algebra
+time = "0.3"       # Time handling
+thiserror = "1.0"  # Error handling
+
+[dev-dependencies]
+criterion = "0.5"  # Benchmarking

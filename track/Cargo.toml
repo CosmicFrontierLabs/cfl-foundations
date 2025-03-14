@@ -1,0 +1,22 @@
+[package]
+name = "track"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Star tracking and attitude determination algorithms"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+ephemeris = { path = "../ephemeris" }
+simulator = { path = "../simulator" }
+nalgebra = "0.32"     # Linear algebra
+image = "0.24"        # Image processing
+ndarray = "0.15"      # Multidimensional arrays
+thiserror = "1.0"     # Error handling
+itertools = "0.11"    # Iterator utilities
+log = "0.4"           # Logging
+
+[dev-dependencies]
+criterion = "0.5"     # Benchmarking
+approx = "0.5"        # Approximate equality assertions
