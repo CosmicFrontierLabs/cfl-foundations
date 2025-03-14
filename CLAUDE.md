@@ -47,3 +47,10 @@ cargo test
 - **Documentation**: All public items need doc comments with examples and physics explanations where relevant.
 - **Architecture**: Separation between celestial mechanics, optics simulation, and tracking algorithms.
 - **Performance**: Prefer vectorized operations. Profile computation-heavy code. Consider GPU acceleration for image processing.
+
+## Git Commits
+- Do NOT include attribution in commit messages
+- Follow the project commit style: short subject line, blank line, body with bullet points
+- Focus on explaining the WHY (purpose) not just the WHAT (changes)
+- Prefer shorter, more focused commits over large monolithic ones
+- Reference issue numbers when applicable
