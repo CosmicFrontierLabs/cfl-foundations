@@ -54,3 +54,8 @@ cargo test
 - Focus on explaining the WHY (purpose) not just the WHAT (changes)
 - Prefer shorter, more focused commits over large monolithic ones
 - Reference issue numbers when applicable
+
+## GitHub Actions
+- When pushing to GitHub, print the URL of the pull request
+- After pushing changes, use `gh pr create` or check GitHub UI for PR URL
+- Format for displaying PR URLs: `GitHub PR: https://github.com/Exclosure/meter-sim/pull/123`
