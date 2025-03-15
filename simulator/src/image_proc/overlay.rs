@@ -4,8 +4,9 @@
 //! such as bounding boxes for star detection visualization.
 
 use image::{DynamicImage, Rgb, RgbImage};
+use std::collections::HashMap;
 use tiny_skia::{Pixmap, Transform};
-use usvg::{self, Options, Tree};
+use usvg::{self, fontdb, Options, Tree};
 
 /// Draw bounding boxes on an image
 ///
@@ -72,7 +73,7 @@ pub fn draw_bounding_boxes(
                 };
 
                 svg_data.push_str(&format!(
-                    r#"<text x="{}" y="{}" font-family="sans-serif" font-size="12" fill="{}">{}</text>"#,
+                    r#"<text x="{}" y="{}" font-family="monospace" font-size="12" fill="{}">{}</text>"#,
                     text_x, text_y, color_str, labels[i]
                 ));
             }
@@ -150,6 +151,106 @@ pub fn draw_stars_with_sizes(
     )
 }
 
+/// Draw stars with X markers extending from the star diameter and custom labels
+///
+/// # Arguments
+/// * `image` - Original image to draw on
+/// * `stars` - Map of labels to star positions and diameters: HashMap<String, (y, x, diameter)>
+/// * `marker_color` - RGB color tuple for the X markers
+/// * `arm_length_factor` - Factor to multiply with star diameter to determine arm length
+///                         (1.0 = same as diameter, 0.5 = half diameter)
+///                         A minimum of 1 pixel is enforced to ensure visibility
+///
+/// # Returns
+/// * Image with X markers and labeled stars
+pub fn draw_stars_with_x_markers(
+    image: &DynamicImage,
+    stars: &HashMap<String, (f64, f64, f64)>, // Label -> (y, x, diameter)
+    marker_color: (u8, u8, u8),
+    arm_length_factor: f32,
+) -> DynamicImage {
+    let width = image.width();
+    let height = image.height();
+
+    // Create an SVG string with the X markers
+    let mut svg_data = format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}">
+        "#,
+        width, height
+    );
+
+    // Convert color to SVG format
+    let (r, g, b) = marker_color;
+    let color_str = format!("#{:02x}{:02x}{:02x}", r, g, b);
+
+    // Draw X markers and labels for each star
+    for (label, &(center_row, center_col, diameter)) in stars.iter() {
+        // Convert from array indices (row, col) to image coordinates (x, y)
+        let cx = center_col as f32;
+        let cy = center_row as f32;
+        let radius = (diameter / 2.0) as f32;
+
+        // Calculate the end points of the X marker arms
+        // Direction vectors for the four arm directions (normalized)
+        let directions = [
+            (1.0, 1.0),   // Down-right
+            (1.0, -1.0),  // Down-left
+            (-1.0, 1.0),  // Up-right
+            (-1.0, -1.0), // Up-left
+        ];
+
+        for (j, &(dy, dx)) in directions.iter().enumerate() {
+            // Normalize to unit vector
+            let dx_f32 = dx as f32;
+            let dy_f32 = dy as f32;
+            let mag = (dx_f32 * dx_f32 + dy_f32 * dy_f32).sqrt();
+            let nx = dx_f32 / mag;
+            let ny = dy_f32 / mag;
+
+            // Start point on circle perimeter
+            let start_x = cx + nx * radius;
+            let start_y = cy + ny * radius;
+
+            // Calculate arm length based on star diameter and factor
+            // Ensure minimum arm length of 1 pixel so they don't disappear for tiny stars
+            let actual_arm_length = (radius * arm_length_factor).max(1.0);
+
+            // End point after arm_length
+            let end_x = start_x + nx * actual_arm_length;
+            let end_y = start_y + ny * actual_arm_length;
+
+            // Draw the arm line with increased width for better visibility
+            svg_data.push_str(&format!(
+                r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="2.5" />"#,
+                start_x, start_y, end_x, end_y, color_str
+            ));
+
+            // Add star label at the end of top-right arm (index 2)
+            if j == 2 {
+                // Up-right direction
+                // Position text at the end of the arm with offset (using a fixed offset of 10 pixels)
+                let text_x = end_x + nx * 10.0;
+                let text_y = end_y + ny * 10.0;
+
+                // Draw the label text
+                svg_data.push_str(&format!(
+                    r#"<text x="{}" y="{}" font-size="12" font-weight="bold" text-anchor="start" dominant-baseline="central" fill="{}">{}</text>"#,
+                    text_x, text_y, color_str, label
+                ));
+            }
+        }
+
+        // Draw small dot at center for better visibility
+        svg_data.push_str(&format!(
+            r#"<circle cx="{}" cy="{}" r="1" fill="{}" />"#,
+            cx, cy, color_str
+        ));
+    }
+
+    svg_data.push_str("</svg>");
+    overlay_to_image(image, &svg_data)
+}
+
 /// Convert an SVG overlay to an image
 ///
 /// # Arguments
@@ -159,18 +260,82 @@ pub fn draw_stars_with_sizes(
 /// # Returns
 /// * Image with SVG overlay rendered on top
 pub fn overlay_to_image(image: &DynamicImage, svg_data: &str) -> DynamicImage {
-    // Parse SVG data
-    let svg_tree = Tree::from_str(svg_data, &Options::default()).expect("Failed to parse SVG");
+    // Parse SVG data using default options with detailed font setup
+    println!("Attempting to parse SVG data...");
+
+    // Create font database with system fonts
+    let mut fontdb = fontdb::Database::new();
+    fontdb.load_system_fonts();
+
+    // Print number of fonts available
+    let font_count = fontdb.len();
+    println!("Found {} fonts in the database", font_count);
+
+    // Create options with the font database (convert to Arc)
+    let mut options = Options::default();
+    options.fontdb = std::sync::Arc::new(fontdb);
+    options.font_family = "DejaVu Sans".to_string(); // Widely available on Linux
+
+    // Set high quality rendering options
+    options.text_rendering = usvg::TextRendering::GeometricPrecision;
+    options.shape_rendering = usvg::ShapeRendering::GeometricPrecision;
+    options.image_rendering = usvg::ImageRendering::OptimizeQuality;
+
+    // Parse SVG with our custom options
+    let svg_tree = match Tree::from_str(svg_data, &options) {
+        Ok(tree) => {
+            println!("SVG parsed successfully");
+            tree
+        }
+        Err(e) => {
+            println!("Failed to parse SVG: {:?}", e);
+            panic!("SVG parsing failed");
+        }
+    };
+
+    // Debug: Print SVG size and stats
+    println!(
+        "SVG tree size: {}x{}",
+        svg_tree.size().width(),
+        svg_tree.size().height()
+    );
+    println!(
+        "Number of root children: {}",
+        svg_tree.root().children().len()
+    );
 
     // Create a pixel buffer for the overlay
-    let mut pixmap =
-        Pixmap::new(image.width(), image.height()).expect("Failed to create pixel buffer");
+    println!("Creating pixel buffer {}x{}", image.width(), image.height());
+    let mut pixmap = match Pixmap::new(image.width(), image.height()) {
+        Some(p) => p,
+        None => {
+            println!("Failed to create pixel buffer");
+            panic!("Pixmap creation failed");
+        }
+    };
 
     // Render SVG to the pixel buffer
+    println!("Rendering SVG to pixel buffer");
     resvg::render(&svg_tree, Transform::identity(), &mut pixmap.as_mut());
 
+    // Check pixmap for non-transparent pixels
+    let mut non_transparent_count = 0;
+    for y in 0..pixmap.height() {
+        for x in 0..pixmap.width() {
+            if let Some(pixel) = pixmap.pixel(x, y) {
+                if pixel.alpha() > 0 {
+                    non_transparent_count += 1;
+                }
+            }
+        }
+    }
+    println!(
+        "SVG rendering complete. Found {} non-transparent pixels",
+        non_transparent_count
+    );
+
     // Convert original image to RGB format
-    let rgb_image = image.to_rgb8();
+    let rgb_image: image::ImageBuffer<Rgb<u8>, Vec<u8>> = image.to_rgb8();
     let mut output_buffer = RgbImage::new(image.width(), image.height());
 
     // Combine original image with overlay
@@ -253,7 +418,8 @@ mod tests {
         let threshold = otsu_threshold(&view.view());
         let binary = apply_threshold(&view.view(), threshold);
         let labels = connected_components(&binary.view());
-        let bboxes = get_bounding_boxes(&labels.view());
+        let aabbs = get_bounding_boxes(&labels.view());
+        let bboxes = crate::image_proc::aabbs_to_tuples(&aabbs);
 
         // Draw bounding boxes with simple interface
         let result = draw_simple_boxes(&dynamic_image, &bboxes, (255, 0, 0));

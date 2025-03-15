@@ -220,8 +220,8 @@ pub fn connected_components(binary_image: &ArrayView2<f64>) -> Array2<usize> {
 /// * `labeled_image` - Image with labeled connected components
 ///
 /// # Returns
-/// * Vector of bounding boxes (min_row, min_col, max_row, max_col) for each label
-pub fn get_bounding_boxes(labeled_image: &ArrayView2<usize>) -> Vec<(usize, usize, usize, usize)> {
+/// * Vector of bounding boxes as AABB for each label
+pub fn get_bounding_boxes(labeled_image: &ArrayView2<usize>) -> Vec<AABB> {
     let max_label = labeled_image.iter().copied().max().unwrap_or(0);
     let mut bboxes = vec![AABB::new(); max_label + 1];
 
@@ -234,59 +234,7 @@ pub fn get_bounding_boxes(labeled_image: &ArrayView2<usize>) -> Vec<(usize, usiz
     // Remove background (label 0)
     bboxes.remove(0);
 
-    // Convert to tuples for backward compatibility
-    crate::image_proc::aabb::aabbs_to_tuples(&bboxes)
-}
-
-/// Merge overlapping bounding boxes
-///
-/// This function combines bounding boxes that overlap into larger boxes that encompass all
-/// the original overlapping regions. This is useful for consolidating detection results
-/// and removing duplicate or fragmented detections of the same object.
-///
-/// # Arguments
-/// * `bboxes` - Vector of bounding boxes (min_row, min_col, max_row, max_col)
-/// * `padding` - Optional padding to add around each box when checking for overlap.
-///   This is useful for merging boxes that are close but not directly overlapping.
-///
-/// # Returns
-/// * Vector of merged bounding boxes
-///
-/// # Example
-/// ```
-/// use simulator::image_proc::merge_overlapping_boxes;
-///
-/// // Create some overlapping bounding boxes
-/// let boxes = vec![
-///     (10, 10, 20, 20),  // (min_row, min_col, max_row, max_col)
-///     (15, 15, 25, 25),  // Overlaps with first box
-///     (50, 50, 60, 60),  // No overlap with others
-/// ];
-///
-/// // Merge the overlapping boxes with 0 padding
-/// let merged = merge_overlapping_boxes(&boxes, None);
-/// assert_eq!(merged.len(), 2); // Should have 2 boxes after merging
-///
-/// // The first merged box should encompass both original overlapping boxes
-/// assert_eq!(merged[0], (10, 10, 25, 25));
-/// ```
-/// @deprecated Use crate::image_proc::aabb::merge_overlapping_aabbs instead
-pub fn merge_overlapping_boxes(
-    bboxes: &[(usize, usize, usize, usize)],
-    padding: Option<usize>,
-) -> Vec<(usize, usize, usize, usize)> {
-    // This function is just a wrapper around the AABB version for backward compatibility
-    if bboxes.is_empty() {
-        return Vec::new();
-    }
-
-    // Use the AABB utility functions
-    use crate::image_proc::aabb::{aabbs_to_tuples, merge_overlapping_aabbs, tuples_to_aabbs};
-
-    // Convert, merge, and convert back
-    let boxes = tuples_to_aabbs(bboxes);
-    let merged_boxes = merge_overlapping_aabbs(&boxes, padding);
-    aabbs_to_tuples(&merged_boxes)
+    bboxes
 }
 
 #[cfg(test)]
@@ -298,8 +246,14 @@ mod tests {
         // Create some test boxes
         let boxes = vec![(10, 10, 20, 20), (15, 15, 25, 25), (50, 50, 60, 60)];
 
+        // Convert to AABBs
+        use crate::image_proc::aabb::{aabbs_to_tuples, merge_overlapping_aabbs, tuples_to_aabbs};
+        let aabbs = tuples_to_aabbs(&boxes);
+
         // Merge overlapping boxes with no padding
-        let merged = merge_overlapping_boxes(&boxes, None);
+        let merged_aabbs = merge_overlapping_aabbs(&aabbs, None);
+        let merged = aabbs_to_tuples(&merged_aabbs);
+
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[0], (10, 10, 25, 25)); // First two boxes merged
         assert_eq!(merged[1], (50, 50, 60, 60)); // Third box unchanged

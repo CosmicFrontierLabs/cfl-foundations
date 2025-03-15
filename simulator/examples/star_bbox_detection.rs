@@ -2,9 +2,11 @@ use image::{DynamicImage, GrayImage, Luma};
 use ndarray::Array2;
 use simulator::image_proc::thresholding::{apply_threshold, connected_components, otsu_threshold};
 use simulator::image_proc::{
-    convolve2d, detect_stars, draw_bounding_boxes, draw_simple_boxes, gaussian_kernel,
-    get_bounding_boxes, merge_overlapping_boxes, ConvolveMode, ConvolveOptions, StarDetection,
+    aabbs_to_tuples, convolve2d, detect_stars, draw_bounding_boxes, draw_simple_boxes,
+    draw_stars_with_x_markers, gaussian_kernel, get_bounding_boxes, merge_overlapping_aabbs,
+    ConvolveMode, ConvolveOptions, StarDetection,
 };
+use std::collections::HashMap;
 use test_helpers;
 
 fn main() {
@@ -54,8 +56,11 @@ fn main() {
     println!("Detected {} stars using moment analysis", stars.len());
 
     // Merge overlapping boxes with a small padding
-    let merged_bboxes = merge_overlapping_boxes(&bboxes, Some(2));
-    println!("After merging: {} bounding boxes", merged_bboxes.len());
+    let merged_aabbs = merge_overlapping_aabbs(&bboxes, Some(2));
+    println!("After merging: {} bounding boxes", merged_aabbs.len());
+
+    // Convert to tuples for compatibility with drawing functions
+    let merged_bboxes = aabbs_to_tuples(&merged_aabbs);
 
     // Create labels with diameters for the merged boxes
     let mut diameter_labels = Vec::new();
@@ -109,11 +114,15 @@ fn main() {
         })
         .collect();
 
-    // Create three output images:
+    // Create four output images:
     // 1. Original boxes (red)
     // 2. Merged boxes with diameter labels (pale green)
     // 3. Merged boxes with actual star size circles (pale blue)
-    let original_boxes_image = draw_simple_boxes(&input_image, &bboxes, (255, 0, 0));
+    // 4. Stars with X markers and numbers (orange)
+
+    // Convert original boxes to tuples for drawing
+    let original_box_tuples = aabbs_to_tuples(&bboxes);
+    let original_boxes_image = draw_simple_boxes(&input_image, &original_box_tuples, (255, 0, 0));
 
     // Use pale green (144, 238, 144) for boxes
     let merged_boxes_image = draw_bounding_boxes(
@@ -135,7 +144,25 @@ fn main() {
         Some((135, 206, 250)),
     );
 
-    // Save all three results
+    // Create labeled stars with diameter information
+    let mut labeled_stars = HashMap::new();
+    for &(y, x, diameter) in &star_circles {
+        // Format diameter to 1 decimal place
+        let label = format!("D={:.1}", diameter);
+        labeled_stars.insert(label, (y, x, diameter));
+    }
+
+    // Use light blue (135, 206, 250) for X markers
+    let x_markers_image = draw_stars_with_x_markers(
+        &input_image,
+        &labeled_stars,
+        (135, 206, 250), // Light blue color
+        1.0,             // Arm length factor (1.0 = full diameter)
+    );
+
+    // Text rendering is now working properly with high quality options
+
+    // Save all four results
     let original_boxes_path = output_dir.join("stars_original_boxes.png");
     original_boxes_image
         .save(&original_boxes_path)
@@ -151,6 +178,11 @@ fn main() {
         .save(&circles_path)
         .expect("Failed to save image with circles");
 
+    let x_markers_path = output_dir.join("stars_with_x_markers.png");
+    x_markers_image
+        .save(&x_markers_path)
+        .expect("Failed to save image with X markers");
+
     println!("Processing complete. Results saved to:");
     println!(
         "  - Original boxes (red): {}",
@@ -164,7 +196,13 @@ fn main() {
         "  - Star sizes (pale blue circles): {}",
         circles_path.display()
     );
+    println!(
+        "  - Star X markers (light blue): {}",
+        x_markers_path.display()
+    );
 }
+
+// Test function removed - text rendering now working properly
 
 // Create a test image with simulated stars
 fn create_test_image() -> DynamicImage {

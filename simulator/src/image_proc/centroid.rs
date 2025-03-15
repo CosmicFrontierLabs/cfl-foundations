@@ -161,7 +161,7 @@ pub fn detect_stars(image: &ArrayView2<f64>, threshold: Option<f64>) -> Vec<Star
     for (i, bbox) in bboxes.iter().enumerate() {
         // Labels start at 1
         let label = i + 1;
-        let star = calculate_star_centroid(image, &labeled.view(), label, *bbox);
+        let star = calculate_star_centroid(image, &labeled.view(), label, bbox.to_tuple());
         stars.push(star);
     }
 
@@ -601,7 +601,8 @@ mod tests {
             }
 
             // Calculate centroid
-            let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bboxes[0]);
+            let star =
+                calculate_star_centroid(&image.view(), &labeled.view(), 1, bboxes[0].to_tuple());
 
             // Calculate error
             let error = ((position_x - star.x).powi(2) + (position_y - star.y).powi(2)).sqrt();
@@ -681,7 +682,8 @@ mod tests {
             }
 
             // Calculate centroid
-            let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bboxes[0]);
+            let star =
+                calculate_star_centroid(&image.view(), &labeled.view(), 1, bboxes[0].to_tuple());
 
             // Calculate error
             let error = ((position_x - star.x).powi(2) + (position_y - star.y).powi(2)).sqrt();
