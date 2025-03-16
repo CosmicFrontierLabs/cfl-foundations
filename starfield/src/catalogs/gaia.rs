@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-use super::StarCatalog;
+use super::{StarCatalog, StarData};
 use crate::Result;
 use crate::StarfieldError;
 
@@ -600,6 +600,28 @@ impl StarCatalog for GaiaCatalog {
         F: Fn(&Self::Star) -> bool,
     {
         self.stars.values().filter(|star| predicate(star)).collect()
+    }
+
+    fn star_data(&self) -> impl Iterator<Item = StarData> + '_ {
+        self.stars.values().map(|star| {
+            // Gaia doesn't have B-V color index, so we'll leave it as None
+            StarData {
+                id: star.source_id,
+                ra: star.ra,
+                dec: star.dec,
+                magnitude: star.phot_g_mean_mag,
+                b_v: None,
+            }
+        })
+    }
+
+    fn filter_star_data<F>(&self, predicate: F) -> Vec<StarData>
+    where
+        F: Fn(&StarData) -> bool,
+    {
+        self.star_data()
+            .filter(|star_data| predicate(star_data))
+            .collect()
     }
 }
 

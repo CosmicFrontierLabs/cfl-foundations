@@ -24,6 +24,7 @@ flate2 = "1.0"              # GZip compression
 rand = "0.8"                # Random number generation for synthetic data
 md5 = "0.7"                 # MD5 checksum calculation
 regex = "1.10"              # Regular expressions for parsing
+byteorder = "1.5"           # Binary data reading/writing
 
 # Error handling and utilities
 thiserror = "1.0"
@@ -31,8 +32,10 @@ log = "0.4"
 term_size = "0.3"      # Terminal dimensions detection
 test_helpers = { path = "../test_helpers" }
 viz = { path = "../viz" }
+chrono = "0.4.40"
 
 [dev-dependencies]
 criterion = "0.5"           # Benchmarking
 approx = "0.5"              # Approximate equality assertions
 rstest = "0.18"             # Test fixtures and parameterization
+tempfile = "3.8"            # Temporary file creation for tests
