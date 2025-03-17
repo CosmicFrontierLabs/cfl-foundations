@@ -9,6 +9,7 @@ license.workspace = true
 
 [dependencies]
 ephemeris = { path = "../ephemeris" }
+starfield = { path = "../starfield" }  # Star catalog functionality
 nalgebra = "0.32"     # Linear algebra
 image = "0.24"        # Image processing
 rand = "0.8"          # Random number generation

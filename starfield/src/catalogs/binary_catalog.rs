@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use super::{StarCatalog, StarData};
+use super::{StarCatalog, StarData, StarPosition};
 use crate::StarfieldError;
 
 /// Magic bytes for identification of binary catalog format files
@@ -76,6 +76,16 @@ impl MinimalStar {
             dec,
             magnitude,
         })
+    }
+}
+
+impl StarPosition for MinimalStar {
+    fn ra(&self) -> f64 {
+        self.ra
+    }
+
+    fn dec(&self) -> f64 {
+        self.dec
     }
 }
 

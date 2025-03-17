@@ -11,6 +11,15 @@ pub use binary_catalog::{BinaryCatalog, MinimalStar};
 pub use gaia::{GaiaCatalog, GaiaEntry};
 pub use hipparcos::{HipparcosCatalog, HipparcosEntry};
 
+/// Trait for accessing star position data
+pub trait StarPosition {
+    /// Get star right ascension in degrees
+    fn ra(&self) -> f64;
+
+    /// Get star declination in degrees
+    fn dec(&self) -> f64;
+}
+
 /// Common star properties that all catalog entries must provide
 /// This represents the minimal set of properties required for rendering and calculations
 #[derive(Debug, Clone, Copy)]
@@ -37,6 +46,16 @@ impl StarData {
             magnitude,
             b_v,
         }
+    }
+}
+
+impl StarPosition for StarData {
+    fn ra(&self) -> f64 {
+        self.ra
+    }
+
+    fn dec(&self) -> f64 {
+        self.dec
     }
 }
 
