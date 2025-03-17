@@ -11,7 +11,8 @@ use std::time::Duration;
 use crate::Result;
 use crate::StarfieldError;
 
-// We're using a synthetic catalog for testing, so no URLs are needed
+// Hipparcos catalog URL
+const HIPPARCOS_URL: &str = "https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat";
 
 /// Get the cache directory path
 pub fn get_cache_dir() -> PathBuf {
@@ -35,8 +36,6 @@ fn file_exists_and_not_empty<P: AsRef<Path>>(path: P) -> bool {
 }
 
 /// Download a file from URL to a local path
-/// Currently unused as we're using synthetic data, but kept for future reference
-#[allow(dead_code)]
 fn download_file<P: AsRef<Path>>(url: &str, path: P) -> Result<()> {
     // Create parent directories if they don't exist
     if let Some(parent) = path.as_ref().parent() {
@@ -148,159 +147,40 @@ fn decompress_gzip<P: AsRef<Path>, Q: AsRef<Path>>(gz_path: P, output_path: Q) -
     }
 }
 
-/// Download the Hipparcos catalog and decompress it
+/// Download the Hipparcos catalog
 pub fn download_hipparcos() -> Result<PathBuf> {
     let cache_dir = ensure_cache_dir().map_err(StarfieldError::IoError)?;
 
     // File paths
-    // No download needed, we use synthetic data
     let dat_path = cache_dir.join("hip_main.dat");
 
-    // If the decompressed file already exists and is not empty, return its path
+    // If the file already exists and is not empty, return its path
     if file_exists_and_not_empty(&dat_path) {
+        println!("Using cached Hipparcos catalog from {}", dat_path.display());
         return Ok(dat_path);
     }
 
-    // Create a synthetic catalog for testing
-    println!("Note: Using synthetic catalog instead of downloading real data.");
-    println!("This is a placeholder for actual catalog download which requires network access.");
+    // Download the real Hipparcos catalog
+    println!("Downloading Hipparcos catalog from {}...", HIPPARCOS_URL);
+    println!("This may take a moment as the catalog is approximately 36MB");
 
-    // Create a synthetic catalog directly in the cache directory
-    let synthetic_path = cache_dir.join("hip_synthetic.dat");
-
-    if !file_exists_and_not_empty(&synthetic_path) {
-        use rand::rngs::StdRng;
-        use rand::{Rng, SeedableRng};
-        use std::io::Write;
-
-        println!("Creating synthetic Hipparcos catalog for testing...");
-
-        let mut file =
-            BufWriter::new(File::create(&synthetic_path).map_err(StarfieldError::IoError)?);
-
-        // Use a fixed seed for reproducibility
-        let mut rng = StdRng::seed_from_u64(12345);
-
-        // Add some well-known bright stars
-        let bright_stars = [
-            // Sirius (Alpha Canis Majoris)
-            (
-                32349, 101.2874, -16.7161, -1.46, 0.00, -546.05, -1223.14, 379.21,
-            ),
-            // Canopus (Alpha Carinae)
-            (30438, 95.9879, -52.6954, -0.72, 0.15, 19.93, 23.24, 10.43),
-            // Alpha Centauri A
-            (
-                71683, 219.9009, -60.8355, -0.01, 0.71, -3678.19, 481.84, 747.1,
-            ),
-            // Arcturus (Alpha Bootis)
-            (
-                69673, 213.9154, 19.1825, -0.05, 1.24, -1093.45, -1999.4, 88.85,
-            ),
-            // Vega (Alpha Lyrae)
-            (91262, 279.2347, 38.7837, 0.03, 0.00, 200.94, 286.23, 130.23),
-            // Capella (Alpha Aurigae)
-            (24608, 79.1723, 45.9981, 0.08, 0.80, 75.52, -427.11, 77.29),
-            // Rigel (Beta Orionis)
-            (27989, 78.6345, -8.2017, 0.12, -0.03, 1.87, -0.56, 3.78),
-            // Procyon (Alpha Canis Minoris)
-            (
-                37279, 114.8255, 5.2248, 0.34, 0.42, -714.59, -1036.8, 284.56,
-            ),
-            // Betelgeuse (Alpha Orionis)
-            (27989, 88.7929, 7.4070, 0.42, 1.85, 26.40, 9.56, 5.95),
-            // Altair (Alpha Aquilae)
-            (97649, 297.6958, 8.8683, 0.77, 0.22, 536.82, 385.57, 194.44),
-        ];
-
-        // Write synthetic bright stars
-        for star in bright_stars.iter() {
-            let (hip, ra, dec, mag, b_v, pm_ra, pm_dec, parallax) = *star;
-
-            // Format a line in the Hipparcos fixed-width format
-            // We're only recreating the fields we care about
-            let mut line = format!("{:6} ", hip);
-            // Padding to column 41 (mag starts at col 42)
-            line.push_str(&" ".repeat(41 - line.len()));
-            // Magnitude
-            line.push_str(&format!("{:5.2} ", mag));
-            // Padding to column 51 (RA starts at col 52)
-            line.push_str(&" ".repeat(51 - line.len()));
-            // RA
-            line.push_str(&format!("{:11.7} ", ra));
-            // Dec
-            line.push_str(&format!("{:11.7} ", dec));
-            // Padding to column 79 (parallax starts at col 80)
-            line.push_str(&" ".repeat(79 - line.len()));
-            // Parallax
-            line.push_str(&format!("{:7.2} ", parallax));
-            // Padding to column 87 (pm_ra starts at col 88)
-            line.push_str(&" ".repeat(87 - line.len()));
-            // Proper motion in RA
-            line.push_str(&format!("{:8.2} ", pm_ra));
-            // Proper motion in Dec
-            line.push_str(&format!("{:8.2} ", pm_dec));
-            // Padding to column 245 (B-V starts at col 246)
-            line.push_str(&" ".repeat(245 - line.len()));
-            // B-V color index
-            line.push_str(&format!("{:6.2}\n", b_v));
-
-            file.write_all(line.as_bytes())
-                .map_err(StarfieldError::IoError)?;
+    // Attempt to download the file
+    match download_file(HIPPARCOS_URL, &dat_path) {
+        Ok(_) => {
+            println!(
+                "Hipparcos catalog downloaded successfully to {}",
+                dat_path.display()
+            );
+            Ok(dat_path)
         }
-
-        // Generate 5000 random stars (magnitudes 1-6 for naked eye visibility)
-        for i in 1..5000 {
-            let hip = 100000 + i;
-            let ra = rng.gen_range(0.0..360.0);
-            let dec = rng.gen_range(-90.0..90.0);
-            // Weight toward fainter stars (more realistic)
-            let value: f64 = rng.gen_range(0.0..5.0);
-            let mag = 1.0 + value.powf(1.5);
-            let b_v = rng.gen_range(-0.5..2.0);
-            let pm_ra = rng.gen_range(-100.0..100.0);
-            let pm_dec = rng.gen_range(-100.0..100.0);
-            let parallax = rng.gen_range(1.0..100.0);
-
-            // Format a line in the Hipparcos fixed-width format
-            let mut line = format!("{:6} ", hip);
-            // Padding to column 41 (mag starts at col 42)
-            line.push_str(&" ".repeat(41 - line.len()));
-            // Magnitude
-            line.push_str(&format!("{:5.2} ", mag));
-            // Padding to column 51 (RA starts at col 52)
-            line.push_str(&" ".repeat(51 - line.len()));
-            // RA
-            line.push_str(&format!("{:11.7} ", ra));
-            // Dec
-            line.push_str(&format!("{:11.7} ", dec));
-            // Padding to column 79 (parallax starts at col 80)
-            line.push_str(&" ".repeat(79 - line.len()));
-            // Parallax
-            line.push_str(&format!("{:7.2} ", parallax));
-            // Padding to column 87 (pm_ra starts at col 88)
-            line.push_str(&" ".repeat(87 - line.len()));
-            // Proper motion in RA
-            line.push_str(&format!("{:8.2} ", pm_ra));
-            // Proper motion in Dec
-            line.push_str(&format!("{:8.2} ", pm_dec));
-            // Padding to column 245 (B-V starts at col 246)
-            line.push_str(&" ".repeat(245 - line.len()));
-            // B-V color index
-            line.push_str(&format!("{:6.2}\n", b_v));
-
-            file.write_all(line.as_bytes())
-                .map_err(StarfieldError::IoError)?;
+        Err(e) => {
+            // If download fails, we could provide a fallback to synthetic data, but
+            // for now we'll just return the error
+            println!("Failed to download Hipparcos catalog: {}", e);
+            println!("Check your internet connection or try again later.");
+            Err(e)
         }
-
-        file.flush().map_err(StarfieldError::IoError)?;
-        println!(
-            "Created synthetic catalog with {} stars",
-            bright_stars.len() + 4999
-        );
     }
-
-    Ok(synthetic_path)
 }
 
 #[cfg(test)]

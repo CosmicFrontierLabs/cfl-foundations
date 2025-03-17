@@ -126,19 +126,26 @@ impl HipparcosCatalog {
                 continue; // Skip short lines
             }
 
-            // Extract HIP number (columns 1-6)
-            let hip = match line.get(0..6).and_then(|s| s.trim().parse::<usize>().ok()) {
-                Some(hip) => hip,
-                None => {
+            // The file format has pipe-separated fields, let's adapt to this
+            let fields: Vec<&str> = line.split('|').collect();
+            if fields.len() < 10 {
+                skipped_lines += 1;
+                continue; // Not enough fields
+            }
+
+            // Extract HIP number (field 1)
+            let hip = match fields[1].trim().parse::<usize>() {
+                Ok(hip) => hip,
+                Err(_) => {
                     skipped_lines += 1;
                     continue; // Skip if HIP number is invalid
                 }
             };
 
-            // Extract magnitude (columns 42-46)
-            let mag = match line.get(41..46).and_then(|s| s.trim().parse::<f64>().ok()) {
-                Some(mag) => mag,
-                None => {
+            // Extract magnitude (field 5)
+            let mag = match fields[5].trim().parse::<f64>() {
+                Ok(mag) => mag,
+                Err(_) => {
                     skipped_lines += 1;
                     continue; // Skip if magnitude is invalid
                 }
@@ -149,41 +156,33 @@ impl HipparcosCatalog {
                 continue; // Not counting these as skipped since they're filtered by design
             }
 
-            // Extract RA in degrees (columns 52-63)
-            let ra = match line.get(51..63).and_then(|s| s.trim().parse::<f64>().ok()) {
-                Some(ra) => ra,
-                None => {
+            // Extract RA and Dec
+            // The RA and Dec are in fields 8 and 9, in decimal degrees
+            let ra = match fields[8].trim().parse::<f64>() {
+                Ok(ra) => ra,
+                Err(_) => {
                     skipped_lines += 1;
                     continue; // Skip if RA is invalid
                 }
             };
 
-            // Extract Dec in degrees (columns 64-74)
-            let dec = match line.get(63..74).and_then(|s| s.trim().parse::<f64>().ok()) {
-                Some(dec) => dec,
-                None => {
+            let dec = match fields[9].trim().parse::<f64>() {
+                Ok(dec) => dec,
+                Err(_) => {
                     skipped_lines += 1;
                     continue; // Skip if Dec is invalid
                 }
             };
 
-            // Extract optional fields - these can be missing
-            // Parallax in mas (columns 80-86)
-            let parallax = line.get(79..86).and_then(|s| s.trim().parse::<f64>().ok());
+            // Extract parallax from field 11
+            let parallax = fields.get(11).and_then(|s| s.trim().parse::<f64>().ok());
 
-            // Proper motion in RA in mas/year (columns 88-95)
-            let pm_ra = line.get(87..95).and_then(|s| s.trim().parse::<f64>().ok());
+            // Extract proper motion in RA and Dec from fields 12 and 13
+            let pm_ra = fields.get(12).and_then(|s| s.trim().parse::<f64>().ok());
+            let pm_dec = fields.get(13).and_then(|s| s.trim().parse::<f64>().ok());
 
-            // Proper motion in Dec in mas/year (columns 96-103)
-            let pm_dec = line.get(95..103).and_then(|s| s.trim().parse::<f64>().ok());
-
-            // B-V color index (if available)
-            let b_v = if line.len() >= 251 {
-                line.get(245..251)
-                    .and_then(|s| s.trim().parse::<f64>().ok())
-            } else {
-                None
-            };
+            // B-V color index from field 37
+            let b_v = fields.get(37).and_then(|s| s.trim().parse::<f64>().ok());
 
             let entry = HipparcosEntry {
                 hip,
