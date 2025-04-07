@@ -160,6 +160,20 @@ pub fn download_hipparcos() -> Result<PathBuf> {
         return Ok(dat_path);
     }
 
+    // Check if hip_main.dat exists in the project root (for CI environments)
+    let project_root_dat = PathBuf::from("hip_main.dat");
+    if file_exists_and_not_empty(&project_root_dat) {
+        println!(
+            "Using Hipparcos catalog from project root: {}",
+            project_root_dat.display()
+        );
+
+        // Copy the file to the cache directory
+        fs::copy(&project_root_dat, &dat_path).map_err(StarfieldError::IoError)?;
+        println!("Copied Hipparcos catalog to cache: {}", dat_path.display());
+        return Ok(dat_path);
+    }
+
     // Download the real Hipparcos catalog
     println!("Downloading Hipparcos catalog from {}...", HIPPARCOS_URL);
     println!("This may take a moment as the catalog is approximately 36MB");

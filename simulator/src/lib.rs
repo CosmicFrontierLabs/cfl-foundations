@@ -4,10 +4,12 @@
 //! and sensor hardware of a space telescope, as well as image processing
 //! routines for analyzing the resulting images.
 
+pub mod algo;
 pub mod hardware;
 pub mod image_proc;
 
 // Re-exports for easier access
+pub use algo::icp::{iterative_closest_point, ICPResult};
 pub use hardware::sensor::SensorConfig;
 pub use hardware::star_projection::{
     field_diameter, filter_stars_in_field, magnitude_to_photon_flux, pixel_scale,

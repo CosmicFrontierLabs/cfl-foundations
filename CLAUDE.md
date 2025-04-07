@@ -51,6 +51,7 @@ IMPORTANT: Always run `cargo fmt` before committing any code changes!
 - **Documentation**: All public items need doc comments with examples and physics explanations where relevant.
 - **Architecture**: Separation between celestial mechanics, optics simulation, and tracking algorithms.
 - **Performance**: Prefer vectorized operations. Profile computation-heavy code. Consider GPU acceleration for image processing.
+- **Testing**: NEVER special case testing in production algorithms. Tests should validate real algorithm behavior, not special-cased shortcuts.
 
 ## Git Commits
 - Do NOT include attribution in commit messages
