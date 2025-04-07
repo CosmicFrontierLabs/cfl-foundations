@@ -20,7 +20,6 @@
 //!
 //! See --help for detailed options.
 
-use ephemeris::RaDec;
 use ndarray::Array2;
 use simulator::hardware::sensor::{models as sensor_models, SensorConfig};
 use simulator::hardware::telescope::{models as telescope_models, TelescopeConfig};
@@ -28,7 +27,8 @@ use simulator::image_proc::convolve2d::gaussian_kernel;
 use simulator::image_proc::histogram_stretch::stretch_histogram;
 use simulator::image_proc::{save_u8_image, u16_to_u8_auto_scale, u16_to_u8_scaled};
 use simulator::{field_diameter, magnitude_to_photon_flux};
-use starfield::catalogs::{StarData, StarPosition};
+use starfield::catalogs::StarData;
+use starfield::RaDec;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
