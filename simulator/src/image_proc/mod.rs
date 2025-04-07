@@ -11,6 +11,7 @@ pub mod histogram_stretch;
 pub mod io;
 pub mod noise;
 pub mod overlay;
+pub mod smear;
 pub mod thresholding;
 
 // Re-export key functionality for easier access

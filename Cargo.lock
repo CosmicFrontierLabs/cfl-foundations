@@ -1915,6 +1915,7 @@ dependencies = [
 name = "simulator"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "criterion",
  "ephemeris",
  "float-cmp",

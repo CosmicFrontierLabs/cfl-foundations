@@ -26,3 +26,4 @@ viz = { path = "../viz" }
 
 [dev-dependencies]
 criterion = "0.5"     # Benchmarking
+approx = "0.5"        # Approximate floating point comparisons
