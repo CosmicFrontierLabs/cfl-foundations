@@ -7,6 +7,7 @@
 pub mod algo;
 pub mod hardware;
 pub mod image_proc;
+pub mod photometry;
 
 // Re-exports for easier access
 pub use algo::icp::{iterative_closest_point, ICPResult};
@@ -16,6 +17,11 @@ pub use hardware::star_projection::{
 };
 pub use hardware::telescope::TelescopeConfig;
 pub use image_proc::histogram_stretch::stretch_histogram;
+pub use photometry::quantum_efficiency::QuantumEfficiency;
+pub use photometry::spectrum::{
+    Spectrum, AB_ZERO_POINT_FLUX_DENSITY, PLANCK_CONSTANT, SPEED_OF_LIGHT,
+};
+pub use photometry::trapezoid::trap_integrate;
 pub use starfield::catalogs::StarPosition;
 
 #[cfg(test)]

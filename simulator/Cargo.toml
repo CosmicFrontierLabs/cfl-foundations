@@ -20,9 +20,11 @@ once_cell = "1.19"    # Lazy static initialization
 resvg = {version="0.45.0", features=["text"]}      # SVG rendering library
 tiny-skia = "0.11"    # Rendering backend for resvg
 usvg = "0.45.0"       # SVG parser for resvg
+thiserror = "1.0"     # Error handling
 test_helpers = { path = "../test_helpers" }
 viz = { path = "../viz" }
 
 [dev-dependencies]
 criterion = "0.5"     # Benchmarking
 approx = "0.5"        # Approximate floating point comparisons
+plotters = "0.3"      # Plotting library

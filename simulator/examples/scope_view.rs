@@ -178,6 +178,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let sensor = match sensor_name {
         "GSENSE4040BSI" => sensor_models::GSENSE4040BSI.clone(),
+        "GSENSE6510BSI" => sensor_models::GSENSE6510BSI.clone(),
         "HWK4123" => sensor_models::HWK4123.clone(),
         "IMX455" => sensor_models::IMX455.clone(),
         _ => return Err(format!("Unknown sensor model: {}", sensor_name).into()),

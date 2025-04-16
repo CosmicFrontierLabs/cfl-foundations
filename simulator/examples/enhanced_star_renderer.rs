@@ -123,7 +123,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Set up telescope and sensor configurations
     let telescope = telescope_models::FINAL_1M.clone();
-    let sensor = sensor_models::GSENSE4040BSI.clone();
+    // Use GSENSE6510BSI sensor by default
+    let sensor = sensor_models::GSENSE6510BSI.clone();
 
     println!("Telescope: {}", telescope.name);
     println!("Sensor: {}", sensor.name);
