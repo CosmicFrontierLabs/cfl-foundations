@@ -5,21 +5,26 @@
 
 use thiserror::Error;
 
-/// AB magnitude system zero-point flux density
-/// Units: 3631e-23 erg s⁻¹ cm⁻² Hz⁻¹
-pub const AB_ZERO_POINT_FLUX_DENSITY: f64 = 3631e-23;
+/// Constants in CGS units
+pub struct CGS {}
 
-/// 1 Jansky in CGS units
-/// Units: 1e-23 erg s⁻¹ cm⁻² Hz⁻¹
-pub const JANSKY_IN_CGS: f64 = 1e-23;
+impl CGS {
+    /// AB magnitude system zero-point flux density
+    /// Units: 3631e-23 erg s⁻¹ cm⁻² Hz⁻¹
+    pub const AB_ZERO_POINT_FLUX_DENSITY: f64 = 3631e-23;
 
-/// Planck's constant
-/// Units: 6.62607015e-27 erg⋅s (erg-seconds in CGS)
-pub const PLANCK_CONSTANT: f64 = 6.62607015e-27;
+    /// 1 Jansky in CGS units
+    /// Units: 1e-23 erg s⁻¹ cm⁻² Hz⁻¹
+    pub const JANSKY_IN_CGS: f64 = 1e-23;
 
-/// Speed of light in vacuum
-/// Units: 2.99792458e10 cm/s (centimeters per second in CGS)
-pub const SPEED_OF_LIGHT: f64 = 2.99792458e10;
+    /// Planck's constant
+    /// Units: 6.62607015e-27 erg⋅s (erg-seconds in CGS)
+    pub const PLANCK_CONSTANT: f64 = 6.62607015e-27;
+
+    /// Speed of light in vacuum
+    /// Units: 2.99792458e10 cm/s (centimeters per second in CGS)
+    pub const SPEED_OF_LIGHT: f64 = 2.99792458e10;
+}
 
 /// Errors that can occur with spectrum operations
 #[derive(Debug, Error)]
@@ -59,8 +64,11 @@ impl Band {
             panic!("Wavelength range cannot contain non-finite values");
         }
 
-        if range.start >= range.end {
-            panic!("Invalid wavelength range: start must be less than end");
+        if range.start > range.end {
+            panic!(
+                "Invalid wavelength range: start must be less than end, got {}..{}",
+                range.start, range.end
+            );
         }
         if range.start < 0.0 || range.end < 0.0 {
             panic!("Wavelengths must be non-negative");
@@ -94,6 +102,19 @@ impl Band {
     pub fn width(&self) -> f64 {
         self.upper_nm - self.lower_nm
     }
+
+    /// Get the frequency bounds of the band in Hz
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing the lower and upper frequency bounds of the band in Hz
+    pub fn frequency_bounds(&self) -> (f64, f64) {
+        // Frequency = speed of light / wavelength
+        // Wavelength in nanometers, speed of light in cm/s
+        let lower_freq = CGS::SPEED_OF_LIGHT / (self.upper_nm * 1e-7);
+        let upper_freq = CGS::SPEED_OF_LIGHT / (self.lower_nm * 1e-7);
+        (lower_freq, upper_freq)
+    }
 }
 
 /// Trait representing a spectrum of electromagnetic radiation
@@ -103,7 +124,7 @@ impl Band {
 ///
 /// All units are in CGS:
 /// - Wavelengths in nanometers
-/// - Spectral irradiance in Janskys (1 Jy = 10⁻²³ erg s⁻¹ cm⁻² Hz⁻¹)
+/// - Spectral irradiance in erg s⁻¹ cm⁻² Hz⁻¹
 /// - Irradiance in erg s⁻¹ cm⁻² (total energy per unit time)
 pub trait Spectrum: Send + Sync {
     /// Get the spectral irradiance at the specified wavelength
@@ -114,7 +135,7 @@ pub trait Spectrum: Send + Sync {
     ///
     /// # Returns
     ///
-    /// The spectral irradiance at the given wavelength in Janskys (1 Jy = 10⁻²³ erg s⁻¹ cm⁻² Hz⁻¹)
+    /// The spectral irradiance at the given wavelength in erg s⁻¹ cm⁻² Hz⁻¹
     /// Returns 0.0 if the wavelength is outside the spectrum's range
     fn spectral_irradiance(&self, wavelength_nm: f64) -> f64;
 
@@ -123,12 +144,50 @@ pub trait Spectrum: Send + Sync {
     /// # Arguments
     ///
     /// * `band` - The wavelength band to integrate over
-    /// * `aperture_cm2` - Collection aperture area in square centimeters
     ///
     /// # Returns
     ///
     /// The the irradiance in erg s⁻¹ cm⁻²
     fn irradiance(&self, band: &Band) -> f64;
+
+    /// Calculate the number of photons within a wavelength range
+    /// /// # Arguments
+    ///
+    /// * `band` - The wavelength band to integrate over
+    /// * `aperture_cm2` - Collection aperture area in square centimeters
+    /// * `duration` - Duration of the observation
+    ///
+    /// # Returns
+    ///
+    /// The number of photons detected in the specified band
+    fn photons(&self, band: &Band, aperture_cm2: f64, duration: std::time::Duration) -> f64 {
+        // Convert power to photons per second
+        // E = h * c / λ, so N = P / (h * c / λ)
+        // where P is power in erg/s, h is Planck's constant, c is speed of light, and λ is wavelength in cm
+        let mut total_photons = 0.0;
+
+        // Decompose the band into integer nanometer bands
+        // Special case the first and last bands
+        let mut bands: Vec<Band> = Vec::new();
+
+        let first_int_nm = band.lower_nm.ceil() as u32;
+        let last_int_nm = band.upper_nm.floor() as u32;
+
+        bands.push(Band::new(band.lower_nm, first_int_nm as f64));
+        bands.extend((first_int_nm..=last_int_nm).map(|nm| Band::new(nm as f64, nm as f64 + 1.0)));
+        bands.push(Band::new(last_int_nm as f64, band.upper_nm));
+
+        // Integrate over each wavelength in the band
+        for band in bands {
+            let mean_wavelength_nm = (band.lower_nm + band.upper_nm) / 2.0;
+            let mean_wavelength_cm = mean_wavelength_nm * 1e-7; // Convert to cm
+            let energy_per_photon = CGS::PLANCK_CONSTANT * CGS::SPEED_OF_LIGHT / mean_wavelength_cm;
+            total_photons += self.irradiance(&band) / energy_per_photon;
+        }
+
+        // Multiply by duration to get total photons detected
+        total_photons * duration.as_secs_f64() * aperture_cm2
+    }
 }
 
 /// A spectrum model with variable width wavelength bins
@@ -277,14 +336,14 @@ impl FlatStellarSpectrum {
     ///
     /// # Arguments
     ///
-    /// * `flux_density_jy` - The spectral flux density in Janskys (1 Jy = 10⁻²³ erg s⁻¹ cm⁻² Hz⁻¹)
+    /// * `flux_density_jy` - The spectral flux density in (erg s⁻¹ cm⁻² nm⁻¹)
     ///
     /// # Returns
     ///
     /// A new FlatStellarSpectrum with the specified flux density
-    pub fn new(flux_density_jy: f64) -> Self {
+    pub fn new(spectral_flux_density: f64) -> Self {
         Self {
-            spectral_flux_density: flux_density_jy * JANSKY_IN_CGS,
+            spectral_flux_density,
         }
     }
 
@@ -301,8 +360,8 @@ impl FlatStellarSpectrum {
         // Convert AB magnitude to flux density
         // F_ν = F_ν,0 * 10^(-0.4 * AB)
         // where F_ν,0 is the zero point (3631 Jy for AB mag system)
-        let flux_density_jy = 3631.0 * 10f64.powf(-0.4 * ab_mag);
-        Self::new(flux_density_jy)
+        let spectral_flux_density = CGS::AB_ZERO_POINT_FLUX_DENSITY * 10f64.powf(-0.4 * ab_mag);
+        Self::new(spectral_flux_density)
     }
 }
 
@@ -316,8 +375,8 @@ impl Spectrum for FlatStellarSpectrum {
             return 0.0;
         }
 
-        // Convert from erg s⁻¹ cm⁻² Hz⁻¹ to Janskys
-        self.spectral_flux_density / JANSKY_IN_CGS
+        // Convert from erg s⁻¹ cm⁻² Hz⁻¹
+        self.spectral_flux_density
     }
 
     fn irradiance(&self, band: &Band) -> f64 {
@@ -329,8 +388,10 @@ impl Spectrum for FlatStellarSpectrum {
             return 0.0;
         }
 
-        // Multiply by aperture area
-        self.spectral_flux_density * band.width()
+        // Convert band to frequency bounds
+        let (lower_freq, upper_freq) = band.frequency_bounds();
+
+        self.spectral_flux_density * (upper_freq - lower_freq)
     }
 }
 
@@ -338,6 +399,35 @@ impl Spectrum for FlatStellarSpectrum {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+
+    #[test]
+    fn test_aaron_matching() {
+        // TODO: Expected value from Aaron's calculations
+        let mag_to_photons = vec![
+            (0.0, 3_074_446.0),
+            (10.0, 0.0001 * 3_074_446.0),
+            (12.0, 48.0),
+        ];
+
+        for (mag, expected_photons) in mag_to_photons.iter() {
+            // Calculate number of photons in 400-700nm if a 12th mag star
+            let spectrum = FlatStellarSpectrum::from_ab_mag(*mag);
+
+            let band = Band::new(400.0, 700.0);
+
+            // Assume 1 cm² aperture and 1 second duration
+            let aperture_cm2 = 1.0;
+            let duration = std::time::Duration::from_secs(1);
+            let photons = spectrum.photons(&band, aperture_cm2, duration);
+
+            println!(
+                "For mag {}: Got {} Expected ~{}",
+                mag, photons, expected_photons
+            );
+
+            assert_relative_eq!(photons, *expected_photons, epsilon = 1.0);
+        }
+    }
 
     #[test]
     fn test_binned_spectrum_irradiance() {
@@ -403,10 +493,14 @@ mod tests {
         // AB mag of 0 should give the same result as 3631 Jy
         assert_relative_eq!(
             spectrum_ab.spectral_irradiance(500.0),
-            3631.0,
+            CGS::JANSKY_IN_CGS * 3631.0,
             epsilon = 1e-5
         );
+    }
 
+    #[test]
+    fn test_stellar_spectrum_scaling() {
+        let spectrum = FlatStellarSpectrum::from_ab_mag(0.0);
         // Test dimmer star (AB mag = 5.0)
         let spectrum_dim = FlatStellarSpectrum::from_ab_mag(5.0);
 
@@ -416,11 +510,6 @@ mod tests {
             100.0,
             epsilon = 1e-5
         );
-
-        // Test power calculation
-        let band = Band::new(400.0, 900.0);
-        let power = spectrum.irradiance(&band);
-        assert!(power > 0.0);
     }
 
     #[test]

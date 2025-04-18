@@ -18,9 +18,7 @@ pub use hardware::star_projection::{
 pub use hardware::telescope::TelescopeConfig;
 pub use image_proc::histogram_stretch::stretch_histogram;
 pub use photometry::quantum_efficiency::QuantumEfficiency;
-pub use photometry::spectrum::{
-    Spectrum, AB_ZERO_POINT_FLUX_DENSITY, PLANCK_CONSTANT, SPEED_OF_LIGHT,
-};
+pub use photometry::spectrum::{Spectrum, CGS};
 pub use photometry::trapezoid::trap_integrate;
 pub use starfield::catalogs::StarPosition;
 
