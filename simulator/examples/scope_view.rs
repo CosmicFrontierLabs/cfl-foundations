@@ -439,7 +439,7 @@ fn render_star_field(
     // The image now contains electron counts
 
     // Get the DN per electron conversion factor from the sensor
-    let electrons_to_dn = sensor.dn_per_electron_guesstimate();
+    let electrons_to_dn = sensor.dn_per_electron();
 
     // Calculate max DN value based on sensor bit depth (saturate at sensor's max value)
     let max_dn = (1 << sensor.bit_depth) - 1;
