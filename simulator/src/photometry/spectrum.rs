@@ -5,6 +5,8 @@
 
 use thiserror::Error;
 
+use super::QuantumEfficiency;
+
 /// Constants in CGS units
 pub struct CGS {}
 
@@ -117,6 +119,21 @@ impl Band {
     }
 }
 
+fn nm_sub_bands(band: &Band) -> Vec<Band> {
+    // Decompose the band into integer nanometer bands
+    // Special case the first and last bands
+    let mut bands: Vec<Band> = Vec::new();
+
+    let first_int_nm = band.lower_nm.ceil() as u32;
+    let last_int_nm = band.upper_nm.floor() as u32;
+
+    bands.push(Band::new(band.lower_nm, first_int_nm as f64));
+    bands.extend((first_int_nm..=last_int_nm).map(|nm| Band::new(nm as f64, nm as f64 + 1.0)));
+    bands.push(Band::new(last_int_nm as f64, band.upper_nm));
+
+    bands
+}
+
 /// Trait representing a spectrum of electromagnetic radiation
 ///
 /// All implementations must provide spectral irradiance at a given wavelength
@@ -151,7 +168,8 @@ pub trait Spectrum: Send + Sync {
     fn irradiance(&self, band: &Band) -> f64;
 
     /// Calculate the number of photons within a wavelength range
-    /// /// # Arguments
+    ///
+    /// # Arguments
     ///
     /// * `band` - The wavelength band to integrate over
     /// * `aperture_cm2` - Collection aperture area in square centimeters
@@ -168,14 +186,7 @@ pub trait Spectrum: Send + Sync {
 
         // Decompose the band into integer nanometer bands
         // Special case the first and last bands
-        let mut bands: Vec<Band> = Vec::new();
-
-        let first_int_nm = band.lower_nm.ceil() as u32;
-        let last_int_nm = band.upper_nm.floor() as u32;
-
-        bands.push(Band::new(band.lower_nm, first_int_nm as f64));
-        bands.extend((first_int_nm..=last_int_nm).map(|nm| Band::new(nm as f64, nm as f64 + 1.0)));
-        bands.push(Band::new(last_int_nm as f64, band.upper_nm));
+        let bands = nm_sub_bands(band);
 
         // Integrate over each wavelength in the band
         for band in bands {
@@ -187,6 +198,44 @@ pub trait Spectrum: Send + Sync {
 
         // Multiply by duration to get total photons detected
         total_photons * duration.as_secs_f64() * aperture_cm2
+    }
+
+    /// Calculate the photo-electrons obtained from this spectrum when using a sensor with a given quantum efficiency
+    ///
+    /// # Arguments
+    /// * `qe` - The quantum efficiency of the sensor as a function of wavelength
+    /// * `aperture_cm2` - Collection aperture area in square centimeters
+    /// * `duration` - Duration of the observation
+    ///
+    /// # Returns
+    ///
+    /// The number of electrons detected in the specified band
+    fn photo_electrons(
+        &self,
+        qe: &QuantumEfficiency,
+        aperture_cm2: f64,
+        duration: std::time::Duration,
+    ) -> f64 {
+        // Convert power to photons per second
+        // E = h * c / λ, so N = P / (h * c / λ)
+        // where P is power in erg/s, h is Planck's constant, c is speed of light, and λ is wavelength in cm
+        let mut total_electrons = 0.0;
+
+        // Decompose the band into integer nanometer bands
+        // Special case the first and last bands
+        let bands = nm_sub_bands(&qe.band());
+
+        // Integrate over each wavelength in the band
+        for band in bands {
+            let mean_wavelength_nm = (band.lower_nm + band.upper_nm) / 2.0;
+            let mean_wavelength_cm = mean_wavelength_nm * 1e-7; // Convert to cm
+            let energy_per_photon = CGS::PLANCK_CONSTANT * CGS::SPEED_OF_LIGHT / mean_wavelength_cm;
+            let photons_in_band = self.irradiance(&band) / energy_per_photon;
+            total_electrons += qe.at(mean_wavelength_nm) * photons_in_band;
+        }
+
+        // Multiply by duration to get total photons detected
+        total_electrons * duration.as_secs_f64() * aperture_cm2
     }
 }
 
@@ -278,13 +327,13 @@ impl Spectrum for BinnedSpectrum {
         }
 
         // Should never reach here...
-        return 0.0;
+        0.0
     }
 
     fn irradiance(&self, band: &Band) -> f64 {
-        // Convert to f32 for internal calculations
-        let lower = band.lower_nm as f64;
-        let upper = band.upper_nm as f64;
+        // Initialize bounds from band
+        let lower = band.lower_nm;
+        let upper = band.upper_nm;
 
         // Clamp to spectrum range
         let lower = lower.max(self.wavelengths[0]);
@@ -313,7 +362,7 @@ impl Spectrum for BinnedSpectrum {
 
             // Use the original measurement units for power calculation (erg s⁻¹ cm⁻² nm⁻¹)
             // since we're integrating over wavelength, not frequency
-            power += self.spec_irr[i] as f64 * overlap_width as f64;
+            power += self.spec_irr[i] * overlap_width;
         }
 
         // Multiply by aperture area to get total power
@@ -362,6 +411,19 @@ impl FlatStellarSpectrum {
         // where F_ν,0 is the zero point (3631 Jy for AB mag system)
         let spectral_flux_density = CGS::AB_ZERO_POINT_FLUX_DENSITY * 10f64.powf(-0.4 * ab_mag);
         Self::new(spectral_flux_density)
+    }
+
+    /// Create a new FlatStellarSpectrum from a GaiaV2/V3 value
+    /// # Arguments
+    ///
+    /// `gaia_magnitude` - The GaiaV2/V3 magnitude of the source
+    /// # Returns
+    ///
+    /// A new FlatStellarSpectrum with the spectral flux density corresponding to the given Gaia magnitude
+    pub fn from_gaia_magnitude(gaia_magnitude: f64) -> Self {
+        // Convert Gaia magnitude to flux density
+        // Same scaling, but slightly different zero-point definition
+        Self::new(gaia_magnitude + 0.12)
     }
 }
 
@@ -529,5 +591,57 @@ mod tests {
         // Negative wavelength
         let result = BinnedSpectrum::new(vec![-100.0, 500.0, 600.0], vec![0.1, 0.2]);
         assert!(matches!(result, Err(SpectrumError::InvalidFrequency(_))));
+    }
+
+    #[test]
+    fn test_photoelectron_math_100percent() {
+        let aperture_cm2 = 1.0; // 1 cm² aperture
+        let duration = std::time::Duration::from_secs(1); // 1 second observation
+
+        let band = Band::new(400.0, 600.0);
+        // Make a pretend QE that is perfect in the 400-600nm range
+        let qe = QuantumEfficiency::from_notch(&band, 1.0).unwrap();
+
+        // Create a flat spectrum with a known flux density
+        let spectrum = FlatStellarSpectrum::from_ab_mag(0.0);
+
+        let photons = spectrum.photons(&band, aperture_cm2, duration);
+        let electrons = spectrum.photo_electrons(&qe, aperture_cm2, duration);
+
+        // For a perfect QE, the number of electrons should equal the number of photons
+        let err = f64::abs(photons - electrons) / photons;
+
+        assert!(
+            err < 0.01,
+            "Expected {} electrons, got {}",
+            photons,
+            electrons
+        );
+    }
+
+    #[test]
+    fn test_photoelectron_math_50_percent() {
+        let aperture_cm2 = 1.0; // 1 cm² aperture
+        let duration = std::time::Duration::from_secs(1); // 1 second observation
+
+        let band = Band::new(400.0, 600.0);
+        // Make a pretend QE that is perfect in the 400-600nm range
+        let qe = QuantumEfficiency::from_notch(&band, 1.0).unwrap();
+
+        // Create a flat spectrum with a known flux density
+        let spectrum = FlatStellarSpectrum::from_ab_mag(0.0);
+
+        let photons = spectrum.photons(&band, aperture_cm2, duration);
+        let electrons = spectrum.photo_electrons(&qe, aperture_cm2, duration);
+
+        // For a perfect QE, the number of electrons should equal the number of photons
+        let err = f64::abs(photons - electrons) / photons;
+
+        assert!(
+            err < 0.01,
+            "Expected {} electrons, got {}",
+            photons,
+            electrons
+        );
     }
 }

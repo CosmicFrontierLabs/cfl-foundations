@@ -51,8 +51,8 @@ impl SensorConfig {
 
     /// Get quantum efficiency at specified wavelength (nm)
     pub fn qe_at_wavelength(&self, wavelength_nm: u32) -> f64 {
-        // Convert u32 to f32 for our QuantumEfficiency type
-        self.quantum_efficiency.at(wavelength_nm as f32) as f64
+        // Convert u32 to f64 for our QuantumEfficiency type
+        self.quantum_efficiency.at(wavelength_nm as f64)
     }
 
     /// Get sensor dimensions in microns
@@ -149,7 +149,7 @@ pub fn create_flat_qe(efficiency: f64) -> QuantumEfficiency {
     // Convert to f32 for our QuantumEfficiency type
     // Create a simple QE curve with 0 at edges and constant value in visible range
     let wavelengths = vec![300.0, 400.0, 700.0, 800.0];
-    let efficiencies = vec![0.0, efficiency as f32, efficiency as f32, 0.0];
+    let efficiencies = vec![0.0, efficiency, efficiency, 0.0];
 
     QuantumEfficiency::from_table(wavelengths, efficiencies)
         .expect("Failed to create flat QE curve")
@@ -212,7 +212,7 @@ pub mod models {
     /// GSENSE6510BSI CMOS sensor with detailed QE curve from manufacturer chart found here
     /// https://www.gpixel.com/en/details_155.html
     pub static GSENSE6510BSI: Lazy<SensorConfig> = Lazy::new(|| {
-        let wavelengths: Vec<f32> = vec![
+        let wavelengths = vec![
             150.0, 200.0, 210.0, 220.0, 230.0, 240.0, 250.0, 260.0, 270.0, 280.0, 290.0, 300.0,
             310.0, 320.0, 330.0, 340.0, 350.0, 360.0, 370.0, 380.0, 390.0, 400.0, 410.0, 420.0,
             430.0, 440.0, 450.0, 460.0, 470.0, 480.0, 490.0, 500.0, 510.0, 520.0, 530.0, 540.0,
@@ -281,7 +281,7 @@ pub mod models {
         ];
 
         let efficiencies = vec![
-            0.0, 0.05f32, 0.05, 0.12, 0.22, 0.35, 0.52, 0.68, 0.82, 0.90, 0.94, 0.94, 0.92, 0.86,
+            0.0, 0.05, 0.05, 0.12, 0.22, 0.35, 0.52, 0.68, 0.82, 0.90, 0.94, 0.94, 0.92, 0.86,
             0.80, 0.72, 0.64, 0.56, 0.48, 0.42, 0.36, 0.30, 0.25, 0.22, 0.18, 0.16, 0.14, 0.12,
             0.10, 0.09, 0.08, 0.06, 0.05, 0.04, 0.03, 0.0,
         ];

@@ -2,6 +2,8 @@
 
 use thiserror::Error;
 
+use super::Band;
+
 /// Errors that can occur with quantum efficiency calculations
 #[derive(Debug, Error)]
 pub enum QuantumEfficiencyError {
@@ -25,13 +27,47 @@ pub enum QuantumEfficiencyError {
 #[derive(Debug, Clone)]
 pub struct QuantumEfficiency {
     /// Wavelengths in nanometers (nm)
-    wavelengths: Vec<f32>,
+    wavelengths: Vec<f64>,
 
     /// Efficiency values (0.0 to 1.0) corresponding to each wavelength
-    efficiencies: Vec<f32>,
+    efficiencies: Vec<f64>,
 }
 
+// TODO(meawoppl) - convert the internal storage to f64
+
 impl QuantumEfficiency {
+    /// Create a new QuantumEfficiency model from a explicit notch
+    ///
+    /// # Arguments
+    ///
+    /// * `band` - Band that the notch applies to
+    /// * `efficiency` - Efficiency value (0.0 to 1.0) for the notch
+    ///
+    /// # Returns
+    /// A Result containing the new QuantumEfficiency or an error
+    pub fn from_notch(band: &Band, efficiency: f64) -> Result<Self, QuantumEfficiencyError> {
+        // Validate efficiency value
+        if !(0.0..=1.0).contains(&efficiency) {
+            return Err(QuantumEfficiencyError::OutOfRange);
+        }
+
+        let low_nm = band.lower_nm;
+        let high_nm = band.upper_nm;
+
+        // This should use f64::next_up() and f64::next_down() but those are unstable
+        // This should be small compared to anything we care about with cmos, but
+        // large enough to not get eaten by a ULP dumbness anywhere
+        let smol = 1e-8;
+
+        // Create the wavelength vector
+        let wavelengths = vec![low_nm - smol, low_nm, high_nm, high_nm + smol];
+        // Create the efficiency vector with 0.0 at both ends and the notch in the middle
+        let efficiencies = vec![0.0, efficiency, efficiency, 0.0];
+
+        // Return the new QuantumEfficiency instance
+        Self::from_table(wavelengths, efficiencies)
+    }
+
     /// Create a new QuantumEfficiency model from wavelength and efficiency tables
     ///
     /// # Arguments
@@ -51,8 +87,8 @@ impl QuantumEfficiency {
     /// - First or last efficiency value is not 0.0
     /// - Any efficiency value is outside the range [0.0, 1.0]
     pub fn from_table(
-        wavelengths: Vec<f32>,
-        efficiencies: Vec<f32>,
+        wavelengths: Vec<f64>,
+        efficiencies: Vec<f64>,
     ) -> Result<Self, QuantumEfficiencyError> {
         // Check vectors have the same length
         if wavelengths.len() != efficiencies.len() {
@@ -100,7 +136,7 @@ impl QuantumEfficiency {
     /// # Returns
     ///
     /// The interpolated efficiency value (0.0 to 1.0)
-    pub fn at(&self, wavelength: f32) -> f32 {
+    pub fn at(&self, wavelength: f64) -> f64 {
         // Return 0.0 if outside the range
         if wavelength < self.wavelengths[0] || wavelength > *self.wavelengths.last().unwrap() {
             return 0.0;
@@ -121,13 +157,16 @@ impl QuantumEfficiency {
         unreachable!()
     }
 
-    /// Get the wavelength range of this quantum efficiency curve
+    /// Returns the band (wavelength range) of the quantum efficiency.
     ///
     /// # Returns
     ///
-    /// A tuple of (min_wavelength, max_wavelength) in nanometers
-    pub fn wavelength_range(&self) -> (f32, f32) {
-        (self.wavelengths[0], *self.wavelengths.last().unwrap())
+    /// A `Band` struct containing the lower and upper wavelengths in nanometers.
+    pub fn band(&self) -> Band {
+        Band {
+            lower_nm: self.wavelengths[0],
+            upper_nm: *self.wavelengths.last().unwrap(),
+        }
     }
 
     /// Integrate the quantum efficiency over the wavelength range
@@ -139,9 +178,9 @@ impl QuantumEfficiency {
     /// # Returns
     ///
     /// The integrated value
-    pub fn integrate<F>(&self, f: F) -> f32
+    pub fn integrate<F>(&self, f: F) -> f64
     where
-        F: Fn(f32) -> f32,
+        F: Fn(f64) -> f64,
     {
         let mut sum = 0.0;
 
