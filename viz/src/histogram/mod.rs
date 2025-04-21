@@ -3,6 +3,7 @@
 //! This module provides functionality for creating and displaying histograms.
 
 use crate::{Result, VizError};
+use std::collections::HashSet;
 use std::fmt::{Display, Write};
 use std::ops::Range;
 
@@ -625,6 +626,83 @@ where
     }
 }
 
+/// Create a magnitude histogram with bins centered on integer magnitudes
+///
+/// This function creates a histogram specifically for stellar magnitudes with:
+/// - Each bin centered on integer magnitude values (e.g., 6.0, 7.0, 8.0)
+/// - Bin width of exactly 1.0 magnitude
+/// - Only as many bins as needed to cover all values
+pub fn create_magnitude_histogram(
+    magnitudes: &[f64],
+    title: Option<String>,
+    use_log_scale: bool,
+) -> Result<Histogram<f64>> {
+    if magnitudes.is_empty() {
+        return Err(VizError::HistogramError(
+            "No magnitudes provided".to_string(),
+        ));
+    }
+
+    // Find the unique integer magnitude values present
+    let mut int_magnitudes = HashSet::new();
+    for &mag in magnitudes {
+        // Round to nearest integer to determine bin center
+        int_magnitudes.insert(mag.round() as i32);
+    }
+
+    // Convert to sorted vector to determine range
+    let mut centers: Vec<i32> = int_magnitudes.into_iter().collect();
+    centers.sort();
+
+    if centers.is_empty() {
+        return Err(VizError::HistogramError(
+            "No valid magnitudes found".to_string(),
+        ));
+    }
+
+    // Determine full range of required bins to ensure continuous coverage
+    let min_center = *centers.first().unwrap();
+    let max_center = *centers.last().unwrap();
+
+    // Create bins with exactly 1.0 width centered on all integer values in the range
+    // Each bin goes from x-0.5 to x+0.5 for integer x
+    let mut bin_edges = Vec::new();
+
+    // Create edges for every integer from min to max
+    for center in min_center..=max_center {
+        bin_edges.push((center as f64) - 0.5);
+    }
+    // Add the upper edge of the last bin
+    bin_edges.push((max_center as f64) + 0.5);
+
+    // Create the histogram
+    let mut hist = Histogram::new(bin_edges)?;
+
+    // Configure display
+    let scale = if use_log_scale {
+        Scale::Log10
+    } else {
+        Scale::Linear
+    };
+
+    let config = HistogramConfig {
+        title,
+        scale,
+        show_percentage: true,
+        show_counts: true,
+        show_empty_bins: false,
+        ..HistogramConfig::default()
+    };
+
+    hist = hist.with_config(config);
+
+    // Add values
+    hist.add_all(magnitudes.iter().copied());
+
+    // Return the populated histogram
+    Ok(hist)
+}
+
 /// Quick function to create and display a histogram from a slice of values
 pub fn histogram<T>(
     values: &[T],
@@ -705,6 +783,145 @@ mod tests {
         let diff2 = (hist.bin_edges[2] - hist.bin_edges[1] - 2.0f64).abs();
         assert!(diff1 < 1e-6);
         assert!(diff2 < 1e-6);
+    }
+
+    #[test]
+    fn test_magnitude_histogram_creation() {
+        // Test with normal star magnitudes
+        let magnitudes = vec![3.2, 4.7, 5.1, 6.9, 7.3, 9.0, 11.2];
+        let hist = create_magnitude_histogram(&magnitudes, None, false).unwrap();
+
+        // Print the actual bin edges to help with debugging
+        println!("Actual bin edges: {:?}", hist.bin_edges());
+        println!("Bin counts: {:?}", hist.counts());
+
+        // The min_center is 3 and max_center is 11, so we expect 9 bins (3, 4, 5, 6, 7, 8, 9, 10, 11)
+        assert_eq!(
+            hist.counts().len(),
+            9,
+            "Should have 9 bins from magnitude 3 to 11"
+        );
+
+        // Verify bin edges are 1.0 wide
+        for i in 0..hist.bin_edges().len() - 1 {
+            let width = hist.bin_edges()[i + 1] - hist.bin_edges()[i];
+            assert!(
+                (width - 1.0).abs() < 1e-6,
+                "Bin width should be 1.0 but was {}",
+                width
+            );
+        }
+
+        // Check that the bins with stars have the right counts
+        // Bin for magnitude 3 should have 1 star (3.2)
+        assert_eq!(
+            hist.counts()[0],
+            1,
+            "Bin for magnitude 3 should contain 1 star"
+        );
+
+        // Bin for magnitude 5 should have 2 stars (4.7, 5.1)
+        assert_eq!(
+            hist.counts()[2],
+            2,
+            "Bin for magnitude 5 should contain 2 stars"
+        );
+
+        // Bin for magnitude 7 should have 2 stars (6.9, 7.3)
+        assert_eq!(
+            hist.counts()[4],
+            2,
+            "Bin for magnitude 7 should contain 2 stars"
+        );
+
+        // Bin for magnitude 9 should have 1 star (9.0)
+        assert_eq!(
+            hist.counts()[6],
+            1,
+            "Bin for magnitude 9 should contain 1 star"
+        );
+
+        // Bin for magnitude 11 should have 1 star (11.2)
+        assert_eq!(
+            hist.counts()[8],
+            1,
+            "Bin for magnitude 11 should contain 1 star"
+        );
+
+        // Empty bins should have 0 stars
+        assert_eq!(hist.counts()[1], 0, "Bin for magnitude 4 should be empty");
+        assert_eq!(hist.counts()[3], 0, "Bin for magnitude 6 should be empty");
+        assert_eq!(hist.counts()[5], 0, "Bin for magnitude 8 should be empty");
+        assert_eq!(hist.counts()[7], 0, "Bin for magnitude 10 should be empty");
+
+        // Total count should match number of magnitudes
+        assert_eq!(hist.total_count(), magnitudes.len() as u64);
+    }
+
+    #[test]
+    fn test_magnitude_histogram_empty() {
+        // Test with empty magnitudes list
+        let result = create_magnitude_histogram(&[], None, false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_magnitude_histogram_bin_width() {
+        // Verify that bins are exactly 1.0 magnitude wide
+        let magnitudes = vec![1.2, 2.2, 3.2, 4.2, 5.2];
+        let hist = create_magnitude_histogram(&magnitudes, None, false).unwrap();
+
+        // Each bin should be exactly 1.0 wide
+        for i in 0..hist.bin_edges().len() - 1 {
+            let width = hist.bin_edges()[i + 1] - hist.bin_edges()[i];
+            assert!(
+                (width - 1.0).abs() < 1e-6,
+                "Bin width should be 1.0 but was {}",
+                width
+            );
+        }
+    }
+
+    #[test]
+    fn test_magnitude_histogram_formatting() {
+        // Test formatting with a title
+        let magnitudes = vec![5.5, 6.2, 6.7, 8.1, 9.0];
+        let title = "Test Magnitude Histogram";
+
+        // Create histogram with custom config
+        let mut hist =
+            create_magnitude_histogram(&magnitudes, Some(title.to_string()), false).unwrap();
+
+        // Override some config settings
+        let mut config = hist.config.clone();
+        config.bar_char = '*'; // Use star character for the bars
+        config.width = 60; // Set a specific width
+        hist = hist.with_config(config);
+
+        let formatted = hist.format().unwrap();
+
+        // Check title is in the output
+        assert!(formatted.contains(title));
+
+        // Check bin labels and counts
+        assert!(formatted.contains("6")); // We should have a bin centered on 6
+        assert!(formatted.contains("9")); // We should have a bin centered on 9
+
+        // Check that our custom bar character is used
+        assert!(formatted.contains("*"));
+    }
+
+    #[test]
+    fn test_magnitude_histogram_with_log_scale() {
+        // Test with log scale formatting
+        let magnitudes = vec![3.0, 3.5, 4.0, 6.0, 8.0, 9.0, 9.5];
+        let hist = create_magnitude_histogram(&magnitudes, None, true).unwrap();
+
+        // Verify scale is set to Log10
+        assert_eq!(hist.config.scale, Scale::Log10);
+
+        let formatted = hist.format().unwrap();
+        assert!(formatted.contains("log10"));
     }
 
     #[test]
