@@ -7,6 +7,7 @@
 pub mod aabb;
 pub mod centroid;
 pub mod convolve2d;
+pub mod electron;
 pub mod histogram_stretch;
 pub mod io;
 pub mod noise;
