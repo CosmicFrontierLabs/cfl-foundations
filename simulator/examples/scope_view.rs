@@ -417,10 +417,9 @@ fn render_star_field(
     println!("Adding noise...");
 
     // Generate sensor noise (read noise and dark current)
+    let duration = Duration::from_secs_f64(exposure_time); // TODO(meawoppl) - use other places
     let noise = simulator::image_proc::generate_sensor_noise(
-        &sensor,
-        Duration::from_secs_f64(exposure_time),
-        None, // Use random noise
+        &sensor, &duration, None, // Use random noise
     );
 
     // Print the noise statistics

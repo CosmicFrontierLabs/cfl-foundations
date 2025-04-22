@@ -31,7 +31,7 @@ use crate::SensorConfig;
 /// * An ndarray::Array2<f64> containing the noise values for each pixel
 pub fn generate_sensor_noise(
     sensor: &SensorConfig,
-    exposure_time: Duration,
+    exposure_time: &Duration,
     rng_seed: Option<u64>,
 ) -> Array2<f64> {
     // Create a random number generator from the supplied seed
@@ -110,7 +110,7 @@ mod tests {
         let sensor = make_tiny_test_sensor(shape, dark_current, read_noise);
         let exposure_time = Duration::from_secs(1);
 
-        let noise = generate_sensor_noise(&sensor, exposure_time, None);
+        let noise = generate_sensor_noise(&sensor, &exposure_time, None);
 
         // Check dimensions
         assert_eq!(noise.dim(), shape);
@@ -132,8 +132,8 @@ mod tests {
         let sensor = make_tiny_test_sensor(shape, dark_current, read_noise);
 
         // Generate noise with both RNGs
-        let noise1 = generate_sensor_noise(&sensor, exposure_time, Some(5));
-        let noise2 = generate_sensor_noise(&sensor, exposure_time, Some(5));
+        let noise1 = generate_sensor_noise(&sensor, &exposure_time, Some(5));
+        let noise2 = generate_sensor_noise(&sensor, &exposure_time, Some(5));
 
         // Check that the noise patterns are identical
         for (v1, v2) in noise1.iter().zip(noise2.iter()) {
@@ -141,7 +141,7 @@ mod tests {
         }
 
         // Check that a different seed produces different noise
-        let noise3 = generate_sensor_noise(&sensor, exposure_time, Some(6));
+        let noise3 = generate_sensor_noise(&sensor, &exposure_time, Some(6));
 
         // At least one value should be different
         let mut any_different = false;
@@ -168,7 +168,7 @@ mod tests {
         // Create a sensor with the specified parameters
         let sensor = make_tiny_test_sensor(shape, dark_current, read_noise);
 
-        let noise = generate_sensor_noise(&sensor, exposure_time, Some(3));
+        let noise = generate_sensor_noise(&sensor, &exposure_time, Some(3));
 
         // Calculate mean and standard deviation of the noise
         let mean = noise.mean().unwrap();
@@ -187,13 +187,13 @@ mod tests {
         // Create a sensor with the specified parameters
         let sensor = make_tiny_test_sensor(shape, dark_current, read_noise);
 
-        let mean_0 = generate_sensor_noise(&sensor, Duration::from_secs(0), Some(7))
+        let mean_0 = generate_sensor_noise(&sensor, &Duration::from_secs(0), Some(7))
             .mean()
             .unwrap();
-        let mean_1 = generate_sensor_noise(&sensor, Duration::from_secs(10), Some(8))
+        let mean_1 = generate_sensor_noise(&sensor, &Duration::from_secs(10), Some(8))
             .mean()
             .unwrap();
-        let mean_2 = generate_sensor_noise(&sensor, Duration::from_secs(20), Some(9))
+        let mean_2 = generate_sensor_noise(&sensor, &Duration::from_secs(20), Some(9))
             .mean()
             .unwrap();
 
