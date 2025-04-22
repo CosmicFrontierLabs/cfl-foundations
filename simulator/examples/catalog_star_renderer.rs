@@ -16,6 +16,7 @@ use simulator::image_proc::convolve2d::{
 use starfield::catalogs::binary_catalog::BinaryCatalog;
 use starfield::catalogs::StarPosition;
 use std::path::PathBuf;
+use std::time::Duration;
 use usvg::fontdb;
 
 /// Main function to render a star field from a catalog
@@ -168,12 +169,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Visualization saved to: {}", output_path);
 
     Ok(())
-}
-
-/// Convert photons to electrons based on quantum efficiency
-fn photons_to_electrons(photons: f64, qe: f64) -> f64 {
-    // Apply quantum efficiency to convert photons to electrons
-    photons * qe
 }
 
 /// Create a PSF kernel based on telescope properties
@@ -443,9 +438,6 @@ fn render_catalog_star_field<T: StarPosition + 'static + Clone>(
     let wavelength_nm = 550.0;
     let psf = create_psf_kernel(telescope, sensor, wavelength_nm);
 
-    // Get quantum efficiency for this wavelength
-    let qe = sensor.qe_at_wavelength(wavelength_nm as u32);
-
     println!("Rendering stars across full field and sensor...");
 
     // Keep track of stars without magnitude
@@ -490,17 +482,10 @@ fn render_catalog_star_field<T: StarPosition + 'static + Clone>(
             continue;
         };
 
-        // Convert magnitude to photon flux
-        let photon_flux = star_projection::magnitude_to_photon_flux(
-            magnitude,
-            exposure_time,
-            telescope,
-            sensor,
-            wavelength_nm,
-        );
-
-        // Convert photons to electrons
-        let electron_flux = photons_to_electrons(photon_flux, qe);
+        // Convert magnitude directly to electrons
+        let duration = Duration::from_secs_f64(exposure_time);
+        let electron_flux =
+            star_projection::magnitude_to_electrons(magnitude, &duration, telescope, sensor);
 
         // Add star to visualization array (integer coordinates)
         let viz_x_int = viz_x.round() as usize;

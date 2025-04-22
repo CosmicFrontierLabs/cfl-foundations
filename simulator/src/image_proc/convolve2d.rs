@@ -215,6 +215,11 @@ mod tests {
         assert!(kernel[[1, 1]] > kernel[[2, 0]]);
         assert!(kernel[[1, 1]] > kernel[[2, 1]]);
         assert!(kernel[[1, 1]] > kernel[[2, 2]]);
+
+        // Check that all values are non-negative
+        for &value in kernel.iter() {
+            assert!(value >= 0.0, "Kernel value should be non-negative");
+        }
     }
 
     #[test]

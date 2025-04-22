@@ -50,7 +50,6 @@ pub fn add_stars_to_image(image: &mut Array2<f64>, stars: Vec<StarInFrame>, sigm
                 let dx = star.x - y as f64;
                 let dy = star.y - x as f64;
                 let distance_squared = dx * dx + dy * dy;
-
                 // Update pixel value with total flux
                 let contribution = star.flux * pre_term * (-distance_squared / c).exp();
 

@@ -13,7 +13,7 @@ pub mod photometry;
 pub use algo::icp::{iterative_closest_point, ICPResult};
 pub use hardware::sensor::SensorConfig;
 pub use hardware::star_projection::{
-    field_diameter, filter_stars_in_field, magnitude_to_photon_flux, pixel_scale,
+    field_diameter, filter_stars_in_field, magnitude_to_electrons, pixel_scale,
 };
 pub use hardware::telescope::TelescopeConfig;
 pub use image_proc::histogram_stretch::stretch_histogram;

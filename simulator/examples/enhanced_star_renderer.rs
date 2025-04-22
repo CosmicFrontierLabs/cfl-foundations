@@ -17,6 +17,7 @@ use simulator::hardware::telescope::{models as telescope_models, TelescopeConfig
 use simulator::image_proc::convolve2d::{
     convolve2d, gaussian_kernel, ConvolveMode, ConvolveOptions,
 };
+use std::time::Duration;
 use usvg::fontdb;
 
 /// Main function to render an enhanced simulated star field
@@ -235,13 +236,6 @@ impl starfield::catalogs::StarPosition for SyntheticStar {
     fn dec(&self) -> f64 {
         self.dec
     }
-}
-
-/// Convert photons to electrons based on quantum efficiency
-fn photons_to_electrons(photons: f64, qe: f64) -> f64 {
-    // Apply quantum efficiency to convert photons to electrons
-    // In reality, this is a stochastic process, but we approximate with expectation value
-    photons * qe
 }
 
 /// Create a PSF kernel based on telescope properties
@@ -494,9 +488,6 @@ fn render_enhanced_star_field(
     let wavelength_nm = 550.0;
     let psf = create_psf_kernel(telescope, sensor, wavelength_nm);
 
-    // Get quantum efficiency for this wavelength
-    let qe = sensor.qe_at_wavelength(wavelength_nm as u32);
-
     // Calculate telescope effective area
     let effective_area = telescope.effective_collecting_area_m2();
     println!(
@@ -528,17 +519,10 @@ fn render_enhanced_star_field(
             continue;
         }
 
-        // Convert magnitude to photon flux
-        let photon_flux = star_projection::magnitude_to_photon_flux(
-            star.magnitude,
-            exposure_time,
-            telescope,
-            sensor,
-            wavelength_nm,
-        );
-
-        // Convert photons to electrons
-        let electron_flux = photons_to_electrons(photon_flux, qe);
+        // Convert magnitude directly to electrons
+        let duration = Duration::from_secs_f64(exposure_time);
+        let electron_flux =
+            star_projection::magnitude_to_electrons(star.magnitude, &duration, telescope, sensor);
 
         // Add star to visualization array (integer coordinates)
         let viz_x_int = viz_x.round() as usize;

@@ -178,12 +178,20 @@ mod tests {
 pub mod models {
     use super::*;
 
+    pub static SMALL_50MM: Lazy<TelescopeConfig> = Lazy::new(|| {
+        TelescopeConfig::new(
+            "50mm", 0.05,  // 50mm aperture
+            0.5,   // 50mm
+            0.615, // light efficiency
+        )
+    });
+
     /// 50cm Demo telescope
     pub static DEMO_50CM: Lazy<TelescopeConfig> = Lazy::new(|| {
         TelescopeConfig::new(
             "50cm Demo",
             0.5,   // 50cm aperture
-            1.0,   // 1m focal length
+            10.0,  // 1m focal length
             0.815, // light efficiency
         )
     });
@@ -192,7 +200,7 @@ pub mod models {
     pub static FINAL_1M: Lazy<TelescopeConfig> = Lazy::new(|| {
         TelescopeConfig::new(
             "1m Final", 1.0,   // 1m aperture
-            4.0,   // 4m focal length
+            10.0,  // 10m focal length
             0.815, // light efficiency
         )
     });
@@ -207,15 +215,15 @@ mod model_tests {
         // Test 50cm Demo telescope
         assert_eq!(models::DEMO_50CM.name, "50cm Demo");
         assert_eq!(models::DEMO_50CM.aperture_m, 0.5);
-        assert_eq!(models::DEMO_50CM.focal_length_m, 1.0);
+        assert_eq!(models::DEMO_50CM.focal_length_m, 10.0);
         assert_eq!(models::DEMO_50CM.light_efficiency, 0.815);
-        assert_eq!(models::DEMO_50CM.f_number(), 2.0);
+        assert_eq!(models::DEMO_50CM.f_number(), 20.0);
 
         // Test 1m Final telescope
         assert_eq!(models::FINAL_1M.name, "1m Final");
         assert_eq!(models::FINAL_1M.aperture_m, 1.0);
-        assert_eq!(models::FINAL_1M.focal_length_m, 4.0);
+        assert_eq!(models::FINAL_1M.focal_length_m, 10.0);
         assert_eq!(models::FINAL_1M.light_efficiency, 0.815);
-        assert_eq!(models::FINAL_1M.f_number(), 4.0);
+        assert_eq!(models::FINAL_1M.f_number(), 10.0);
     }
 }
