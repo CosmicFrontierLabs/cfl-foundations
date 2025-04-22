@@ -6,7 +6,25 @@
 use starfield::catalogs::StarData;
 use starfield::RaDec;
 
-/// Convert equatorial coordinates to pixel coordinates with sub-pixel precision
+/// Converts celestial equatorial coordinates to image pixel coordinates with sub-pixel precision.
+///
+/// This function transforms a sky position (RA/Dec) to pixel coordinates (x,y) in an image,
+/// based on the field center, field of view, and image dimensions. The transformation uses
+/// a simple tangent plane projection suitable for small fields of view.
+///
+/// # Arguments
+/// * `position` - Sky coordinates (RA/Dec) of the object to transform
+/// * `center` - Sky coordinates (RA/Dec) of the field center
+/// * `fov_deg` - Field of view in degrees
+/// * `image_width` - Width of the image in pixels
+/// * `image_height` - Height of the image in pixels
+///
+/// # Returns
+/// * Tuple (x,y) containing pixel coordinates where:
+///   - x increases toward increasing RA (typically right in the image)
+///   - y increases toward increasing Dec (typically up in the image)
+///   - The center of the image is at (image_width/2, image_height/2)
+///   - Coordinates can be outside the image bounds for objects outside the field
 pub fn equatorial_to_pixel(
     position: &RaDec,
     center: &RaDec,
@@ -38,7 +56,30 @@ pub fn equatorial_to_pixel(
     (x, y)
 }
 
-/// Save a text file with visible star information
+/// Saves a formatted text file containing detailed information about stars in the field.
+///
+/// This function creates a human-readable and machine-parsable text file containing
+/// information about stars in the current field of view. The file includes:
+/// - Header with field metadata (center coordinates, FOV, telescope/sensor info)
+/// - One row per star with ID, RA, Dec, magnitude, B-V color index, and pixel coordinates
+/// - Stars are sorted by magnitude (brightest first)
+///
+/// # Arguments
+/// * `stars` - Slice of references to StarData objects to include in the list
+/// * `center` - Sky coordinates (RA/Dec) of the field center  
+/// * `fov_deg` - Field of view in degrees
+/// * `telescope_name` - Name of the telescope used
+/// * `sensor_name` - Name of the sensor used
+/// * `image_width` - Width of the image in pixels
+/// * `image_height` - Height of the image in pixels
+/// * `path` - Output file path
+///
+/// # Returns
+/// * Result indicating success or an error with message
+///
+/// # Format
+/// The output file has a CSV-like format with header lines prefixed by '#'.
+/// Each star entry contains: ID, RA(°), Dec(°), Magnitude, B-V, X(px), Y(px)
 pub fn save_star_list(
     stars: &[&StarData],
     center: &RaDec,

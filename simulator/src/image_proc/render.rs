@@ -55,7 +55,29 @@ pub fn approx_airy_pixels(
     airy_radius_px / 1.22
 }
 
-/// Render a simulated star field based on star data and telescope parameters
+/// Renders a simulated star field based on catalog data and optical system parameters.
+///
+/// This function simulates how stars would appear through a telescope onto a digital sensor.
+/// It performs the following steps:
+/// - Converts star equatorial coordinates (RA/Dec) to pixel coordinates
+/// - Calculates the expected electron count for each star based on magnitude, exposure and system parameters
+/// - Applies a Gaussian approximation of Airy disk as point spread function (PSF)
+/// - Adds realistic sensor noise (read noise and dark current)
+/// - Applies sensor physical limitations (well depth saturation)
+/// - Converts electron counts to digital numbers (DN)
+///
+/// # Arguments
+/// * `stars` - Reference to a vector of StarData pointers containing catalog information
+/// * `ra_deg` - Right Ascension of field center in degrees
+/// * `dec_deg` - Declination of field center in degrees
+/// * `fov_deg` - Field of view in degrees
+/// * `telescope` - Reference to telescope configuration
+/// * `sensor` - Reference to sensor configuration
+/// * `exposure` - Reference to exposure duration
+/// * `wavelength_nm` - Wavelength in nanometers to use for PSF calculation
+///
+/// # Returns
+/// * `RenderingResult` - Contains the rendered image, electron counts, noise, star positions, and saturation info
 pub fn render_star_field(
     stars: &Vec<&StarData>,
     ra_deg: f64,

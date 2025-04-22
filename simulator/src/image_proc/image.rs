@@ -1,7 +1,18 @@
-use image::{GrayImage, Luma, Rgb, RgbImage};
-use ndarray::{Array2, ArrayView2};
+use image::{GrayImage, Luma};
+use ndarray::Array2;
 
-// Method 1: Converting Array2<u8> to a grayscale image
+/// Converts an ndarray Array2<u8> to an image::GrayImage
+///
+/// This function takes a 2D array of u8 values and converts it to a GrayImage
+/// from the image crate, preserving the data arrangement. The conversion uses
+/// a direct mapping where array indices [y, x] map to pixel coordinates (x, y).
+/// Note that array dimensions are (height, width) while image dimensions are (width, height).
+///
+/// # Arguments
+/// * `arr` - Reference to an Array2<u8> containing grayscale pixel values
+///
+/// # Returns
+/// * A new GrayImage containing the same data as the input array
 pub fn array2_to_gray_image(arr: &Array2<u8>) -> GrayImage {
     // Get array dimensions
     let (height, width) = arr.dim();

@@ -6,6 +6,21 @@ use crate::image_proc::{
 
 use super::StarDetection;
 
+/// Processes an image to detect and characterize stars.
+///
+/// This function implements a complete star detection pipeline:
+/// 1. Optionally applies Gaussian smoothing with specified sigma value
+/// 2. Determines threshold value (either user-provided or automatic using Otsu's method)
+/// 3. Segments the image and identifies connected regions above threshold
+/// 4. Calculates precise centroid position and flux measurements for each detection
+///
+/// # Arguments
+/// * `sensor_image` - Reference to image array (DN values from sensor)
+/// * `smooth_by` - Optional sigma for Gaussian smoothing in pixels (None = no smoothing)
+/// * `threshold` - Optional custom threshold value (None = use Otsu's method)
+///
+/// # Returns
+/// * Vector of `StarDetection` objects, each containing position, flux, and shape information
 pub fn do_detections(
     sensor_image: &Array2<u16>,
     smooth_by: Option<f64>,
