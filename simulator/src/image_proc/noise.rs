@@ -20,12 +20,9 @@ use crate::SensorConfig;
 /// Generates a plausible noise field for a sensor with given parameters.
 ///
 /// # Arguments
-/// * `width` - Width of the sensor in pixels (x dimension)
-/// * `height` - Height of the sensor in pixels (y dimension)
-/// * `dark_current` - Dark current per pixel in electrons per second
-/// * `read_noise` - Read noise per pixel in electrons (standard deviation)
-/// * `exposure_time` - Exposure time in seconds
-/// * `rng` - Random number generator instance (StdRng)
+/// * `sensor` - Configuration of the sensor
+/// * `exposure_time` - Exposure time as Duration
+/// * `rng_seed` - Optional seed for random number generator
 ///
 /// # Returns
 /// * An ndarray::Array2<f64> containing the noise values for each pixel
@@ -69,10 +66,37 @@ pub fn generate_sensor_noise(
     noise_field
 }
 
+pub fn est_noise_floor(
+    sensor: &SensorConfig,
+    exposure_time: &Duration,
+    rng_seed: Option<u64>,
+) -> f64 {
+    // Create a smaller sensor with the same noise characteristics
+    let tiny_sensor = SensorConfig::new(
+        sensor.name.clone(),
+        sensor.quantum_efficiency.clone(),
+        128, // width
+        128, // height
+        sensor.pixel_size_um,
+        sensor.read_noise_e,
+        sensor.dark_current_e_p_s,
+        sensor.bit_depth,
+        sensor.dn_per_electron,
+        sensor.max_well_depth_e,
+    );
+
+    // Generate noise field using the smaller sensor
+    let noise_field = generate_sensor_noise(&tiny_sensor, exposure_time, rng_seed);
+
+    // Return the mean of the noise field as the estimated noise floor
+    noise_field
+        .mean()
+        .expect("Failed to calculate mean noise value?")
+}
+
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
-    use rand::SeedableRng;
 
     use crate::{photometry::Band, QuantumEfficiency};
 
@@ -98,6 +122,25 @@ mod tests {
             1.0,
             1.0,
         )
+    }
+
+    #[test]
+    fn test_est_noise_floor() {
+        // Test that the estimated noise floor is close to the expected value
+        let shape = (100, 100);
+        let read_noise = 5.0;
+        let dark_current = 10.0;
+        let exposure_time = Duration::from_secs(1);
+
+        let sensor = make_tiny_test_sensor(shape, dark_current, read_noise);
+
+        let noise_floor = est_noise_floor(&sensor, &exposure_time, Some(42));
+
+        // Calculate the expected noise floor (mean)
+        let expected_noise_floor = read_noise + dark_current * exposure_time.as_secs_f64();
+
+        // Assert that the estimated noise floor is close to the expected value
+        assert_relative_eq!(noise_floor, expected_noise_floor, epsilon = 0.05);
     }
 
     #[test]
