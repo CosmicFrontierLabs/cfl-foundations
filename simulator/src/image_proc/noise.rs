@@ -244,4 +244,38 @@ mod tests {
         assert_relative_eq!(mean_1 - mean_0, 100.0, epsilon = 0.1);
         assert_relative_eq!(mean_2 - mean_0, 200.0, epsilon = 0.1);
     }
+
+    #[test]
+    fn test_generate_sensor_noise_always_positive() {
+        // Test that noise values are always positive, even with zero exposure time
+        let shape = (50, 50);
+        let read_noise = 5.0;
+        let dark_current = 10.0;
+
+        let sensor = make_tiny_test_sensor(shape, dark_current, read_noise);
+
+        // Test with zero exposure time
+        let zero_exposure = Duration::from_secs(0);
+        let noise_zero = generate_sensor_noise(&sensor, &zero_exposure, Some(42));
+
+        // Check all values are positive
+        for value in noise_zero.iter() {
+            assert!(
+                *value >= 0.0,
+                "Noise should never be negative with zero exposure"
+            );
+        }
+
+        // Test with non-zero exposure time
+        let long_exposure = Duration::from_secs(5);
+        let noise_long = generate_sensor_noise(&sensor, &long_exposure, Some(43));
+
+        // Check all values are positive
+        for value in noise_long.iter() {
+            assert!(
+                *value >= 0.0,
+                "Noise should never be negative with non-zero exposure"
+            );
+        }
+    }
 }
