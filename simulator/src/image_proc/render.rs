@@ -1,9 +1,152 @@
+use std::time::Duration;
+
 use ndarray::Array2;
+use starfield::{catalogs::StarData, RaDec};
+
+use crate::{
+    magnitude_to_electrons, star_math::equatorial_to_pixel, SensorConfig, TelescopeConfig,
+};
+
+use super::generate_sensor_noise;
 
 pub struct StarInFrame {
     pub x: f64,
     pub y: f64,
     pub flux: f64,
+}
+
+pub struct RenderingResult {
+    /// The final rendered image AU quantized etc (u16)
+    pub image: Array2<u16>,
+
+    /// The approximate number of electrons on the sensor including noise
+    /// and max well depth effects.
+    pub electron_image: Array2<f64>,
+
+    /// The noise image (in electron counts)
+    /// This includes read noise, dark current
+    pub noise_image: Array2<f64>,
+
+    /// Pixel coordinates and magnitudes of stars in the image
+    pub pixel_mag: Vec<(f64, f64, f64)>, // x, y, magnitude
+
+    /// Number of pixels that were clipped to maximum well depth
+    /// This is useful for understanding saturation effects
+    pub n_clipped: u32,
+}
+
+/// Create gaussian PSF kernel based on telescope properties
+pub fn approx_airy_pixels(
+    telescope: &TelescopeConfig,
+    sensor: &SensorConfig,
+    wavelength_nm: f64,
+) -> f64 {
+    // Calculate PSF size based on Airy disk
+    let airy_radius_um = telescope.airy_disk_radius_um(wavelength_nm);
+    let airy_radius_px = airy_radius_um / sensor.pixel_size_um;
+
+    println!(
+        "Airy disk radius: {:.2} um, {:.2} px",
+        airy_radius_um, airy_radius_px
+    );
+
+    // Create a Gaussian approximation of the Airy disk
+    // Using sigma ≈ radius/1.22 to approximate Airy disk with Gaussian
+    airy_radius_px / 1.22
+}
+
+/// Render a simulated star field based on star data and telescope parameters
+pub fn render_star_field(
+    stars: &Vec<&StarData>,
+    ra_deg: f64,
+    dec_deg: f64,
+    fov_deg: f64,
+    telescope: &TelescopeConfig,
+    sensor: &SensorConfig,
+    exposure: &Duration,
+    wavelength_nm: f64,
+) -> RenderingResult {
+    // Create image array dimensions
+    let image_width = sensor.width_px as usize;
+    let image_height = sensor.height_px as usize;
+
+    // Create a star field image (in electron counts)
+    let mut image = Array2::zeros((image_height, image_width));
+    let mut to_render: Vec<StarInFrame> = Vec::new();
+
+    let mut xy_mag = Vec::with_capacity(stars.len());
+
+    // Add stars with sub-pixel precision
+    for &star in stars {
+        // Convert position to pixel coordinates (sub-pixel precision)
+        let star_radec = RaDec::from_degrees(star.ra_deg(), star.dec_deg());
+        let center_radec = RaDec::from_degrees(ra_deg, dec_deg);
+        let (x, y) = equatorial_to_pixel(
+            &star_radec,
+            &center_radec,
+            fov_deg,
+            image_width,
+            image_height,
+        );
+
+        xy_mag.push((x, y, star.magnitude));
+
+        // Calculate photon flux using telescope model
+        let electrons = magnitude_to_electrons(star.magnitude, exposure, telescope, sensor);
+
+        // Add star to image with PSF
+        to_render.push(StarInFrame {
+            x,
+            y,
+            flux: electrons,
+        });
+    }
+
+    to_render.sort_by(|a, b| a.flux.partial_cmp(&b.flux).unwrap());
+
+    // Create PSF kernel for the given wavelength
+    let psf = approx_airy_pixels(telescope, sensor, wavelength_nm);
+    add_stars_to_image(&mut image, to_render, psf);
+
+    // Generate sensor noise (read noise and dark current)
+    let noise = generate_sensor_noise(
+        &sensor, &exposure, None, // Use random noise
+    );
+
+    let mut max_well_clipped = 0;
+    // Add sensor noise to the image
+    for ((i, j), &noise_val) in noise.indexed_iter() {
+        image[[i, j]] += noise_val;
+
+        // Clip to maximum well depth
+        if image[[i, j]] > sensor.max_well_depth_e {
+            image[[i, j]] = sensor.max_well_depth_e; // Clip to max well depth
+            max_well_clipped += 1; // Count how many pixels were clipped
+        }
+    }
+
+    // Get the DN per electron conversion factor from the sensor
+    // Calculate max DN value based on sensor bit depth (saturate at sensor's max value)
+    let max_dn = ((1 << sensor.bit_depth) - 1) as f64;
+
+    // Combine conversion, clipping and rounding in a single mapv operation:
+    // 1. Convert from electrons to DN
+    // 2. Clip to valid range (0 to max DN for the sensor bit depth)
+    // 3. Round to nearest integer
+    // 4. Convert to u16
+    let quantized = image.mapv(|x| {
+        let dn = x * sensor.dn_per_electron();
+        let clipped = dn.clamp(0.0, max_dn as f64);
+        clipped.round() as u16
+    });
+
+    RenderingResult {
+        image: quantized,
+        electron_image: image,
+        noise_image: noise,
+        pixel_mag: xy_mag,
+        n_clipped: max_well_clipped,
+    }
 }
 
 /// Adds stars to an image by approximating a Gaussian point spread function (PSF).
@@ -19,7 +162,7 @@ pub struct StarInFrame {
 /// # Examples
 /// ```
 /// use ndarray::Array2;
-/// use simulator::image_proc::electron::{add_stars_to_image, StarInFrame};
+/// use simulator::image_proc::render::{add_stars_to_image, StarInFrame};
 ///
 /// let mut image = Array2::zeros((100, 100));
 /// let stars = vec![StarInFrame { x: 50.0, y: 50.0, flux: 1000.0 }];

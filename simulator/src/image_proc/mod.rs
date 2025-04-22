@@ -7,11 +7,13 @@
 pub mod aabb;
 pub mod centroid;
 pub mod convolve2d;
-pub mod electron;
 pub mod histogram_stretch;
+pub mod image;
 pub mod io;
 pub mod noise;
 pub mod overlay;
+pub mod render;
+pub mod segment;
 pub mod smear;
 pub mod thresholding;
 

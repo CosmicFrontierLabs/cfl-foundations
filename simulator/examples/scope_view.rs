@@ -21,17 +21,23 @@
 //! See --help for detailed options.
 
 use clap::Parser;
+use image::DynamicImage;
 use ndarray::Array2;
-use simulator::hardware::sensor::{models as sensor_models, SensorConfig};
+use simulator::field_diameter;
+use simulator::hardware::sensor::models as sensor_models;
 use simulator::hardware::telescope::{models as telescope_models, TelescopeConfig};
-use simulator::image_proc::electron::{add_stars_to_image, StarInFrame};
 use simulator::image_proc::histogram_stretch::stretch_histogram;
-use simulator::image_proc::{save_u8_image, u16_to_u8_auto_scale, u16_to_u8_scaled};
-use simulator::star_math::{equatorial_to_pixel, save_star_list};
-use simulator::{field_diameter, magnitude_to_electrons};
+use simulator::image_proc::image::array2_to_gray_image;
+use simulator::image_proc::render::{approx_airy_pixels, render_star_field};
+use simulator::image_proc::segment::do_detections;
+use simulator::image_proc::{
+    draw_stars_with_x_markers, save_u8_image, u16_to_u8_auto_scale, u16_to_u8_scaled,
+};
+use simulator::star_math::save_star_list;
 use starfield::catalogs::StarData;
 use starfield::RaDec;
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use viz::histogram::{Histogram, HistogramConfig, Scale};
 
@@ -101,13 +107,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse command line arguments
     let args = Args::parse();
 
-    // Select telescope and sensor models
-    let telescope = match args.telescope.as_str() {
-        "50cm" => telescope_models::DEMO_50CM.clone(),
-        "1m" => telescope_models::FINAL_1M.clone(),
-        "small" => telescope_models::SMALL_50MM.clone(),
-        _ => return Err(format!("Unknown telescope model: {}", args.telescope).into()),
-    };
+    // // Select telescope and sensor models
+    // let telescope = match args.telescope.as_str() {
+    //     "50cm" => telescope_models::DEMO_50CM.clone(),
+    //     "1m" => telescope_models::FINAL_1M.clone(),
+    //     "small" => telescope_models::SMALL_50MM.clone(),
+    //     _ => return Err(format!("Unknown telescope model: {}", args.telescope).into()),
+    // };
 
     let sensor = match args.sensor.as_str() {
         "GSENSE4040BSI" => sensor_models::GSENSE4040BSI.clone(),
@@ -116,6 +122,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "IMX455" => sensor_models::IMX455.clone(),
         _ => return Err(format!("Unknown sensor model: {}", args.sensor).into()),
     };
+
+    // Make a pretend telescope with focal length driven to make 4pix/airy disk
+    let target_airy_disk_um = sensor.pixel_size_um * 4.0; // 4 pixels per Airy disk
+    let aperture = telescope_models::DEMO_50CM.aperture_m;
+    let wavelength_m = args.wavelength * 1e-9; // Convert nm to m
+    let focal_length_m = (target_airy_disk_um * aperture) / (1e6 * 1.22 * wavelength_m);
+
+    let name = format!("{}-{:.2}", telescope_models::DEMO_50CM.name, focal_length_m);
+    let telescope = TelescopeConfig::new(
+        &name,
+        aperture,
+        focal_length_m, // Default focal length, will be overridden by aperture
+        telescope_models::DEMO_50CM.light_efficiency, // Light efficiency
+    );
 
     // Get field diameter (either from parameters or calculate from hardware)
     let fov_deg = field_diameter(&telescope, &sensor);
@@ -208,7 +228,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Render the star field
     println!("Rendering star field...");
-    let image = render_star_field(
+    let render_result = render_star_field(
         &star_refs,
         args.ra,
         args.dec,
@@ -218,6 +238,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &duration,
         args.wavelength,
     );
+
+    // Print some statistics about the rendered image
+    println!(
+        "Total electrons in image: {:.2}e-",
+        render_result.electron_image.sum()
+    );
+    println!(
+        "Total noise in image: {:.2}e-",
+        render_result.noise_image.sum()
+    );
+    println!(
+        "{} pixels were clipped to maximum well depth of {:.2} electrons",
+        render_result.n_clipped, sensor.max_well_depth_e
+    );
+
+    display_electron_histogram(&render_result.electron_image, 25).unwrap();
 
     // Filter stars visible in the field for star list output
     // Write star list to file
@@ -235,7 +271,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Convert u16 image to u8 for saving (normalize by max bit depth value)
     let max_bit_value = (1 << sensor.bit_depth) - 1;
-    let u8_image = u16_to_u8_scaled(&image, max_bit_value);
+    let u8_image = u16_to_u8_scaled(&render_result.image, max_bit_value);
 
     // Save the raw image
     save_u8_image(&u8_image, &args.output)?;
@@ -243,164 +279,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create and save histogram stretched version
     println!("Creating histogram stretched image...");
-    let stretched_image = stretch_histogram(image.view(), 25.0, 75.0);
+    let stretched_image = stretch_histogram(render_result.image.view(), 25.0, 75.0);
 
     // Convert stretched u16 image to u8 using auto-scaling for best contrast
     let u8_stretched = u16_to_u8_auto_scale(&stretched_image);
     save_u8_image(&u8_stretched, &args.output_stretched)?;
     println!("Stretched image saved to: {}", args.output_stretched);
 
-    Ok(())
-}
+    // Only pick stuff that is 5x above the noise floor
+    let mean_noise_elec = render_result
+        .noise_image
+        .mean()
+        .expect("Can't take image mean");
+    let cutoff_value = mean_noise_elec * sensor.dn_per_electron * 5.0; // 5x above noise floor
 
-/// Create gaussian PSF kernel based on telescope properties
-fn approx_airy_pixels(
-    telescope: &TelescopeConfig,
-    sensor: &SensorConfig,
-    wavelength_nm: f64,
-) -> f64 {
-    // Calculate PSF size based on Airy disk
-    let airy_radius_um = telescope.airy_disk_radius_um(wavelength_nm);
-    let airy_radius_px = airy_radius_um / sensor.pixel_size_um;
-
-    println!(
-        "Airy disk radius: {:.2} um, {:.2} px",
-        airy_radius_um, airy_radius_px
+    // Do the star detection
+    let detected_stars = do_detections(
+        &render_result.image,
+        None, // Can tweak this setting later
+        Some(cutoff_value),
     );
+    println!("Detected {} stars in the image", detected_stars.len());
 
-    // Create a Gaussian approximation of the Airy disk
-    // Using sigma ≈ radius/1.22 to approximate Airy disk with Gaussian
-    airy_radius_px / 1.22
-}
+    // Use light blue (135, 206, 250) for X markers
+    let vis_image = array2_to_gray_image(&u8_image);
+    let dyn_image = DynamicImage::ImageLuma8(vis_image);
 
-/// Render a simulated star field based on star data and telescope parameters
-fn render_star_field(
-    stars: &Vec<&StarData>,
-    ra_deg: f64,
-    dec_deg: f64,
-    fov_deg: f64,
-    telescope: &TelescopeConfig,
-    sensor: &SensorConfig,
-    exposure: &Duration,
-    wavelength_nm: f64,
-) -> Array2<u16> {
-    // Create image array dimensions
-    let image_width = sensor.width_px as usize;
-    let image_height = sensor.height_px as usize;
+    // Mutate the detected stars into the shape needed by rendering
+    let mut label_map = HashMap::new();
 
-    // Create PSF kernel for the given wavelength
-    let psf = approx_airy_pixels(telescope, sensor, wavelength_nm);
-
-    println!("Rendering stars...");
-
-    // Create a star field image (in electron counts)
-    let mut image = Array2::zeros((image_height, image_width));
-    let mut to_render: Vec<StarInFrame> = Vec::new();
-
-    // Add stars with sub-pixel precision
-    for &star in stars {
-        // Convert position to pixel coordinates (sub-pixel precision)
-        let star_radec = RaDec::from_degrees(star.ra_deg(), star.dec_deg());
-        let center_radec = RaDec::from_degrees(ra_deg, dec_deg);
-        let (x, y) = equatorial_to_pixel(
-            &star_radec,
-            &center_radec,
-            fov_deg,
-            image_width,
-            image_height,
-        );
-
-        // Skip if outside image bounds
-        if x < 0.0 || y < 0.0 || x >= image_width as f64 || y >= image_height as f64 {
-            println!(
-                "Star {} at RA: {}, DEC: {} is outside image bounds (x: {}, y: {})",
-                star.id,
-                star.ra_deg(),
-                star.dec_deg(),
-                x,
-                y
-            );
-            continue;
-        }
-
-        // Calculate photon flux using telescope model
-        let electrons = magnitude_to_electrons(star.magnitude, exposure, telescope, sensor);
-
-        // Add star to image with PSF
-        to_render.push(StarInFrame {
-            x,
-            y,
-            flux: electrons,
-        });
-    }
-
-    to_render.sort_by(|a, b| a.flux.partial_cmp(&b.flux).unwrap());
-
-    add_stars_to_image(&mut image, to_render, psf);
-
-    // Report the number of electrons before noise
-    let total_electrons: f64 = image.sum();
-    println!(
-        "Total electrons in image before noise: {:.2}e-",
-        total_electrons
-    );
-
-    // Add noise
-    println!("Adding noise...");
-
-    // Generate sensor noise (read noise and dark current)
-    let noise = simulator::image_proc::generate_sensor_noise(
-        &sensor, &exposure, None, // Use random noise
-    );
-
-    // Print the noise statistics
-    let total_noise = noise.sum();
-    println!("Total noise in image: {:.2}e-", total_noise);
-
-    println!("Approximate SNR: {:.2}", total_electrons / total_noise);
-
-    let mut max_well_clipped = 0;
-    // Add sensor noise to the image
-    for ((i, j), &noise_val) in noise.indexed_iter() {
-        image[[i, j]] += noise_val;
-
-        // Clip possibly negative values
-        if image[[i, j]] < 0.0 {
-            image[[i, j]] = 0.0; // Clip negative values to zero
-        }
-
-        // Clip to maximum well depth
-        if image[[i, j]] > sensor.max_well_depth_e {
-            image[[i, j]] = sensor.max_well_depth_e; // Clip to max well depth
-            max_well_clipped += 1; // Count how many pixels were clipped
-        }
-    }
-    // The image now contains electron counts
-
-    // Print how many pixels were clipped to max well depth
-    println!(
-        "{} pixels were clipped to maximum well depth of {:.2} electrons",
-        max_well_clipped, sensor.max_well_depth_e
-    );
-
-    display_electron_histogram(&image, 25).unwrap();
-
-    // Get the DN per electron conversion factor from the sensor
-    // Calculate max DN value based on sensor bit depth (saturate at sensor's max value)
-    let max_dn = ((1 << sensor.bit_depth) - 1) as f64;
-
-    // Combine conversion, clipping and rounding in a single mapv operation:
-    // 1. Convert from electrons to DN
-    // 2. Clip to valid range (0 to max DN for the sensor bit depth)
-    // 3. Round to nearest integer
-    // 4. Convert to u16
-    let quantized = image.mapv(|x| {
-        let dn = x * sensor.dn_per_electron();
-        let clipped = dn.clamp(0.0, max_dn as f64);
-        clipped.round() as u16
+    detected_stars.iter().for_each(|detect| {
+        label_map.insert(format!("{:.1}", detect.flux), (detect.y, detect.x, 10.0));
     });
 
-    quantized
+    let x_markers_image = draw_stars_with_x_markers(
+        &dyn_image,
+        &label_map,
+        (135, 206, 250), // Light blue color
+        1.0,             // Arm length factor (1.0 = full diameter)
+    );
+
+    let x_markers_path = Path::new("stars_with_x_markers.png");
+    x_markers_image
+        .save(&x_markers_path)
+        .expect("Failed to save image with X markers");
+
+    Ok(())
 }
 
 /// Display a histogram of electron counts in the image
