@@ -298,6 +298,104 @@ pub fn iterative_closest_point(
     }
 }
 
+/// Trait for objects that can be located in a 2D Cartesian coordinate system.
+pub trait Locatable_2D {
+    /// Returns the x-coordinate of the object.
+    fn x(&self) -> f64;
+
+    /// Returns the y-coordinate of the object.
+    fn y(&self) -> f64;
+}
+
+/// Implement Locatable for nalgebra::Vector2<f64>
+impl Locatable_2D for Vector2<f64> {
+    fn x(&self) -> f64 {
+        self.x
+    }
+
+    fn y(&self) -> f64 {
+        self.y
+    }
+}
+
+/// Performs ICP matching between two sets of Locatable_2D objects and returns the matched pairs.
+///
+/// This function converts the input objects into point clouds, runs the ICP algorithm,
+/// and then maps the resulting index pairs back to the original objects.
+///
+/// # Type Parameters
+/// * `R1`: The type of the source objects, must implement `Locatable_2D` and `Clone`.
+/// * `R2`: The type of the target objects, must implement `Locatable_2D` and `Clone`.
+///
+/// # Arguments
+/// * `source` - A slice of source objects.
+/// * `target` - A slice of target objects.
+/// * `max_iterations` - Maximum number of iterations for the ICP algorithm.
+/// * `convergence_threshold` - Convergence threshold for the ICP algorithm.
+///
+/// # Returns
+/// * `Vec<(R1, R2)>` - A vector of tuples containing the cloned matched pairs.
+///   Returns an empty vector if the input slices cannot be converted to valid point clouds
+///   (e.g., if they are empty or conversion to `Array2` fails).
+pub fn icp_match_objects<R1, R2>(
+    source: &[R1],
+    target: &[R2],
+    max_iterations: usize,
+    convergence_threshold: f64,
+) -> Vec<(R1, R2)>
+where
+    R1: Locatable_2D + Clone,
+    R2: Locatable_2D + Clone,
+{
+    if source.is_empty() || target.is_empty() {
+        return Vec::new();
+    }
+
+    // Convert source Locatable_2D objects to ndarray::Array2<f64>
+    let source_points_vec: Vec<f64> = source.iter().flat_map(|p| [p.x(), p.y()]).collect();
+    let source_points = match Array2::from_shape_vec((source.len(), 2), source_points_vec) {
+        Ok(arr) => arr,
+        Err(_) => return Vec::new(), // Return empty if conversion fails
+    };
+
+    // Convert target Locatable_2D objects to ndarray::Array2<f64>
+    let target_points_vec: Vec<f64> = target.iter().flat_map(|p| [p.x(), p.y()]).collect();
+    let target_points = match Array2::from_shape_vec((target.len(), 2), target_points_vec) {
+        Ok(arr) => arr,
+        Err(_) => return Vec::new(), // Return empty if conversion fails
+    };
+
+    // Run the ICP algorithm
+    let result = iterative_closest_point(
+        &source_points,
+        &target_points,
+        max_iterations,
+        convergence_threshold,
+    );
+
+    // Map indices back to original objects (cloned)
+    let matched_objects: Vec<(R1, R2)> = result
+        .matches
+        .iter()
+        .filter_map(|&(src_idx, tgt_idx)| {
+            // Ensure indices are within bounds before accessing
+            if src_idx < source.len() && tgt_idx < target.len() {
+                Some((source[src_idx].clone(), target[tgt_idx].clone()))
+            } else {
+                // Log error or handle defensively if indices are out of bounds
+                // This shouldn't happen with correct ICP implementation.
+                eprintln!(
+                    "Warning: ICP returned out-of-bounds index pair ({}, {})",
+                    src_idx, tgt_idx
+                );
+                None
+            }
+        })
+        .collect();
+
+    matched_objects
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -735,5 +833,264 @@ mod tests {
             result.rotation_quat.y,
             result.rotation_quat.z
         );
+    }
+
+    /// Simple struct implementing Locatable_2D for testing icp_match_objects
+    #[derive(Debug, Clone, PartialEq)]
+    struct PointObject {
+        id: usize,
+        x_coord: f64,
+        y_coord: f64,
+    }
+
+    impl Locatable_2D for PointObject {
+        fn x(&self) -> f64 {
+            self.x_coord
+        }
+        fn y(&self) -> f64 {
+            self.y_coord
+        }
+    }
+
+    #[test]
+    fn test_icp_match_objects_identity() {
+        let source_objs = vec![
+            PointObject {
+                id: 0,
+                x_coord: 0.0,
+                y_coord: 0.0,
+            },
+            PointObject {
+                id: 1,
+                x_coord: 1.0,
+                y_coord: 0.0,
+            },
+            PointObject {
+                id: 2,
+                x_coord: 0.0,
+                y_coord: 1.0,
+            },
+        ];
+        let target_objs = source_objs.clone(); // Identical set
+
+        let matches = icp_match_objects(&source_objs, &target_objs, 10, 1e-6);
+
+        assert_eq!(matches.len(), 3);
+        // Check if each source object is matched with its identical target object
+        for (src, tgt) in &matches {
+            assert_eq!(src.id, tgt.id);
+            assert_eq!(src.x_coord, tgt.x_coord);
+            assert_eq!(src.y_coord, tgt.y_coord);
+        }
+    }
+
+    #[test]
+    fn test_icp_match_objects_translation() {
+        let source_objs = vec![
+            PointObject {
+                id: 0,
+                x_coord: 0.0,
+                y_coord: 0.0,
+            },
+            PointObject {
+                id: 1,
+                x_coord: 1.0,
+                y_coord: 1.0,
+            },
+            PointObject {
+                id: 2,
+                x_coord: 0.5,
+                y_coord: 5.0,
+            }, // Asymmetric
+        ];
+        let translation = Vector2::new(5.0, -2.0);
+        let target_objs: Vec<PointObject> = source_objs
+            .iter()
+            .map(|p| PointObject {
+                id: p.id,
+                x_coord: p.x_coord + translation.x,
+                y_coord: p.y_coord + translation.y,
+            })
+            .collect();
+
+        let matches = icp_match_objects(&source_objs, &target_objs, 20, 1e-6);
+
+        assert_eq!(matches.len(), 3);
+        // Check if objects are matched correctly by ID, assuming ICP finds the correct correspondence
+        let mut matched_ids: Vec<(usize, usize)> =
+            matches.iter().map(|(s, t)| (s.id, t.id)).collect();
+        matched_ids.sort(); // Sort by source ID for consistent comparison
+        assert_eq!(matched_ids, vec![(0, 0), (1, 1), (2, 2)]);
+    }
+
+    #[test]
+    fn test_icp_match_objects_rotation() {
+        let source_objs = vec![
+            PointObject {
+                id: 0,
+                x_coord: 0.0,
+                y_coord: 0.0,
+            },
+            PointObject {
+                id: 1,
+                x_coord: 2.0,
+                y_coord: 0.0,
+            },
+            PointObject {
+                id: 2,
+                x_coord: 0.0,
+                y_coord: 1.0,
+            }, // Asymmetric
+        ];
+        let angle = PI / 2.0 / 45.0; // 2 degrees
+        let rotation = rotation_matrix(angle);
+        let target_objs: Vec<PointObject> = source_objs
+            .iter()
+            .map(|p| {
+                let point = Vector2::new(p.x_coord, p.y_coord);
+                let rotated_point = rotation * point;
+                PointObject {
+                    id: p.id,
+                    x_coord: rotated_point.x,
+                    y_coord: rotated_point.y,
+                }
+            })
+            .collect();
+
+        let matches = icp_match_objects(&source_objs, &target_objs, 20, 1e-6);
+
+        assert_eq!(matches.len(), 3);
+        let mut matched_ids: Vec<(usize, usize)> =
+            matches.iter().map(|(s, t)| (s.id, t.id)).collect();
+        matched_ids.sort();
+        assert_eq!(matched_ids, vec![(0, 0), (1, 1), (2, 2)]);
+    }
+
+    #[test]
+    fn test_icp_match_objects_rotation_translation() {
+        let source_objs = vec![
+            PointObject {
+                id: 0,
+                x_coord: 1.0,
+                y_coord: 1.0,
+            },
+            PointObject {
+                id: 1,
+                x_coord: 3.0,
+                y_coord: 1.0,
+            },
+            PointObject {
+                id: 2,
+                x_coord: 1.0,
+                y_coord: 2.0,
+            }, // Asymmetric
+        ];
+        let angle = -PI / 2.0 / 45.0; // -2 degrees
+        let rotation = rotation_matrix(angle);
+        let translation = Vector2::new(-1.0, 0.0002);
+        let target_objs: Vec<PointObject> = source_objs
+            .iter()
+            .map(|p| {
+                let point = Vector2::new(p.x_coord, p.y_coord);
+                let transformed_point = rotation * point + translation;
+                PointObject {
+                    id: p.id,
+                    x_coord: transformed_point.x,
+                    y_coord: transformed_point.y,
+                }
+            })
+            .collect();
+
+        let matches = icp_match_objects(&source_objs, &target_objs, 30, 1e-6);
+
+        assert_eq!(matches.len(), 3);
+        let mut matched_ids: Vec<(usize, usize)> =
+            matches.iter().map(|(s, t)| (s.id, t.id)).collect();
+        matched_ids.sort();
+        assert_eq!(matched_ids, vec![(0, 0), (1, 1), (2, 2)]);
+    }
+
+    #[test]
+    fn test_icp_match_objects_empty_input() {
+        let source_objs: Vec<PointObject> = vec![];
+        let target_objs = vec![
+            PointObject {
+                id: 0,
+                x_coord: 1.0,
+                y_coord: 1.0,
+            },
+            PointObject {
+                id: 1,
+                x_coord: 2.0,
+                y_coord: 2.0,
+            },
+        ];
+
+        let matches_empty_source = icp_match_objects(&source_objs, &target_objs, 10, 1e-6);
+        assert!(matches_empty_source.is_empty());
+
+        let source_objs_non_empty = vec![
+            PointObject {
+                id: 0,
+                x_coord: 1.0,
+                y_coord: 1.0,
+            },
+            PointObject {
+                id: 1,
+                x_coord: 2.0,
+                y_coord: 2.0,
+            },
+        ];
+        let target_objs_empty: Vec<PointObject> = vec![];
+        let matches_empty_target =
+            icp_match_objects(&source_objs_non_empty, &target_objs_empty, 10, 1e-6);
+        assert!(matches_empty_target.is_empty());
+
+        let matches_both_empty = icp_match_objects(&source_objs, &target_objs_empty, 10, 1e-6);
+        assert!(matches_both_empty.is_empty());
+    }
+
+    #[test]
+    fn test_icp_match_objects_different_sizes() {
+        // Target has one extra point
+        let source_objs = vec![
+            PointObject {
+                id: 0,
+                x_coord: 0.0,
+                y_coord: 0.0,
+            },
+            PointObject {
+                id: 1,
+                x_coord: 1.0,
+                y_coord: 0.0,
+            },
+        ];
+        let target_objs = vec![
+            PointObject {
+                id: 10,
+                x_coord: 0.1,
+                y_coord: 0.1,
+            }, // Close to source 0
+            PointObject {
+                id: 11,
+                x_coord: 1.1,
+                y_coord: -0.1,
+            }, // Close to source 1
+            PointObject {
+                id: 12,
+                x_coord: 5.0,
+                y_coord: 5.0,
+            }, // Extra point
+        ];
+
+        let matches = icp_match_objects(&source_objs, &target_objs, 10, 1e-6);
+
+        // ICP matches each source point to its closest target point
+        assert_eq!(matches.len(), 2);
+        let mut matched_ids: Vec<(usize, usize)> =
+            matches.iter().map(|(s, t)| (s.id, t.id)).collect();
+        matched_ids.sort();
+        // Expect source 0 to match target 10, source 1 to match target 11
+        assert_eq!(matched_ids, vec![(0, 10), (1, 11)]);
     }
 }
