@@ -77,6 +77,10 @@ struct Args {
     #[arg(long, default_value = "GSENSE4040BSI")]
     sensor: String,
 
+    /// Number of experiments to run
+    #[arg(long, default_value_t = 100)]
+    experiments: u32,
+
     /// Enable debug output like electron histograms
     #[arg(long, default_value_t = false)]
     debug: bool,
@@ -132,7 +136,7 @@ fn run_experiment(
     exposure: Duration,
     experiment_num: u32,
     debug: bool,
-) {
+) -> thread::JoinHandle<()> {
     let output_path = Path::new("experiment_output");
 
     // Ensure the output directory exists
@@ -183,8 +187,8 @@ fn run_experiment(
         Some(cutoff_value),
     );
 
-    // Use threaded version of save_image_outputs
-    save_image_outputs_threaded(
+    // Use threaded version of save_image_outputs and collect the thread handle
+    let render_thread = save_image_outputs_threaded(
         &render_result,
         sensor,
         &detected_stars,
@@ -242,6 +246,8 @@ fn run_experiment(
         .open(&log_file_path)
         .and_then(|mut file| file.write_all(log_entry.as_bytes()))
         .expect("Failed to write to log file");
+
+    render_thread
 }
 
 /// Main function for telescope view simulation
@@ -271,12 +277,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Track all threads so we can join them at the end
+    let mut render_threads = Vec::new();
+
     // Load the catalog....this requires some serious RAM
     println!("Loading catalog from: {}", args.catalog.display());
     let catalog = BinaryCatalog::load(args.catalog).expect("Could not load catalog?");
     println!("Loaded catalog with {} stars", catalog.len());
+    println!("Running {} experiments", args.experiments);
 
-    for i in 0..100 {
+    for i in 0..args.experiments {
         // Generate a random  RaDec Pair:
         let ra = rand::random::<f64>() * 360.0; // Random RA in degrees
         let dec = rand::random::<f64>() * 0.0; // Random Dec in degrees
@@ -292,7 +302,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "Running experiment {} with sensor: {}, telescope: {}",
                 i, sensor.name, scope.name
             );
-            run_experiment(
+            let thread = run_experiment(
                 sensor,
                 scope,
                 ra_dec,
@@ -301,6 +311,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 i,
                 args.debug,
             );
+            render_threads.push(thread);
+        }
+    }
+
+    // Wait for all rendering threads to complete
+    println!(
+        "Waiting for {} rendering threads to complete...",
+        render_threads.len()
+    );
+    for thread in render_threads {
+        if let Err(e) = thread.join() {
+            eprintln!("Error joining render thread: {:?}", e);
         }
     }
 
@@ -318,13 +340,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// * `detected_stars` - Vector of detected star objects
 /// * `output_path` - Directory where output files will be saved
 /// * `prefix` - Filename prefix for all output files
+///
+/// # Returns
+/// * Thread join handle that can be collected and joined later
 fn save_image_outputs_threaded(
     render_result: &RenderingResult,
     sensor: &SensorConfig,
     detected_stars: &Vec<StarDetection>,
     output_path: &Path,
     prefix: &str,
-) {
+) -> thread::JoinHandle<()> {
     thread::spawn({
         let render_result_clone = render_result.clone();
         let sensor_clone = sensor.clone();
@@ -341,7 +366,7 @@ fn save_image_outputs_threaded(
                 &prefix,
             );
         }
-    });
+    })
 }
 
 /// Saves multiple image outputs from rendered star field data
