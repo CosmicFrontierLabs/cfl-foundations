@@ -74,6 +74,14 @@ impl SensorConfig {
         }
     }
 
+    /// Create a duplicate sensor configuration with new dimensions
+    pub fn with_dimensions(&self, width_px: u32, height_px: u32) -> Self {
+        let mut clone = self.clone();
+        clone.width_px = width_px;
+        clone.height_px = height_px;
+        clone
+    }
+
     /// Get quantum efficiency at specified wavelength (nm)
     pub fn qe_at_wavelength(&self, wavelength_nm: u32) -> f64 {
         // Convert u32 to f64 for our QuantumEfficiency type
@@ -136,6 +144,37 @@ mod tests {
 
         assert_eq!(width_um, 1024.0 * 5.5);
         assert_eq!(height_um, 768.0 * 5.5);
+    }
+
+    #[test]
+    fn test_with_dimensions() {
+        let qe = create_flat_qe(0.5);
+        let original = SensorConfig::new("Test", qe, 1024, 768, 5.5, 2.0, 0.01, 8, 3.0, 1e20, 30.0);
+
+        // Create resized sensor
+        let resized = original.with_dimensions(2048, 1536);
+
+        // Check new dimensions
+        assert_eq!(resized.width_px, 2048);
+        assert_eq!(resized.height_px, 1536);
+
+        // Check dimensions in microns
+        let (width_um, height_um) = resized.dimensions_um();
+        assert_eq!(width_um, 2048.0 * 5.5);
+        assert_eq!(height_um, 1536.0 * 5.5);
+
+        // Verify other properties remain the same
+        assert_eq!(resized.name, original.name);
+        assert_eq!(resized.pixel_size_um, original.pixel_size_um);
+        assert_eq!(resized.read_noise_e, original.read_noise_e);
+        assert_eq!(resized.dark_current_e_p_s, original.dark_current_e_p_s);
+        assert_eq!(resized.bit_depth, original.bit_depth);
+        assert_eq!(resized.dn_per_electron, original.dn_per_electron);
+        assert_eq!(resized.max_well_depth_e, original.max_well_depth_e);
+        assert_eq!(resized.max_frame_rate_fps, original.max_frame_rate_fps);
+
+        // Verify QE stays the same
+        assert_relative_eq!(resized.qe_at_wavelength(500), 0.5, epsilon = 1e-5);
     }
 }
 
