@@ -19,3 +19,4 @@ target/
 # Project specific
 test_output/
 histogram_output.txt
+**/.claude/settings.local.json

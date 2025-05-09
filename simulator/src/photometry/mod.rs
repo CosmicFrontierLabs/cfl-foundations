@@ -1,5 +1,6 @@
 //! Photometry models and utilities
 
+pub mod gaia;
 pub mod human;
 pub mod quantum_efficiency;
 pub mod spectrum;
