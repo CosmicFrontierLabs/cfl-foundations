@@ -6,6 +6,7 @@
 pub mod icp;
 pub mod motion;
 pub mod parallel;
+pub mod psd;
 pub mod quaternion;
 
 pub use icp::{iterative_closest_point, ICPResult};
