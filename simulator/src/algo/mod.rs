@@ -4,6 +4,7 @@
 //! extraction, quaternion mathematics, motion models, and other computational tasks.
 
 pub mod icp;
+pub mod misc;
 pub mod motion;
 pub mod parallel;
 pub mod psd;
