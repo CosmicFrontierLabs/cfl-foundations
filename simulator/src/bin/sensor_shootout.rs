@@ -49,6 +49,25 @@ use std::thread;
 use std::time::Duration;
 use viz::histogram::{Histogram, HistogramConfig, Scale};
 
+/// Parse a coordinate pair in the format "lat,lon"
+fn parse_coordinate_pair(s: &str) -> Result<(f64, f64), String> {
+    let parts: Vec<&str> = s.split(',').collect();
+    if parts.len() != 2 {
+        return Err("Coordinate must be in format 'lat,lon'".to_string());
+    }
+
+    let lat = parts[0]
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| "Invalid latitude value".to_string())?;
+    let lon = parts[1]
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| "Invalid longitude value".to_string())?;
+
+    Ok((lat, lon))
+}
+
 /// Command line arguments for telescope view simulation
 #[derive(Parser, Debug)]
 #[command(
@@ -76,6 +95,10 @@ struct Args {
     /// Enable debug output like electron histograms
     #[arg(long, default_value_t = false)]
     debug: bool,
+
+    /// Zodiacal coordinate as latitude,longitude in degrees
+    #[arg(long, default_value = "45.0,45.0", value_parser = parse_coordinate_pair)]
+    zodiacal_coordinate: (f64, f64),
 }
 
 /// Prints histogram of star magnitudes

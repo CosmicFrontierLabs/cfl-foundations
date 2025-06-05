@@ -2,66 +2,76 @@
 //!
 //! This module provides functionality for interpolating zodiacal light data.
 //! It implements a bilinear interpolation approach for estimating zodiacal light brightness
-//! at arbitrary ecliptic coordinates.
-//! It uses the data from here: https://etc.stsci.edu/etcstatic/users_guide/1_ref_9_background.html#zodiacal-light
-//! This data in turn is derived from the work of Leinert et al. (1998) and is available at:
-//! https://doi.org/10.1051/aas:1998105
+//! at arbitrary ecliptic coordinates based on angular separation from the sun.
+//!
+//! Data source: Leinert et al. (1998) Table 16, as implemented in NASA's Dorado sensitivity model:
+//! https://github.com/nasa/dorado-sensitivity/blob/main/dorado/sensitivity/data/leinert_zodi.txt
+//! Original paper: https://doi.org/10.1051/aas:1998105
+
 use ndarray::Array2;
 use thiserror::Error;
+
+use crate::photometry::STISZodiacalSpectrum;
 
 /// Errors that can occur when working with zodiacal light data
 #[derive(Error, Debug)]
 pub enum ZodicalError {
-    #[error("Coordinates out of range: ecliptic longitude {0}, ecliptic latitude {1}")]
+    #[error("Coordinates out of range: elongation {0}°, ecliptic latitude {1}°")]
     OutOfRange(f64, f64),
 
     #[error("Interpolation error: {0}")]
     InterpolationError(String),
 }
 
-/// Represents zodiacal light brightness data as a function of ecliptic coordinates
+/// Represents zodiacal light brightness data as a function of angular separation from the sun
 pub struct ZodicalLight {
-    /// The underlying data table containing brightness values in magnitudes per square arcsecond
+    /// The underlying data table containing brightness values in S10 units (10th magnitude stars per square degree)
     data: Array2<f64>,
 }
 
-// Hardcoded ecliptic coordinate grids
-const LONGITUDES: [f64; 20] = [
-    0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0, 60.0, 75.0, 90.0, 105.0, 120.0,
+// Leinert et al. (1998) Table 16 coordinate grids
+// Ecliptic latitudes (degrees from ecliptic plane)
+
+// Angular distances from sun (degrees) - elongation angles
+// NOTE(meawoppl) - we manually added the last row (180deg elongation) to match the augmentation
+// that is performed in the original Dorado model.
+const LATITUDES: [f64; 11] = [
+    0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 45.0, 60.0, 75.0, 90.0,
+];
+const ELONGATIONS: [f64; 19] = [
+    0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0, 60.0, 75.0, 90.0, 105.0, 120.0,
     135.0, 150.0, 165.0, 180.0,
 ];
 
-const LATITUDES: [f64; 13] = [
-    0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 45.0, 50.0, 60.0, 75.0, 90.0,
-];
-
-// Hardcoded data table (embedded at compile time)
-// Each row corresponds to an ecliptic longitude
-// Each column corresponds to an ecliptic latitude
-// format-off
+// Leinert et al. (1998) Table 16 - Zodiacal light brightness in S10 units
+// (10th magnitude stars per square degree)
+// Each row corresponds to an ecliptic latitude (0° to 105°)
+// Each column corresponds to an elongation angle from sun (0° to 75°)
+// inf values represent areas too close to sun for measurement
 #[rustfmt::skip]
-fn zodical_raw_data() -> [[f64; 13]; 20] {
+fn zodical_raw_data() -> [[f64; 11]; 19] {
+    let inf = f64::INFINITY;
+
     [
-        [ f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, 22.0708, 22.5136, 22.9538, 23.2298],
-        [ f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, 22.0816, 22.5136, 22.9538, 23.2298],
-        [ f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, 22.1033, 22.5210, 22.9538, 23.2298],
-        [ f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, 22.1454, 22.5360, 22.9538, 23.2298],
-        [ f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, 22.2004, 22.5743, 22.9649, 23.2298],
-        [ f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, 22.0808,  22.2586, 22.6141, 22.9762, 23.2298],
-        [ f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, 22.1578,  22.3237, 22.6554, 23.0107, 23.2298],
-        [ f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, 21.9203,  22.2350,  22.3924, 22.7071, 23.0224, 23.2298],
-        [ f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, 21.8257,  22.0287,  22.3181,  22.4628, 22.7522, 23.0343, 23.2298],
-        [ f64::NAN, f64::NAN, 21.0810,  21.3356,  21.5717,  21.7872,  21.9545,  22.1379,  22.3948,  22.5232, 22.7801, 23.0707, 23.2298],
-        [ 20.8432,  21.0663,  21.3194,  21.5397,  21.7408,  21.9486,  22.0833,  22.2472,  22.4715,  22.5837, 22.8080, 23.1071, 23.2298],
-        [ 21.1844,  21.3356,  21.5842,  21.7872,  21.9859,  22.1525,  22.2937,  22.4437,  22.6304,  22.7237, 22.9104, 23.1212, 23.2298],
-        [ 21.6258,  21.6965,  21.8737,  22.0611,  22.2180,  22.3621,  22.4989,  22.6319,  22.7801,  22.8542, 23.0024, 23.1607, 23.2298],
-        [ 21.9155,  21.9768,  22.0660,  22.2350,  22.3948,  22.5284,  22.6470,  22.7699,  22.9104,  22.9807, 23.1212, 23.2016, 23.2298],
-        [ 22.1315,  22.1419,  22.2124,  22.3686,  22.5136,  22.6387,  22.7614,  22.8912,  22.9990,  23.0529, 23.1607, 23.2298, 23.2298],
-        [ 22.2639,  22.2757,  22.3305,  22.4844,  22.5980,  22.7071,  22.8186,  22.9646,  23.0707,  23.1237, 23.2298, 23.2736, 23.2298],
-        [ 22.3181,  22.3243,  22.3948,  22.5284,  22.6304,  22.7339,  22.8483,  22.9224,  23.0707,  23.1237, 23.2298, 23.2885, 23.2298],
-        [ 22.3181,  22.3243,  22.4014,  22.5210,  22.6060,  22.6896,  22.7801,  22.8639,  22.9990,  23.0665, 23.2016, 23.3037, 23.2298],
-        [ 22.2180,  22.2407,  22.3181,  22.4014,  22.4989,  22.5743,  22.6554,  22.7435,  22.9104,  22.9938, 23.1607, 23.3037, 23.2298],
-        [ 22.0418,  22.1315,  22.2236,  22.3243,  22.4216,  22.5210,  22.6304,  22.7348,  22.8998,  22.9823, 23.1473, 23.3037, 23.2298],
+        [inf,    inf,    inf,    2450.0, 1260.0, 770.0, 500.0, 215.0, 117.0, 78.0, 60.0],
+        [inf,    inf,    inf,    2300.0, 1200.0, 740.0, 490.0, 212.0, 117.0, 78.0, 60.0],
+        [inf,    inf,    3700.0, 1930.0, 1070.0, 675.0, 460.0, 206.0, 116.0, 78.0, 60.0],
+        [9000.0, 5300.0, 2690.0, 1450.0, 870.0,  590.0, 410.0, 196.0, 114.0, 78.0, 60.0],
+        [5000.0, 3500.0, 1880.0, 1100.0, 710.0,  495.0, 355.0, 185.0, 110.0, 77.0, 60.0],
+        [3000.0, 2210.0, 1350.0, 860.0,  585.0,  425.0, 320.0, 174.0, 106.0, 76.0, 60.0],
+        [1940.0, 1460.0, 955.0,  660.0,  480.0,  365.0, 285.0, 162.0, 102.0, 74.0, 60.0],
+        [1290.0, 990.0,  710.0,  530.0,  400.0,  310.0, 250.0, 151.0,  98.0, 73.0, 60.0],
+        [925.0,  735.0,  545.0,  415.0,  325.0,  264.0, 220.0, 140.0,  94.0, 72.0, 60.0],
+        [710.0,  570.0,  435.0,  345.0,  278.0,  228.0, 195.0, 130.0,  91.0, 70.0, 60.0],
+        [395.0,  345.0,  275.0,  228.0,  190.0,  163.0, 143.0, 105.0,  81.0, 67.0, 60.0],
+        [264.0,  248.0,  210.0,  177.0,  153.0,  134.0, 118.0,  91.0,  73.0, 64.0, 60.0],
+        [202.0,  196.0,  176.0,  151.0,  130.0,  115.0, 103.0,  81.0,  67.0, 62.0, 60.0],
+        [166.0,  164.0,  154.0,  133.0,  117.0,  104.0,  93.0,  75.0,  64.0, 60.0, 60.0],
+        [147.0,  145.0,  138.0,  120.0,  108.0,   98.0,  88.0,  70.0,  60.0, 58.0, 60.0],
+        [140.0,  139.0,  130.0,  115.0,  105.0,   95.0,  86.0,  70.0,  60.0, 57.0, 60.0],
+        [140.0,  139.0,  129.0,  116.0,  107.0,   99.0,  91.0,  75.0,  62.0, 56.0, 60.0],
+        [153.0,  150.0,  140.0,  129.0,  118.0,  110.0, 102.0,  81.0,  64.0, 56.0, 60.0],
+        [180.0,  166.0,  152.0,  139.0,  127.0,  116.0, 105.0,  82.0,  65.0, 56.0, 60.0],
     ]
 }
 
@@ -69,10 +79,14 @@ impl ZodicalLight {
     /// Create a new ZodicalLight instance with the embedded data
     pub fn new() -> Self {
         // Convert the hardcoded 2D array to an ndarray::Array2
-        let mut data = Array2::zeros((LONGITUDES.len(), LATITUDES.len()));
-        for (i, row) in zodical_raw_data().iter().enumerate() {
-            for (j, &val) in row.iter().enumerate() {
-                data[[i, j]] = val;
+        // Raw data is organized as [elongation][latitude], but we want [latitude][elongation]
+        // So we transpose during construction
+        let mut data = Array2::zeros((LATITUDES.len(), ELONGATIONS.len()));
+        let raw_data = zodical_raw_data();
+
+        for (elong_idx, elong_row) in raw_data.iter().enumerate() {
+            for (lat_idx, &val) in elong_row.iter().enumerate() {
+                data[[lat_idx, elong_idx]] = val;
             }
         }
 
@@ -128,56 +142,55 @@ impl ZodicalLight {
         Some((lower_idx, upper_idx, 1.0 - weight))
     }
 
-    /// Get the zodiacal light brightness at given helio-ecliptic longitude or elongation
-    /// (sun angle between sun-earth and earth particle) coordinates using bilinear
-    /// interpolation
+    /// Get the zodiacal light brightness at given ecliptic coordinates using bilinear interpolation
     ///
     /// # Arguments
     ///
-    /// * `longitude` - Helio-ecliptic longitude longitude in degrees (0 to 180)
-    /// * `latitude` - Ecliptic latitude in degrees (0 to 90)
+    /// * `elongation` - Angular distance from sun in degrees (0 to 180)
+    /// * `latitude` - Ecliptic latitude in degrees (-90 to 90) (should be symmetric about the ecliptic plane)
     ///
     /// # Returns
     ///
-    /// A `Result` containing either the brightness in magnitudes per square arcsecond or an error
-    pub fn get_brightness(&self, longitude: f64, latitude: f64) -> Result<f64, ZodicalError> {
-        // Find indices and weights for longitude
-        let (lon_idx1, lon_idx2, lon_weight) =
-            Self::find_indices_and_weights(&LONGITUDES, longitude)
-                .ok_or(ZodicalError::OutOfRange(longitude, latitude))?;
+    /// A `Result` containing either the brightness in S10 units (10th magnitude stars per square degree) or an error
+    pub fn get_brightness(&self, elongation: f64, latitude: f64) -> Result<f64, ZodicalError> {
+        // Find indices and weights for elongation
+        let latitude = latitude.abs(); // Ensure latitude is non-negative
+        let (elong_idx1, elong_idx2, elong_weight) =
+            Self::find_indices_and_weights(&ELONGATIONS, elongation)
+                .ok_or(ZodicalError::OutOfRange(elongation, latitude))?;
 
         // Find indices and weights for latitude
         let (lat_idx1, lat_idx2, lat_weight) = Self::find_indices_and_weights(&LATITUDES, latitude)
-            .ok_or(ZodicalError::OutOfRange(longitude, latitude))?;
+            .ok_or(ZodicalError::OutOfRange(elongation, latitude))?;
 
-        // Get the four corner values
-        let q11 = self.data[[lon_idx1, lat_idx1]];
-        let q12 = self.data[[lon_idx1, lat_idx2]];
-        let q21 = self.data[[lon_idx2, lat_idx1]];
-        let q22 = self.data[[lon_idx2, lat_idx2]];
+        // Get the four corner values (data is indexed as [latitude][elongation])
+        let q11 = self.data[[lat_idx1, elong_idx1]];
+        let q12 = self.data[[lat_idx2, elong_idx1]];
+        let q21 = self.data[[lat_idx1, elong_idx2]];
+        let q22 = self.data[[lat_idx2, elong_idx2]];
 
-        // Handle NaN values by using nearest non-NaN value
+        // Handle infinite values by using nearest finite value
         let mut valid_points = Vec::new();
         let mut valid_weights = Vec::new();
 
-        if !q11.is_nan() {
+        if q11.is_finite() {
             valid_points.push(q11);
-            valid_weights.push(lon_weight * lat_weight);
+            valid_weights.push(lat_weight * elong_weight);
         }
 
-        if !q12.is_nan() {
+        if q12.is_finite() {
             valid_points.push(q12);
-            valid_weights.push(lon_weight * (1.0 - lat_weight));
+            valid_weights.push((1.0 - lat_weight) * elong_weight);
         }
 
-        if !q21.is_nan() {
+        if q21.is_finite() {
             valid_points.push(q21);
-            valid_weights.push((1.0 - lon_weight) * lat_weight);
+            valid_weights.push(lat_weight * (1.0 - elong_weight));
         }
 
-        if !q22.is_nan() {
+        if q22.is_finite() {
             valid_points.push(q22);
-            valid_weights.push((1.0 - lon_weight) * (1.0 - lat_weight));
+            valid_weights.push((1.0 - lat_weight) * (1.0 - elong_weight));
         }
 
         // If we have no valid points, return an error
@@ -200,6 +213,40 @@ impl ZodicalLight {
 
         Ok(result)
     }
+
+    pub fn get_brightness_mag_per_square_arcsec(
+        &self,
+        elongation: f64,
+        latitude: f64,
+    ) -> Result<f64, ZodicalError> {
+        // Get brightness in S10 units
+        let s10 = self.get_brightness(elongation, latitude)?;
+
+        // Convert S10 to magnitudes per square arcsecond
+        Ok(10.0 - 2.5 * (s10 / (3600.0 * 3600.0)).log10())
+    }
+
+    pub fn get_spectrum_scale_factor(
+        &self,
+        elongation: f64,
+        latitude: f64,
+    ) -> Result<f64, ZodicalError> {
+        // Get brightness in S10 units
+        let reference = self.get_brightness_mag_per_square_arcsec(180.0, 0.0)?;
+        let s10 = self.get_brightness_mag_per_square_arcsec(elongation, latitude)?;
+        let mag_diff = s10 - reference;
+        Ok(10_f64.powf(-0.4 * mag_diff))
+    }
+
+    pub fn get_zodical_spectrum(
+        &self,
+        elongation: f64,
+        latitude: f64,
+    ) -> Result<STISZodiacalSpectrum, ZodicalError> {
+        // Get the scale factor based on a reference point
+        let scale_factor = self.get_spectrum_scale_factor(elongation, latitude)?;
+        Ok(STISZodiacalSpectrum::new(scale_factor))
+    }
 }
 
 #[cfg(test)]
@@ -207,6 +254,32 @@ mod tests {
     use approx::assert_relative_eq;
 
     use super::*;
+
+    #[test]
+    fn test_dorado_match() {
+        // Running the tests on this branch, yields the following outputs
+        // https://github.com/meawoppl/dorado-sensitivity/tree/mrg-augmneted
+
+        // Input time: 2020-01-01 00:00:00.000
+        // Object ecliptic coords: lon=90.29°, lat=66.56°
+        // Sun ecliptic coords: lon=280.01°, lat=-0.00°
+        // Angular separation from sun: lon=170.28°, lat=66.56°
+        // Raw interpolated result: [23.32617604]
+        // After nan handling: [23.32617604]
+        // Reference value (180°, 0°): 22.143
+        // Relative magnitude: 1.183
+        // Final scale factor: 0.336
+
+        // Test that the Dorado model matches the original data
+        let zodical = ZodicalLight::new();
+
+        // Check a few known points from the original data
+        assert_relative_eq!(
+            zodical.get_spectrum_scale_factor(170.28, 66.56).unwrap(),
+            0.336,
+            epsilon = 0.01
+        );
+    }
 
     #[test]
     fn test_find_indices_and_weights() {
@@ -236,17 +309,19 @@ mod tests {
         let zodical = ZodicalLight::new();
 
         // Test a coordinate with known value (exact match to a grid point)
-        let brightness = zodical.get_brightness(90.0, 50.0).unwrap();
-        assert!((brightness - 22.9807).abs() < 1e-10);
+        // 45° elongation, 60° latitude should give 91.0 S10 (after transposing data)
+        let brightness = zodical.get_brightness(45.0, 60.0).unwrap();
+        assert!((brightness - 91.0).abs() < 1e-10);
 
         // Test interpolation between grid points
-        let brightness = zodical.get_brightness(87.5, 47.5).unwrap();
-        // NOTE(meawoppl) - this is me eyeballing the chart, so high epsilon
-        assert_relative_eq!(brightness, 22.9, epsilon = 0.1);
+        // Between 30° and 45° elongation, between 45° and 60° latitude
+        let brightness = zodical.get_brightness(37.5, 52.5).unwrap();
+        // Expected: interpolation between surrounding values
+        assert!(brightness > 80.0 && brightness < 200.0);
 
         // Test out of range
         assert!(zodical.get_brightness(200.0, 50.0).is_err());
-        assert!(zodical.get_brightness(90.0, 100.0).is_err());
+        assert!(zodical.get_brightness(45.0, 150.0).is_err());
     }
 
     #[test]
@@ -256,22 +331,48 @@ mod tests {
         // Test a grid of points across the valid range
         // This covers the sun exclusion zone and will have a bunch
         // of points on the cusp to stress the interpolation
-        // We expect the brightness to be between 20 and 24 mag
-        for lon in (0..=180).step_by(10) {
-            for lat in (0..=90).step_by(5) {
-                let lon_f64 = lon as f64;
+        // We expect the brightness to be between 40 and 10000 S10 units
+        for elong in (0..=75).step_by(5) {
+            for lat in (0..=105).step_by(5) {
+                let elong_f64 = elong as f64;
                 let lat_f64 = lat as f64;
 
-                if let Ok(brightness) = zodical.get_brightness(lon_f64, lat_f64) {
-                    if !brightness.is_nan() {
+                if let Ok(brightness) = zodical.get_brightness(elong_f64, lat_f64) {
+                    if brightness.is_finite() {
                         assert!(
-                            brightness >= 20.0 && brightness <= 24.0,
-                            "Brightness at lon={}, lat={} is {}, which is outside the expected range [20, 24]",
-                            lon_f64, lat_f64, brightness
+                            brightness >= 40.0 && brightness <= 10000.0,
+                            "Brightness at elongation={}, lat={} is {}, which is outside the expected range [40, 10000]",
+                            elong_f64, lat_f64, brightness
                         );
                     }
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_data_dimensions() {
+        let zodical = ZodicalLight::new();
+
+        // Check that the data array has the correct dimensions
+        assert_eq!(zodical.data.shape(), [LATITUDES.len(), ELONGATIONS.len()]);
+        assert_eq!(zodical.data.shape(), [11, 19]);
+    }
+
+    #[test]
+    fn test_sun_exclusion_zones() {
+        let zodical = ZodicalLight::new();
+
+        // Test that regions too close to the sun return finite values or errors
+        // At 0° latitude, 0° elongation should be infinity (sun exclusion)
+        match zodical.get_brightness(0.0, 0.0) {
+            Ok(brightness) => assert!(!brightness.is_finite()),
+            Err(_) => (), // Also acceptable
+        }
+
+        // At higher latitudes, small elongations should have finite values
+        let brightness = zodical.get_brightness(15.0, 15.0).unwrap();
+        assert!(brightness.is_finite());
+        assert!(brightness > 1000.0); // Should be bright near the sun
     }
 }

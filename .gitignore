@@ -20,3 +20,7 @@ target/
 test_output/
 histogram_output.txt
 **/.claude/settings.local.json
+
+# Were I keep star catalogs
+cats/
+.vscode/
