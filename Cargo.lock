@@ -125,6 +125,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 
 [[package]]
+name = "autotools"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef941527c41b0fc0dd48511a8154cd5fc7e29200a0ff8b7203c5d777dbc795cf"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "backtrace"
 version = "0.3.74"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -596,6 +605,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
 dependencies = [
  "simd-adler32",
+]
+
+[[package]]
+name = "fitsio"
+version = "0.21.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bcdf0a688dc948f191d1ba288dff7e86d28c34aba4f94ffb5812672c152e0e4"
+dependencies = [
+ "fitsio-sys",
+ "libc",
+ "ndarray 0.16.1",
+]
+
+[[package]]
+name = "fitsio-sys"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "180138acfd0c52cb924845d417b31fa27ea2d9f09c863619b5bfa24ab8db7a66"
+dependencies = [
+ "autotools",
+ "pkg-config",
 ]
 
 [[package]]
@@ -1428,6 +1458,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ndarray"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "882ed72dce9365842bf196bdeedf5055305f11fc8c03dee7bb0194a6cad34841"
+dependencies = [
+ "matrixmultiply",
+ "num-complex",
+ "num-integer",
+ "num-traits",
+ "portable-atomic",
+ "portable-atomic-util",
+ "rawpointer",
+]
+
+[[package]]
 name = "num"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1703,6 +1748,15 @@ name = "portable-atomic"
 version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "350e9b48cbc6b0e028b0473b114454c6316e57336ee184ceab6e53f72c178b3e"
+
+[[package]]
+name = "portable-atomic-util"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8a2f0d8d040d7848a709caf78912debcc3f33ee4b3cac47d73d1e1069e83507"
+dependencies = [
+ "portable-atomic",
+]
 
 [[package]]
 name = "powerfmt"
@@ -2162,11 +2216,12 @@ dependencies = [
  "approx",
  "clap",
  "criterion",
+ "fitsio",
  "float-cmp",
  "image",
  "indicatif",
  "nalgebra",
- "ndarray",
+ "ndarray 0.15.6",
  "num-complex",
  "num-traits",
  "once_cell",
@@ -2246,7 +2301,7 @@ dependencies = [
  "log",
  "md5",
  "nalgebra",
- "ndarray",
+ "ndarray 0.15.6",
  "num",
  "once_cell",
  "rand",
@@ -2555,7 +2610,7 @@ dependencies = [
  "itertools 0.11.0",
  "log",
  "nalgebra",
- "ndarray",
+ "ndarray 0.15.6",
  "rand",
  "rand_chacha",
  "simulator",

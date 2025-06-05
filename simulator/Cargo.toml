@@ -14,6 +14,7 @@ image = "0.24" # Image processing
 ndarray = { version = "0.15", features = [
     "rayon",
 ] } # Multidimensional arrays with parallel computing
+fitsio = { version = "0.21", features = ["array"] } # FITS file I/O with ndarray support
 rayon = "1.7" # Parallel computing
 num-traits = "0.2" # Numeric traits for generic math
 float-cmp = "0.9" # Approximate floating point comparisons

@@ -4,8 +4,10 @@
 //! and saving/loading them to the filesystem.
 
 use ndarray::Array2;
+use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
+use thiserror::Error;
 
 /// Save an 8-bit image to a file
 ///
@@ -93,6 +95,143 @@ pub fn u16_to_u8_scaled(image: &Array2<u16>, max_value: u32) -> Array2<u8> {
     image.mapv(|x| ((x as f32 * 255.0) / max_value as f32).round() as u8)
 }
 
+/// Errors that can occur during FITS file operations
+#[derive(Error, Debug)]
+pub enum FitsError {
+    #[error("FITS I/O error: {0}")]
+    FitsIo(#[from] fitsio::errors::Error),
+    #[error("HDU not found: {0}")]
+    HduNotFound(String),
+    #[error("Invalid data type in HDU: {0}")]
+    InvalidDataType(String),
+}
+
+/// Read FITS file and return HashMap of HDU names to Array2<f64> data
+///
+/// # Arguments
+/// * `path` - Path to the FITS file
+///
+/// # Returns
+/// * `Result<HashMap<String, Array2<f64>>, FitsError>` - Map of HDU names to 2D arrays
+///
+/// # Examples
+/// ```no_run
+/// use std::path::Path;
+/// use simulator::image_proc::io::read_fits_to_hashmap;
+///
+/// let data = read_fits_to_hashmap(Path::new("example.fits")).unwrap();
+/// for (name, array) in data {
+///     println!("HDU '{}' has shape {:?}", name, array.dim());
+/// }
+/// ```
+pub fn read_fits_to_hashmap<P: AsRef<Path>>(
+    path: P,
+) -> Result<HashMap<String, Array2<f64>>, FitsError> {
+    use fitsio::FitsFile;
+
+    let mut fptr = FitsFile::open(&path)?;
+    let mut data_map = HashMap::new();
+
+    let mut hdu_idx = 0;
+    loop {
+        let hdu = match fptr.hdu(hdu_idx) {
+            Ok(hdu) => hdu,
+            Err(_) => break, // No more HDUs
+        };
+
+        // Get HDU name, fallback to index-based name if no EXTNAME
+        let hdu_name = match hdu.read_key::<String>(&mut fptr, "EXTNAME") {
+            Ok(name) => name,
+            Err(_) => format!("HDU_{}", hdu_idx),
+        };
+
+        // Try to read as image data
+        if let Ok(image_data) = hdu.read_image::<Vec<f64>>(&mut fptr) {
+            // Get image dimensions
+            let naxis = hdu.read_key::<i64>(&mut fptr, "NAXIS").unwrap_or(0);
+
+            if naxis == 2 {
+                let naxis1 = hdu.read_key::<i64>(&mut fptr, "NAXIS1").unwrap_or(0) as usize;
+                let naxis2 = hdu.read_key::<i64>(&mut fptr, "NAXIS2").unwrap_or(0) as usize;
+
+                // Reshape 1D vector to 2D array (FITS format)
+                let fits_array =
+                    Array2::from_shape_vec((naxis2, naxis1), image_data).map_err(|_| {
+                        FitsError::InvalidDataType(format!(
+                            "Cannot reshape image data for HDU '{}'",
+                            hdu_name
+                        ))
+                    })?;
+
+                // Transpose to match ndarray convention
+                let array = fits_array.t().to_owned();
+                data_map.insert(hdu_name, array);
+            }
+        }
+
+        hdu_idx += 1;
+    }
+
+    Ok(data_map)
+}
+
+/// Write HashMap of Array2<f64> data to FITS file
+///
+/// # Arguments
+/// * `data` - HashMap mapping HDU names to 2D arrays
+/// * `path` - Output path for the FITS file
+///
+/// # Returns
+/// * `Result<(), FitsError>` - Success or error
+///
+/// # Examples
+/// ```no_run
+/// use std::collections::HashMap;
+/// use std::path::Path;
+/// use ndarray::Array2;
+/// use simulator::image_proc::io::write_hashmap_to_fits;
+///
+/// let mut data = HashMap::new();
+/// let array = Array2::from_elem((100, 100), 1.5);
+/// data.insert("IMAGE".to_string(), array);
+///
+/// write_hashmap_to_fits(&data, Path::new("output.fits")).unwrap();
+/// ```
+pub fn write_hashmap_to_fits<P: AsRef<Path>>(
+    data: &HashMap<String, Array2<f64>>,
+    path: P,
+) -> Result<(), FitsError> {
+    use fitsio::{
+        images::{ImageDescription, ImageType},
+        FitsFile,
+    };
+
+    let mut fptr = FitsFile::create(&path).overwrite().open()?;
+
+    for (name, array) in data {
+        let (height, width) = array.dim();
+
+        // Create image description (FITS uses different axis ordering)
+        let image_description = ImageDescription {
+            data_type: ImageType::Double,
+            dimensions: &[width, height],
+        };
+
+        // Create new HDU
+        let hdu = fptr.create_image(name.clone(), &image_description)?;
+
+        // Write the array data (transpose for FITS format)
+        let transposed = array.t().to_owned();
+        let flat_data: Vec<f64> = transposed.into_raw_vec();
+        hdu.write_image(&mut fptr, &flat_data)?;
+
+        // Set EXTNAME header
+        hdu.write_key(&mut fptr, "EXTNAME", name.clone())?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,4 +302,53 @@ mod tests {
 
     // We don't test save_u8_image directly to avoid file system interactions
     // in normal test runs, but we validate the function signature compiles
+
+    #[test]
+    fn test_fits_error_display() {
+        let error = FitsError::HduNotFound("TEST".to_string());
+        assert!(error.to_string().contains("HDU not found: TEST"));
+
+        let error = FitsError::InvalidDataType("bad data".to_string());
+        assert!(error
+            .to_string()
+            .contains("Invalid data type in HDU: bad data"));
+    }
+
+    #[test]
+    fn test_fits_roundtrip() {
+        use tempfile::NamedTempFile;
+
+        // Create test data
+        let mut data = HashMap::new();
+        let array1 = Array2::from_elem((3, 4), 1.5);
+        let mut array2 = Array2::zeros((2, 2));
+        array2[[0, 0]] = 2.5;
+        array2[[1, 1]] = 3.7;
+
+        data.insert("IMAGE1".to_string(), array1.clone());
+        data.insert("IMAGE2".to_string(), array2.clone());
+
+        // Write and read back
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path();
+
+        write_hashmap_to_fits(&data, path).unwrap();
+        let read_data = read_fits_to_hashmap(path).unwrap();
+
+        // Verify we got the same data back
+        assert_eq!(read_data.len(), 2);
+        assert!(read_data.contains_key("IMAGE1"));
+        assert!(read_data.contains_key("IMAGE2"));
+
+        let read_array1 = &read_data["IMAGE1"];
+        let read_array2 = &read_data["IMAGE2"];
+
+        assert_eq!(read_array1.dim(), (3, 4));
+        assert_eq!(read_array2.dim(), (2, 2));
+
+        // Check values (allowing for floating point precision)
+        assert!((read_array1[[0, 0]] - 1.5).abs() < 1e-10);
+        assert!((read_array2[[0, 0]] - 2.5).abs() < 1e-10);
+        assert!((read_array2[[1, 1]] - 3.7).abs() < 1e-10);
+    }
 }

@@ -32,6 +32,7 @@ use simulator::hardware::telescope::{
 };
 use simulator::image_proc::histogram_stretch::sigma_stretch;
 use simulator::image_proc::image::array2_to_gray_image;
+use simulator::image_proc::io::write_hashmap_to_fits;
 use simulator::image_proc::render::{render_star_field, RenderingResult, StarInFrame};
 use simulator::image_proc::segment::do_detections;
 use simulator::image_proc::{
@@ -424,6 +425,23 @@ fn save_image_outputs(
     x_markers_image
         .save(&overlay_path)
         .expect("Failed to save image with X markers");
+
+    // Export FITS files for both regular image and electron image
+    let mut fits_data = HashMap::new();
+
+    // Convert regular u16 image to f64 for FITS export
+    let image_f64 = render_result.image.mapv(|x| x as f64);
+    fits_data.insert("IMAGE".to_string(), image_f64);
+
+    // Add electron image (already f64)
+    fits_data.insert(
+        "ELECTRON_IMAGE".to_string(),
+        render_result.electron_image.clone(),
+    );
+
+    // Save FITS file with both datasets
+    let fits_path = output_path.join(format!("{}_data.fits", prefix));
+    write_hashmap_to_fits(&fits_data, &fits_path).expect("Failed to save FITS file");
 }
 
 /// Display a histogram of electron counts in the image
