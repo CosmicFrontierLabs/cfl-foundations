@@ -37,8 +37,8 @@ The project is organized as a Rust workspace with multiple packages:
 # Build all packages
 cargo build
 
-# Run telescope simulation with star field
-cargo run --example scope_view --package simulator
+# Run telescope simulation with star field to compare sensor performance across different models
+cargo run --bin sensor_shootout
 
 # Generate plots and analysis
 cargo run --bin camera_qe_plot --package simulator
@@ -49,9 +49,6 @@ cargo run --bin centroid_accuracy_test --package simulator
 
 # Estimate detection performance across magnitudes and sensors
 cargo run --bin sensor_floor_est --package simulator
-
-# Compare sensor performance across different models
-cargo run --bin sensor_shootout --package simulator
 ```
 
 ## Documentation

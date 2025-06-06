@@ -15,7 +15,7 @@
 //!
 //! Usage:
 //! ```
-//! cargo run --example scope_view -- [OPTIONS]
+//! cargo run --bin sensor_shootout -- [OPTIONS]
 //! ```
 //!
 //! See --help for detailed options.
