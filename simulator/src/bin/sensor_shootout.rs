@@ -99,6 +99,10 @@ struct Args {
     /// Zodiacal coordinate as latitude,longitude in degrees
     #[arg(long, default_value = "45.0,45.0", value_parser = parse_coordinate_pair)]
     zodiacal_coordinate: (f64, f64),
+
+    /// Sensor temperature in degrees Celsius for dark current calculation
+    #[arg(long, default_value_t = 20.0)]
+    temperature: f64,
 }
 
 /// Prints histogram of star magnitudes
@@ -143,6 +147,8 @@ fn print_am_hist(stars: &Vec<StarData>) {
 /// * `exposure` - Exposure duration
 /// * `experiment_num` - Experiment identifier
 /// * `debug` - Enable debug output
+/// * `wavelength` - Wavelength in nanometers for PSF calculation
+/// * `temperature` - Sensor temperature in degrees Celsius
 ///
 /// # Returns
 /// * Thread handle for the background image saving task
@@ -154,6 +160,8 @@ fn run_experiment(
     exposure: Duration,
     experiment_num: u32,
     debug: bool,
+    wavelength: f64,
+    temperature: f64,
 ) -> thread::JoinHandle<()> {
     let output_path = Path::new("experiment_output");
 
@@ -167,8 +175,13 @@ fn run_experiment(
 
     // Render the star field
     let render_result = render_star_field(
-        &star_refs, &ra_dec, &telescope, &sensor, &exposure,
-        550.0, // TODO(meawoppl) make this a parameter
+        &star_refs,
+        &ra_dec,
+        &telescope,
+        &sensor,
+        &exposure,
+        wavelength,
+        temperature,
     );
 
     if debug {
@@ -324,6 +337,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Duration::from_secs_f64(args.exposure),
                 i,
                 args.debug,
+                args.wavelength,
+                args.temperature,
             );
             render_threads.push(thread);
         }

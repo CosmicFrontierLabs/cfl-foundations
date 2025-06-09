@@ -22,6 +22,7 @@ use rand_distr::{Distribution, Normal, Poisson};
 /// # Arguments
 /// * `sensor` - Configuration of the sensor
 /// * `exposure_time` - Exposure time as Duration
+/// * `temp_c` - Sensor temperature in degrees Celsius
 /// * `rng_seed` - Optional seed for random number generator
 ///
 /// # Returns
@@ -29,13 +30,15 @@ use rand_distr::{Distribution, Normal, Poisson};
 pub fn generate_sensor_noise(
     sensor: &SensorConfig,
     exposure_time: &Duration,
+    temp_c: f64,
     rng_seed: Option<u64>,
 ) -> Array2<f64> {
     // Create a random number generator from the supplied seed
     let rng_seed = rng_seed.unwrap_or(thread_rng().next_u64());
 
-    // Calculate expected dark current electrons during exposure
-    let dark_electrons_mean = sensor.dark_current_e_p_s * exposure_time.as_secs_f64();
+    // Calculate expected dark current electrons during exposure at specified temperature
+    let dark_current = sensor.dark_current_at_temperature(temp_c);
+    let dark_electrons_mean = dark_current * exposure_time.as_secs_f64();
 
     // Create dimensions for output
     let height = sensor.height_px as usize;
@@ -152,6 +155,7 @@ pub fn generate_noise_with_precomputed_params(
 /// # Arguments
 /// * `sensor` - Configuration of the sensor
 /// * `exposure_time` - Exposure time as Duration
+/// * `temp_c` - Sensor temperature in degrees Celsius
 /// * `rng_seed` - Optional seed for random number generator
 ///
 /// # Returns
@@ -159,14 +163,16 @@ pub fn generate_noise_with_precomputed_params(
 pub fn est_noise_floor(
     sensor: &SensorConfig,
     exposure_time: &Duration,
+    temp_c: f64,
     rng_seed: Option<u64>,
 ) -> f64 {
     // Create a smaller sensor with the same noise characteristics for faster estimation
     let width = 64;
     let height = 64;
 
-    // Calculate dark current mean directly
-    let dark_electrons_mean = sensor.dark_current_e_p_s * exposure_time.as_secs_f64();
+    // Calculate dark current mean directly at specified temperature
+    let dark_current = sensor.dark_current_at_temperature(temp_c);
+    let dark_electrons_mean = dark_current * exposure_time.as_secs_f64();
 
     // Generate the noise field using the optimized function
     let noise_field = generate_noise_with_precomputed_params(
@@ -188,6 +194,7 @@ mod tests {
     use approx::assert_relative_eq;
 
     use crate::{
+        hardware::dark_current::DarkCurrentEstimator,
         photometry::{zodical::SolarAngularCoordinates, Band, ZodicalLight},
         QuantumEfficiency, TelescopeConfig,
     };
@@ -209,7 +216,7 @@ mod tests {
             size.0 as u32,
             5.0,
             read_noise,
-            dark_current,
+            DarkCurrentEstimator::new(dark_current, 20.0),
             8,
             1.0,
             1.0,
@@ -227,7 +234,7 @@ mod tests {
 
         let sensor = make_tiny_test_sensor(shape, dark_current, read_noise);
 
-        let noise_floor = est_noise_floor(&sensor, &exposure_time, Some(42));
+        let noise_floor = est_noise_floor(&sensor, &exposure_time, 20.0, Some(42));
 
         // Calculate the expected noise floor (mean)
         let expected_noise_floor = read_noise + dark_current * exposure_time.as_secs_f64();
@@ -246,7 +253,7 @@ mod tests {
         let sensor = make_tiny_test_sensor(shape, dark_current, read_noise);
         let exposure_time = Duration::from_secs(1);
 
-        let noise = generate_sensor_noise(&sensor, &exposure_time, None);
+        let noise = generate_sensor_noise(&sensor, &exposure_time, 20.0, None);
 
         // Check dimensions
         assert_eq!(noise.dim(), shape);
@@ -268,8 +275,8 @@ mod tests {
         let sensor = make_tiny_test_sensor(shape, dark_current, read_noise);
 
         // Generate noise with the same seed
-        let noise1 = generate_sensor_noise(&sensor, &exposure_time, Some(5));
-        let noise2 = generate_sensor_noise(&sensor, &exposure_time, Some(5));
+        let noise1 = generate_sensor_noise(&sensor, &exposure_time, 20.0, Some(5));
+        let noise2 = generate_sensor_noise(&sensor, &exposure_time, 20.0, Some(5));
 
         // Check that the noise patterns are identical
         for (v1, v2) in noise1.iter().zip(noise2.iter()) {
@@ -277,7 +284,7 @@ mod tests {
         }
 
         // Check that a different seed produces different noise
-        let noise3 = generate_sensor_noise(&sensor, &exposure_time, Some(6));
+        let noise3 = generate_sensor_noise(&sensor, &exposure_time, 20.0, Some(6));
 
         // At least one value should be different
         let mut any_different = false;
@@ -304,7 +311,7 @@ mod tests {
         // Create a sensor with the specified parameters
         let sensor = make_tiny_test_sensor(shape, dark_current, read_noise);
 
-        let noise = generate_sensor_noise(&sensor, &exposure_time, Some(3));
+        let noise = generate_sensor_noise(&sensor, &exposure_time, 20.0, Some(3));
 
         // Calculate mean and standard deviation of the noise
         let mean = noise.mean().unwrap();
@@ -323,13 +330,13 @@ mod tests {
         // Create a sensor with the specified parameters
         let sensor = make_tiny_test_sensor(shape, dark_current, read_noise);
 
-        let mean_0 = generate_sensor_noise(&sensor, &Duration::from_secs(0), Some(7))
+        let mean_0 = generate_sensor_noise(&sensor, &Duration::from_secs(0), 20.0, Some(7))
             .mean()
             .unwrap();
-        let mean_1 = generate_sensor_noise(&sensor, &Duration::from_secs(10), Some(8))
+        let mean_1 = generate_sensor_noise(&sensor, &Duration::from_secs(10), 20.0, Some(8))
             .mean()
             .unwrap();
-        let mean_2 = generate_sensor_noise(&sensor, &Duration::from_secs(20), Some(9))
+        let mean_2 = generate_sensor_noise(&sensor, &Duration::from_secs(20), 20.0, Some(9))
             .mean()
             .unwrap();
 
@@ -349,7 +356,7 @@ mod tests {
 
         // Test with zero exposure time
         let zero_exposure = Duration::from_secs(0);
-        let noise_zero = generate_sensor_noise(&sensor, &zero_exposure, Some(42));
+        let noise_zero = generate_sensor_noise(&sensor, &zero_exposure, 20.0, Some(42));
 
         // Check all values are positive
         for value in noise_zero.iter() {
@@ -361,7 +368,7 @@ mod tests {
 
         // Test with non-zero exposure time
         let long_exposure = Duration::from_secs(5);
-        let noise_long = generate_sensor_noise(&sensor, &long_exposure, Some(43));
+        let noise_long = generate_sensor_noise(&sensor, &long_exposure, 20.0, Some(43));
 
         // Check all values are positive
         for value in noise_long.iter() {

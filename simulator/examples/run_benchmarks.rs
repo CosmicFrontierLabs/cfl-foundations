@@ -1,12 +1,11 @@
 use ndarray::Array2;
-use simulator::image_proc::{
-    generate_sensor_noise,
-    render::{add_stars_to_image, StarInFrame},
+use simulator::image_proc::render::{add_stars_to_image, StarInFrame};
+use simulator::{
+    hardware::dark_current::DarkCurrentEstimator, photometry::Band, QuantumEfficiency, SensorConfig,
 };
-use simulator::{photometry::Band, QuantumEfficiency, SensorConfig};
 use starfield::catalogs::StarData;
 use starfield::Equatorial;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Creates a test sensor with specified dimensions and characteristics
 fn create_test_sensor(width: u32, height: u32, read_noise: f64, dark_current: f64) -> SensorConfig {
@@ -20,11 +19,11 @@ fn create_test_sensor(width: u32, height: u32, read_noise: f64, dark_current: f6
         height,
         5.0, // pixel size in um
         read_noise,
-        dark_current,
-        16,       // bit depth
-        0.5,      // dn per electron
-        100000.0, // max well depth
-        60.0,     // frame rate
+        DarkCurrentEstimator::new(dark_current, 20.0), // dark current at 20°C
+        16,                                            // bit depth
+        0.5,                                           // dn per electron
+        100000.0,                                      // max well depth
+        60.0,                                          // frame rate
     )
 }
 

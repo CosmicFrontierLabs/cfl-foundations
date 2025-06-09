@@ -82,6 +82,7 @@ pub fn approx_airy_pixels(
 /// * `sensor` - Reference to sensor configuration
 /// * `exposure` - Reference to exposure duration
 /// * `wavelength_nm` - Wavelength in nanometers to use for PSF calculation
+/// * `temp_c` - Sensor temperature in degrees Celsius for dark current calculation
 ///
 /// # Returns
 /// * `RenderingResult` - Contains the rendered image, electron counts, noise, star positions, and saturation info
@@ -92,6 +93,7 @@ pub fn render_star_field(
     sensor: &SensorConfig,
     exposure: &Duration,
     wavelength_nm: f64,
+    temp_c: f64,
 ) -> RenderingResult {
     // Create image array dimensions
     let image_width = sensor.width_px as usize;
@@ -148,7 +150,7 @@ pub fn render_star_field(
 
     // Generate sensor noise (read noise and dark current)
     let sensor_noise = generate_sensor_noise(
-        &sensor, &exposure, None, // Use random noise
+        &sensor, &exposure, temp_c, None, // Use specified temperature and random noise
     );
 
     let z_light = ZodicalLight::new();
@@ -256,7 +258,7 @@ mod tests {
     use rand::Rng;
 
     use super::*;
-    use crate::hardware::sensor::create_flat_qe;
+    use crate::hardware::{dark_current::DarkCurrentEstimator, sensor::create_flat_qe};
 
     fn test_star_data() -> StarData {
         StarData {
@@ -280,7 +282,7 @@ mod tests {
             1024,
             5.5,
             2.0,
-            0.01,
+            DarkCurrentEstimator::new(0.01, 20.0),
             bit_depth,
             dn_per_electron,
             max_well_depth_e,

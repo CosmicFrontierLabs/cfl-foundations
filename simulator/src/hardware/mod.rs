@@ -1,5 +1,6 @@
 //! Hardware module for telescope and sensor configurations
 
+pub mod dark_current;
 pub mod sensor;
 pub mod star_projection;
 pub mod telescope;

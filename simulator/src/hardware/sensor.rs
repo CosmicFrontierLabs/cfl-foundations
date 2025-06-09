@@ -4,6 +4,7 @@
 
 use once_cell::sync::Lazy;
 
+use crate::hardware::dark_current::DarkCurrentEstimator;
 use crate::photometry::quantum_efficiency::QuantumEfficiency;
 
 /// Configuration for a sensor detector
@@ -24,8 +25,8 @@ pub struct SensorConfig {
     /// Read noise in electrons per pixel
     pub read_noise_e: f64,
 
-    /// Dark current in electrons per pixel per second
-    pub dark_current_e_p_s: f64,
+    /// Dark current estimator for temperature-dependent calculations
+    pub dark_current_estimator: DarkCurrentEstimator,
 
     /// Name/model of the sensor
     pub name: String,
@@ -53,7 +54,7 @@ impl SensorConfig {
         height_px: u32,
         pixel_size_um: f64,
         read_noise_e: f64,
-        dark_current_e_p_s: f64,
+        dark_current_estimator: DarkCurrentEstimator,
         bit_depth: u8,
         dn_per_electron: f64,
         max_well_depth_e: f64,
@@ -66,7 +67,7 @@ impl SensorConfig {
             height_px,
             pixel_size_um,
             read_noise_e,
-            dark_current_e_p_s,
+            dark_current_estimator,
             bit_depth,
             dn_per_electron,
             max_well_depth_e,
@@ -106,6 +107,11 @@ impl SensorConfig {
     pub fn dn_per_electron(&self) -> f64 {
         self.dn_per_electron
     }
+
+    /// Get dark current at a specific temperature in electrons/pixel/second
+    pub fn dark_current_at_temperature(&self, temp_c: f64) -> f64 {
+        self.dark_current_estimator.estimate_at_temperature(temp_c)
+    }
 }
 
 #[cfg(test)]
@@ -120,7 +126,19 @@ mod tests {
         let efficiencies = vec![0.0, 0.4, 0.6, 0.5, 0.0];
         let qe = QuantumEfficiency::from_table(wavelengths, efficiencies).unwrap();
 
-        let sensor = SensorConfig::new("Test", qe, 1024, 1024, 5.5, 2.0, 0.01, 8, 3.0, 1e20, 30.0);
+        let sensor = SensorConfig::new(
+            "Test",
+            qe,
+            1024,
+            1024,
+            5.5,
+            2.0,
+            DarkCurrentEstimator::new(0.01, 20.0),
+            8,
+            3.0,
+            1e20,
+            30.0,
+        );
 
         // Exact matches (use approximate comparison for float values)
         assert_relative_eq!(sensor.qe_at_wavelength(400), 0.4, epsilon = 1e-5);
@@ -139,7 +157,19 @@ mod tests {
     #[test]
     fn test_sensor_dimensions() {
         let qe = create_flat_qe(0.5);
-        let sensor = SensorConfig::new("Test", qe, 1024, 768, 5.5, 2.0, 0.01, 8, 3.0, 1e20, 30.0);
+        let sensor = SensorConfig::new(
+            "Test",
+            qe,
+            1024,
+            768,
+            5.5,
+            2.0,
+            DarkCurrentEstimator::new(0.01, 20.0),
+            8,
+            3.0,
+            1e20,
+            30.0,
+        );
         let (width_um, height_um) = sensor.dimensions_um();
 
         assert_eq!(width_um, 1024.0 * 5.5);
@@ -149,7 +179,19 @@ mod tests {
     #[test]
     fn test_with_dimensions() {
         let qe = create_flat_qe(0.5);
-        let original = SensorConfig::new("Test", qe, 1024, 768, 5.5, 2.0, 0.01, 8, 3.0, 1e20, 30.0);
+        let original = SensorConfig::new(
+            "Test",
+            qe,
+            1024,
+            768,
+            5.5,
+            2.0,
+            DarkCurrentEstimator::new(0.01, 20.0),
+            8,
+            3.0,
+            1e20,
+            30.0,
+        );
 
         // Create resized sensor
         let resized = original.with_dimensions(2048, 1536);
@@ -167,7 +209,10 @@ mod tests {
         assert_eq!(resized.name, original.name);
         assert_eq!(resized.pixel_size_um, original.pixel_size_um);
         assert_eq!(resized.read_noise_e, original.read_noise_e);
-        assert_eq!(resized.dark_current_e_p_s, original.dark_current_e_p_s);
+        assert_eq!(
+            resized.dark_current_estimator,
+            original.dark_current_estimator
+        );
         assert_eq!(resized.bit_depth, original.bit_depth);
         assert_eq!(resized.dn_per_electron, original.dn_per_electron);
         assert_eq!(resized.max_well_depth_e, original.max_well_depth_e);
@@ -247,7 +292,7 @@ pub mod models {
             4096,
             9.0,
             2.3,
-            0.04,
+            DarkCurrentEstimator::new(0.04, -40.0), // 0.04 e-/px/s at -40°C
             12,
             0.35,
             39_200.0,
@@ -282,7 +327,6 @@ pub mod models {
         let qe = QuantumEfficiency::from_table(wavelengths, efficiencies)
             .expect("Failed to create GSENSE6510BSI QE curve");
 
-        // NB: Dark current is spec'ed at -10°C
         SensorConfig::new(
             "GSENSE6510BSI",
             qe,
@@ -290,7 +334,7 @@ pub mod models {
             3200,
             6.5,
             0.7,
-            0.2,
+            DarkCurrentEstimator::new(0.2, -10.0), // 0.2 e-/px/s at -10°C
             12,
             0.35,
             21_000.0,
@@ -326,7 +370,17 @@ pub mod models {
         // 7.42 DN/e- at 32x gain
         // 0.242 DN/e- at 1x gain (using 1x gain here)
         SensorConfig::new(
-            "HWK4123", qe, 4096, 2300, 4.6, 0.25, 0.1, 12, 7.42, 7_500.0, 120.0,
+            "HWK4123",
+            qe,
+            4096,
+            2300,
+            4.6,
+            0.25,
+            DarkCurrentEstimator::new(0.1, 20.0), // 0.1 e-/px/s at 20°C
+            12,
+            7.42,
+            7_500.0,
+            120.0,
         )
     });
 
@@ -355,10 +409,17 @@ pub mod models {
         // https://player-one-astronomy.com/product/zeus-455m-pro-imx455-usb3-0-mono-cooled-camera/
 
         SensorConfig::new(
-            "IMX455", qe, 9568, 6380, 3.75,  // Pixel pitch in microns
-            2.67,  // Read noise in electrons (from arxiv paper)
-            0.002, // Dark current in e-/px/s at -20°C (from arxiv paper)
-            16, 0.343, 71_600.0, 21.33,
+            "IMX455",
+            qe,
+            9568,
+            6380,
+            3.75,                                    // Pixel pitch in microns
+            2.67,                                    // Read noise in electrons (from arxiv paper)
+            DarkCurrentEstimator::new(0.002, -20.0), // 0.002 e-/px/s at -20°C (from arxiv paper)
+            16,
+            0.343,
+            71_600.0,
+            21.33,
         )
     });
 }
@@ -375,7 +436,10 @@ mod model_tests {
         assert_eq!(models::GSENSE4040BSI.height_px, 4096);
         assert_eq!(models::GSENSE4040BSI.pixel_size_um, 9.0);
         assert_eq!(models::GSENSE4040BSI.read_noise_e, 2.3);
-        assert_eq!(models::GSENSE4040BSI.dark_current_e_p_s, 0.04);
+        assert_eq!(
+            models::GSENSE4040BSI.dark_current_at_temperature(-40.0),
+            0.04
+        );
         assert_eq!(models::GSENSE4040BSI.max_frame_rate_fps, 24.0);
         // QE should be close to 0.9 at 550nm for this sensor
         assert!(models::GSENSE4040BSI.qe_at_wavelength(550) > 0.85);
@@ -386,7 +450,10 @@ mod model_tests {
         assert_eq!(models::GSENSE6510BSI.height_px, 3200);
         assert_eq!(models::GSENSE6510BSI.pixel_size_um, 6.5);
         assert_eq!(models::GSENSE6510BSI.read_noise_e, 0.7);
-        assert_eq!(models::GSENSE6510BSI.dark_current_e_p_s, 0.2);
+        assert_eq!(
+            models::GSENSE6510BSI.dark_current_at_temperature(-10.0),
+            0.2
+        );
         assert_eq!(models::GSENSE6510BSI.max_frame_rate_fps, 88.0);
         // QE should peak around 520-550nm for this sensor
         assert!(models::GSENSE6510BSI.qe_at_wavelength(550) > 0.95);
@@ -397,7 +464,7 @@ mod model_tests {
         assert_eq!(models::HWK4123.height_px, 2300);
         assert_eq!(models::HWK4123.pixel_size_um, 4.6);
         assert_eq!(models::HWK4123.read_noise_e, 0.25);
-        assert_eq!(models::HWK4123.dark_current_e_p_s, 0.1);
+        assert_eq!(models::HWK4123.dark_current_at_temperature(20.0), 0.1);
         assert_eq!(models::HWK4123.max_frame_rate_fps, 120.0);
         // QE should be close to 0.8 at 550nm for this sensor
         assert!(models::HWK4123.qe_at_wavelength(550) > 0.75);
@@ -408,7 +475,7 @@ mod model_tests {
         assert_eq!(models::IMX455.height_px, 6380);
         assert_eq!(models::IMX455.pixel_size_um, 3.75);
         assert_eq!(models::IMX455.read_noise_e, 2.67);
-        assert_eq!(models::IMX455.dark_current_e_p_s, 0.002);
+        assert_eq!(models::IMX455.dark_current_at_temperature(-20.0), 0.002);
         assert_eq!(models::IMX455.max_frame_rate_fps, 21.33);
 
         // Get actual QE value to print for debugging

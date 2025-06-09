@@ -529,7 +529,7 @@ fn render_catalog_star_field<T: StarPosition + 'static + Clone>(
     add_noise(
         &mut sensor_image,
         sensor.read_noise_e,
-        sensor.dark_current_e_p_s,
+        sensor.dark_current_at_temperature(20.0), // Use 20°C default temperature
         exposure_time,
     );
 

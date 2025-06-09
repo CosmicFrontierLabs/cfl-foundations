@@ -77,6 +77,10 @@ struct Args {
     #[arg(long, default_value = "sensor_floor_results.csv")]
     output_csv: String,
 
+    /// Sensor temperature in degrees Celsius for dark current calculation
+    #[arg(long, default_value_t = 20.0)]
+    temperature: f64,
+
     /// Run experiments serially instead of in parallel
     #[arg(long, default_value_t = false)]
     serial: bool,
@@ -107,6 +111,8 @@ struct ExperimentParams {
     indices: (usize, usize),
     /// Number of times to run the experiment
     experiment_count: u32,
+    /// Sensor temperature in degrees Celsius
+    temperature: f64,
     /// Solar elongation for zodiacal background
     elongation: f64,
     /// Ecliptic latitude for zodiacal background
@@ -195,7 +201,8 @@ fn run_single_experiment(params: &ExperimentParams) -> ExperimentResults {
         add_stars_to_image(&mut e_image, &vec![star], params.psf_pix);
 
         // Generate and add noise to image
-        let sensor_noise = generate_sensor_noise(&params.sensor, &params.exposure, None);
+        let sensor_noise =
+            generate_sensor_noise(&params.sensor, &params.exposure, params.temperature, None);
 
         // Background light sources - using coordinates from CLI arguments
         let coords = SolarAngularCoordinates::new(params.elongation, params.latitude)
@@ -209,7 +216,6 @@ fn run_single_experiment(params: &ExperimentParams) -> ExperimentResults {
         );
 
         let noise = &sensor_noise + &zodical;
-
         let total_e_image = &e_image + &noise;
 
         // Quantize to digital numbers
@@ -324,6 +330,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     noise_floor_multiplier: args.noise_floor,
                     indices: (disk_idx, mag_idx),
                     experiment_count: args.experiments,
+                    temperature: args.temperature,
                     elongation,
                     latitude,
                 };
