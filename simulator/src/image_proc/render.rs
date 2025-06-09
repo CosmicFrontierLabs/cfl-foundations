@@ -1,10 +1,13 @@
 use std::time::Duration;
 
 use ndarray::Array2;
-use starfield::{catalogs::StarData, Equatorial};
+use starfield::{catalogs::StarData, framelib::inertial::Ecliptic, Equatorial};
 
 use crate::{
-    algo::icp::Locatable2d, field_diameter, magnitude_to_electrons, star_math::equatorial_to_pixel,
+    algo::icp::Locatable2d,
+    field_diameter, magnitude_to_electrons,
+    photometry::{zodical::SolarAngularCoordinates, ZodicalLight},
+    star_math::equatorial_to_pixel,
     SensorConfig, TelescopeConfig,
 };
 
@@ -144,18 +147,27 @@ pub fn render_star_field(
     add_stars_to_image(&mut image, &to_render, psf_pix);
 
     // Generate sensor noise (read noise and dark current)
-    let noise = generate_sensor_noise(
+    let sensor_noise = generate_sensor_noise(
         &sensor, &exposure, None, // Use random noise
     );
 
-    image += &noise;
+    let z_light = ZodicalLight::new();
+    let ecliptic: Ecliptic = (*center).into();
+    let coords = SolarAngularCoordinates::new(ecliptic.lon.to_degrees(), ecliptic.lat.to_degrees())
+        .expect("Invalid zodical coordinates");
+    let zodiacal_noise =
+        z_light.generate_zodical_background(&sensor, &telescope, &exposure, &coords);
+
+    image += &sensor_noise;
 
     let quantized = quantize_image(&image, sensor);
+
+    let noise_image = &sensor_noise + &zodiacal_noise;
 
     RenderingResult {
         image: quantized,
         electron_image: image,
-        noise_image: noise,
+        noise_image,
         rendered_stars: to_render,
     }
 }

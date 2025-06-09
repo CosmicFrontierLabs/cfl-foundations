@@ -9,9 +9,11 @@
 //! Original paper: https://doi.org/10.1051/aas:1998105
 
 use ndarray::Array2;
+use std::time::Duration;
 use thiserror::Error;
 
-use crate::photometry::STISZodiacalSpectrum;
+use crate::photometry::{spectrum::Spectrum, STISZodiacalSpectrum};
+use crate::{SensorConfig, TelescopeConfig};
 
 /// Errors that can occur when working with zodiacal light data
 #[derive(Error, Debug)]
@@ -21,6 +23,66 @@ pub enum ZodicalError {
 
     #[error("Interpolation error: {0}")]
     InterpolationError(String),
+
+    #[error("Invalid elongation: {0}° (must be between 0° and 180°)")]
+    InvalidElongation(f64),
+
+    #[error("Invalid latitude: {0}° (must be between -90° and 90°)")]
+    InvalidLatitude(f64),
+}
+
+/// Solar angular position coordinates for zodiacal light calculations
+///
+/// Represents the angular position of a target relative to the Sun as seen from Earth.
+/// These are the coordinates used in Leinert et al. (1998) zodiacal light measurements.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SolarAngularCoordinates {
+    /// Angular distance between Sun and target as seen from Earth (0 to 180 degrees)
+    elongation: f64,
+    /// Ecliptic latitude of the target (-90 to 90 degrees)
+    latitude: f64,
+}
+
+impl SolarAngularCoordinates {
+    /// Create new solar angular coordinates with validation
+    ///
+    /// # Arguments
+    ///
+    /// * `elongation` - Angular distance from sun in degrees (0 to 180)
+    /// * `latitude` - Ecliptic latitude in degrees (-90 to 90)
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the validated coordinates or an error
+    pub fn new(elongation: f64, latitude: f64) -> Result<Self, ZodicalError> {
+        if !(0.0..=180.0).contains(&elongation) {
+            return Err(ZodicalError::InvalidElongation(elongation));
+        }
+
+        if !(-90.0..=90.0).contains(&latitude) {
+            return Err(ZodicalError::InvalidLatitude(latitude));
+        }
+
+        Ok(Self {
+            elongation,
+            latitude,
+        })
+    }
+
+    /// Get the elongation in degrees
+    pub fn elongation(&self) -> f64 {
+        self.elongation
+    }
+
+    /// Get the latitude in degrees
+    pub fn latitude(&self) -> f64 {
+        self.latitude
+    }
+
+    /// Get the absolute latitude (for internal calculations)
+    pub(crate) fn abs_latitude(&self) -> f64 {
+        self.latitude.abs()
+    }
 }
 
 /// Represents zodiacal light brightness data as a function of angular separation from the sun
@@ -45,8 +107,8 @@ const ELONGATIONS: [f64; 19] = [
 
 // Leinert et al. (1998) Table 16 - Zodiacal light brightness in S10 units
 // (10th magnitude stars per square degree)
-// Each row corresponds to an ecliptic latitude (0° to 105°)
-// Each column corresponds to an elongation angle from sun (0° to 75°)
+// Each row corresponds to an ecliptic latitude (0° to 90°)
+// Each column corresponds to an elongation angle from sun (0° to 180°)
 // inf values represent areas too close to sun for measurement
 #[rustfmt::skip]
 fn zodical_raw_data() -> [[f64; 11]; 19] {
@@ -146,22 +208,22 @@ impl ZodicalLight {
     ///
     /// # Arguments
     ///
-    /// * `elongation` - Angular distance from sun in degrees (0 to 180)
-    /// * `latitude` - Ecliptic latitude in degrees (-90 to 90) (should be symmetric about the ecliptic plane)
+    /// * `coords` - Solar angular coordinates (elongation and ecliptic latitude)
     ///
     /// # Returns
     ///
     /// A `Result` containing either the brightness in S10 units (10th magnitude stars per square degree) or an error
-    pub fn get_brightness(&self, elongation: f64, latitude: f64) -> Result<f64, ZodicalError> {
+    pub fn get_brightness(&self, coords: &SolarAngularCoordinates) -> Result<f64, ZodicalError> {
         // Find indices and weights for elongation
-        let latitude = latitude.abs(); // Ensure latitude is non-negative
+        let elongation = coords.elongation();
+        let latitude = coords.abs_latitude();
         let (elong_idx1, elong_idx2, elong_weight) =
             Self::find_indices_and_weights(&ELONGATIONS, elongation)
-                .ok_or(ZodicalError::OutOfRange(elongation, latitude))?;
+                .ok_or(ZodicalError::OutOfRange(elongation, coords.latitude()))?;
 
         // Find indices and weights for latitude
         let (lat_idx1, lat_idx2, lat_weight) = Self::find_indices_and_weights(&LATITUDES, latitude)
-            .ok_or(ZodicalError::OutOfRange(elongation, latitude))?;
+            .ok_or(ZodicalError::OutOfRange(elongation, coords.latitude()))?;
 
         // Get the four corner values (data is indexed as [latitude][elongation])
         let q11 = self.data[[lat_idx1, elong_idx1]];
@@ -214,38 +276,145 @@ impl ZodicalLight {
         Ok(result)
     }
 
+    /// Get the zodiacal light brightness in magnitudes per square arcsecond
+    ///
+    /// Converts the brightness from S10 units (10th magnitude stars per square degree)
+    /// to magnitudes per square arcsecond using the standard photometric conversion.
+    ///
+    /// # Arguments
+    ///
+    /// * `coords` - Solar angular coordinates (elongation and ecliptic latitude)
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the brightness in magnitudes per square arcsecond or an error
+    ///
+    /// # Physics
+    ///
+    /// The conversion from S10 to magnitudes per square arcsecond follows:
+    /// mag/arcsec² = 10 - 2.5 * log₁₀(S10 / 3600²)
+    /// where 3600² converts from square degrees to square arcseconds
     pub fn get_brightness_mag_per_square_arcsec(
         &self,
-        elongation: f64,
-        latitude: f64,
+        coords: &SolarAngularCoordinates,
     ) -> Result<f64, ZodicalError> {
         // Get brightness in S10 units
-        let s10 = self.get_brightness(elongation, latitude)?;
+        let s10 = self.get_brightness(coords)?;
 
         // Convert S10 to magnitudes per square arcsecond
         Ok(10.0 - 2.5 * (s10 / (3600.0 * 3600.0)).log10())
     }
 
+    /// Get the zodiacal light spectrum scale factor relative to a reference position
+    ///
+    /// Calculates a scale factor to adjust the standard zodiacal spectrum based on
+    /// the brightness difference between the given coordinates and a reference position
+    /// at 180° elongation and 0° latitude (anti-solar point).
+    ///
+    /// # Arguments
+    ///
+    /// * `coords` - Solar angular coordinates (elongation and ecliptic latitude)
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the scale factor (dimensionless) or an error
+    ///
+    /// # Physics
+    ///
+    /// The scale factor converts magnitude differences to flux ratios:
+    /// scale_factor = 10^(-0.4 * Δmag)
+    /// where Δmag = mag(target) - mag(reference)
+    ///
+    /// This allows scaling a reference zodiacal spectrum to match the brightness
+    /// at any position in the sky while preserving spectral shape.
     pub fn get_spectrum_scale_factor(
         &self,
-        elongation: f64,
-        latitude: f64,
+        coords: &SolarAngularCoordinates,
     ) -> Result<f64, ZodicalError> {
         // Get brightness in S10 units
-        let reference = self.get_brightness_mag_per_square_arcsec(180.0, 0.0)?;
-        let s10 = self.get_brightness_mag_per_square_arcsec(elongation, latitude)?;
+        let reference_coords = SolarAngularCoordinates::new(180.0, 0.0)?;
+        let reference = self.get_brightness_mag_per_square_arcsec(&reference_coords)?;
+        let s10 = self.get_brightness_mag_per_square_arcsec(coords)?;
         let mag_diff = s10 - reference;
         Ok(10_f64.powf(-0.4 * mag_diff))
     }
 
+    /// Get a scaled zodiacal spectrum for the given ecliptic coordinates
+    ///
+    /// Returns a zodiacal spectrum scaled to match the brightness at the specified
+    /// position. Uses the STIS zodiacal spectrum as a reference template and scales
+    /// it based on the brightness difference from the anti-solar point.
+    ///
+    /// # Arguments
+    ///
+    /// * `coords` - Solar angular coordinates (elongation and ecliptic latitude)
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the scaled `STISZodiacalSpectrum` or an error
+    ///
+    /// # Physics
+    ///
+    /// The spectrum maintains the same spectral energy distribution (SED) shape
+    /// as measured by STIS, but is scaled in overall brightness to match the
+    /// zodiacal light intensity at the target coordinates. This assumes the
+    /// zodiacal spectrum shape is constant across the sky.
     pub fn get_zodical_spectrum(
         &self,
-        elongation: f64,
-        latitude: f64,
+        coords: &SolarAngularCoordinates,
     ) -> Result<STISZodiacalSpectrum, ZodicalError> {
         // Get the scale factor based on a reference point
-        let scale_factor = self.get_spectrum_scale_factor(elongation, latitude)?;
+        let scale_factor = self.get_spectrum_scale_factor(coords)?;
         Ok(STISZodiacalSpectrum::new(scale_factor))
+    }
+
+    /// Generates zodiacal light noise as photoelectrons for a sensor.
+    ///
+    /// This function computes the contribution of zodiacal light (scattered sunlight from interplanetary dust)
+    /// to the noise in an astronomical image. The result is expressed in units of photoelectrons.
+    ///
+    /// # Arguments
+    /// * `sensor` - Configuration of the sensor
+    /// * `telescope` - Configuration of the telescope
+    /// * `exposure` - Duration of the exposure
+    /// * `coords` - Solar angular coordinates (elongation and ecliptic latitude)
+    ///
+    /// # Returns
+    /// * An ndarray::Array2<f64> with dimensions matching the sensor, where each element
+    ///   represents the number of photoelectrons generated by zodiacal light in that pixel
+    /// # Note
+    /// This assumed the light is uniformly distributed across the sensor pixels. (no vignetting)
+    /// Ideally we should also interpolate the value across the sensor, as it is not uniform
+    /// across the field of view.
+    pub fn generate_zodical_background(
+        &self,
+        sensor: &SensorConfig,
+        telescope: &TelescopeConfig,
+        exposure: &Duration,
+        coords: &SolarAngularCoordinates,
+    ) -> Array2<f64> {
+        // Convert telescope focal length from meters to mm
+        let focal_length_mm = telescope.focal_length_m * 1000.0;
+
+        // Calculate pixel scale in arcseconds per pixel
+        // Pixel scale = (206265 * pixel_size) / focal_length
+        // where 206265 is the number of arcseconds in a radian
+        let pixel_scale_arcsec_per_pixel =
+            206265.0 * (sensor.pixel_size_um / 1000.0) / focal_length_mm;
+
+        let z_spect = self
+            .get_zodical_spectrum(coords)
+            .expect("Unable to generate zodical spectrum?");
+
+        let pixel_solid_angle_arcsec2 = pixel_scale_arcsec_per_pixel * pixel_scale_arcsec_per_pixel;
+
+        // Compute the photoelectrons per solid angle and multiply by the pixel solid angle
+        let aperture_cmsq = telescope.aperture_m * 10000.0;
+        let mean_pe = z_spect.photo_electrons(&sensor.quantum_efficiency, aperture_cmsq, &exposure)
+            * pixel_solid_angle_arcsec2
+            * telescope.light_efficiency;
+
+        Array2::ones((sensor.height_px as usize, sensor.width_px as usize)) * mean_pe
     }
 }
 
@@ -274,8 +443,9 @@ mod tests {
         let zodical = ZodicalLight::new();
 
         // Check a few known points from the original data
+        let coords = SolarAngularCoordinates::new(170.28, 66.56).unwrap();
         assert_relative_eq!(
-            zodical.get_spectrum_scale_factor(170.28, 66.56).unwrap(),
+            zodical.get_spectrum_scale_factor(&coords).unwrap(),
             0.336,
             epsilon = 0.01
         );
@@ -310,18 +480,20 @@ mod tests {
 
         // Test a coordinate with known value (exact match to a grid point)
         // 45° elongation, 60° latitude should give 91.0 S10 (after transposing data)
-        let brightness = zodical.get_brightness(45.0, 60.0).unwrap();
+        let coords = SolarAngularCoordinates::new(45.0, 60.0).unwrap();
+        let brightness = zodical.get_brightness(&coords).unwrap();
         assert!((brightness - 91.0).abs() < 1e-10);
 
         // Test interpolation between grid points
         // Between 30° and 45° elongation, between 45° and 60° latitude
-        let brightness = zodical.get_brightness(37.5, 52.5).unwrap();
+        let coords = SolarAngularCoordinates::new(37.5, 52.5).unwrap();
+        let brightness = zodical.get_brightness(&coords).unwrap();
         // Expected: interpolation between surrounding values
         assert!(brightness > 80.0 && brightness < 200.0);
 
         // Test out of range
-        assert!(zodical.get_brightness(200.0, 50.0).is_err());
-        assert!(zodical.get_brightness(45.0, 150.0).is_err());
+        assert!(SolarAngularCoordinates::new(200.0, 50.0).is_err());
+        assert!(SolarAngularCoordinates::new(45.0, 150.0).is_err());
     }
 
     #[test]
@@ -337,13 +509,15 @@ mod tests {
                 let elong_f64 = elong as f64;
                 let lat_f64 = lat as f64;
 
-                if let Ok(brightness) = zodical.get_brightness(elong_f64, lat_f64) {
-                    if brightness.is_finite() {
-                        assert!(
-                            brightness >= 40.0 && brightness <= 10000.0,
-                            "Brightness at elongation={}, lat={} is {}, which is outside the expected range [40, 10000]",
-                            elong_f64, lat_f64, brightness
-                        );
+                if let Ok(coords) = SolarAngularCoordinates::new(elong_f64, lat_f64) {
+                    if let Ok(brightness) = zodical.get_brightness(&coords) {
+                        if brightness.is_finite() {
+                            assert!(
+                                brightness >= 40.0 && brightness <= 10000.0,
+                                "Brightness at elongation={}, lat={} is {}, which is outside the expected range [40, 10000]",
+                                elong_f64, lat_f64, brightness
+                            );
+                        }
                     }
                 }
             }
@@ -365,13 +539,15 @@ mod tests {
 
         // Test that regions too close to the sun return finite values or errors
         // At 0° latitude, 0° elongation should be infinity (sun exclusion)
-        match zodical.get_brightness(0.0, 0.0) {
+        let coords = SolarAngularCoordinates::new(0.0, 0.0).unwrap();
+        match zodical.get_brightness(&coords) {
             Ok(brightness) => assert!(!brightness.is_finite()),
             Err(_) => (), // Also acceptable
         }
 
         // At higher latitudes, small elongations should have finite values
-        let brightness = zodical.get_brightness(15.0, 15.0).unwrap();
+        let coords = SolarAngularCoordinates::new(15.0, 15.0).unwrap();
+        let brightness = zodical.get_brightness(&coords).unwrap();
         assert!(brightness.is_finite());
         assert!(brightness > 1000.0); // Should be bright near the sun
     }

@@ -34,6 +34,7 @@ use simulator::image_proc::render::{
     add_stars_to_image, approx_airy_pixels, quantize_image, StarInFrame,
 };
 use simulator::image_proc::segment::do_detections;
+use simulator::photometry::{zodical::SolarAngularCoordinates, ZodicalLight};
 use simulator::{magnitude_to_electrons, SensorConfig};
 use starfield::catalogs::StarData;
 use starfield::Equatorial;
@@ -75,6 +76,14 @@ struct Args {
     /// Output CSV file path
     #[arg(long, default_value = "sensor_floor_results.csv")]
     output_csv: String,
+
+    /// Run experiments serially instead of in parallel
+    #[arg(long, default_value_t = false)]
+    serial: bool,
+
+    /// Solar elongation and ecliptic latitude coordinates for zodiacal background (format: "elongation,latitude")
+    #[arg(long, default_value = "90.0,15.0")]
+    coordinates: String,
 }
 
 /// Parameters for a single experiment
@@ -98,6 +107,10 @@ struct ExperimentParams {
     indices: (usize, usize),
     /// Number of times to run the experiment
     experiment_count: u32,
+    /// Solar elongation for zodiacal background
+    elongation: f64,
+    /// Ecliptic latitude for zodiacal background
+    latitude: f64,
 }
 
 impl ExperimentParams {
@@ -157,7 +170,7 @@ impl ExperimentResults {
     }
 
     fn rms_err_mas(&self) -> f64 {
-        let pix_err = self.rms_error();
+        let _pix_err = self.rms_error();
         self.rms_error_radians() * (648_000_000.0 / PI)
     }
 }
@@ -182,16 +195,30 @@ fn run_single_experiment(params: &ExperimentParams) -> ExperimentResults {
         add_stars_to_image(&mut e_image, &vec![star], params.psf_pix);
 
         // Generate and add noise to image
-        let noise = generate_sensor_noise(&params.sensor, &params.exposure, None);
+        let sensor_noise = generate_sensor_noise(&params.sensor, &params.exposure, None);
+
+        // Background light sources - using coordinates from CLI arguments
+        let coords = SolarAngularCoordinates::new(params.elongation, params.latitude)
+            .expect("Invalid coordinates");
+        let z_light = ZodicalLight::new();
+        let zodical = z_light.generate_zodical_background(
+            &params.sensor,
+            &params.telescope,
+            &params.exposure,
+            &coords,
+        );
+
+        let noise = &sensor_noise + &zodical;
+
         let total_e_image = &e_image + &noise;
 
         // Quantize to digital numbers
         let quantized = quantize_image(&total_e_image, &params.sensor);
 
         // Calculate detection threshold based on noise floor
-        let mean_noise_elec = noise.mean().expect("Can't take image mean");
-        let cutoff_value =
-            mean_noise_elec * params.sensor.dn_per_electron * params.noise_floor_multiplier;
+        let quantized_noise = quantize_image(&noise, &params.sensor);
+        let noise_mean = quantized_noise.map(|&x| x as f64).mean().unwrap();
+        let cutoff_value = noise_mean * params.noise_floor_multiplier;
 
         // Run star detection algorithm
         let detected_stars = do_detections(&quantized, None, Some(cutoff_value));
@@ -220,10 +247,30 @@ fn run_single_experiment(params: &ExperimentParams) -> ExperimentResults {
     }
 }
 
+/// Parse coordinates string in format "elongation,latitude"
+fn parse_coordinates(coords_str: &str) -> Result<(f64, f64), Box<dyn std::error::Error>> {
+    let parts: Vec<&str> = coords_str.split(',').collect();
+    if parts.len() != 2 {
+        return Err(format!(
+            "Invalid coordinates format. Expected 'elongation,latitude', got '{}'",
+            coords_str
+        )
+        .into());
+    }
+
+    let elongation = parts[0].trim().parse::<f64>()?;
+    let latitude = parts[1].trim().parse::<f64>()?;
+
+    Ok((elongation, latitude))
+}
+
 /// Main function for sensor floor estimation
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse command line arguments
     let args = Args::parse();
+
+    // Parse coordinates
+    let (elongation, latitude) = parse_coordinates(&args.coordinates)?;
 
     // Set domain size for our test images
     let domain = 256_usize;
@@ -277,6 +324,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     noise_floor_multiplier: args.noise_floor,
                     indices: (disk_idx, mag_idx),
                     experiment_count: args.experiments,
+                    elongation,
+                    latitude,
                 };
 
                 all_experiments.push(params);
@@ -285,8 +334,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!(
-        "Running {} experiments in parallel...",
-        all_experiments.len()
+        "Running {} experiments {}...",
+        all_experiments.len(),
+        if args.serial {
+            "serially"
+        } else {
+            "in parallel"
+        }
     );
 
     // Create another hashmap to store detection rates
@@ -310,14 +364,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     pb.set_style(progress_style);
     pb.set_message("Running experiments");
 
-    // Run experiments in parallel with progress tracking
-    let results: Vec<_> = all_experiments
-        .par_iter()
-        .map(|params| {
-            pb.inc(1);
-            run_single_experiment(params)
-        })
-        .collect();
+    // Run experiments with progress tracking (parallel or serial based on flag)
+    let results: Vec<_> = if args.serial {
+        all_experiments
+            .iter()
+            .map(|params| {
+                pb.inc(1);
+                run_single_experiment(params)
+            })
+            .collect()
+    } else {
+        all_experiments
+            .par_iter()
+            .map(|params| {
+                pb.inc(1);
+                run_single_experiment(params)
+            })
+            .collect()
+    };
 
     pb.finish_with_message("Experiments complete!");
 

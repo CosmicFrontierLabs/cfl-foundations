@@ -36,9 +36,6 @@ const SURFACE_BRIGHTNESS_ORIGINAL: [f64; STIS_DATA_POINTS] = [
     2.78e-18, 2.67e-18, 2.56e-18, 2.41e-18, 2.31e-18,
 ];
 
-const ARCSEC_TO_RADIAN: f64 = std::f64::consts::PI / (180.0 * 3600.0);
-const ARCSEC2_TO_STERADIAN: f64 = ARCSEC_TO_RADIAN * ARCSEC_TO_RADIAN;
-
 /// STIS Zodiacal Light Spectrum
 ///
 /// Provides zodiacal light spectral irradiance based on STIS measurements.
@@ -59,23 +56,15 @@ impl STISZodiacalSpectrum {
             .iter()
             .zip(SURFACE_BRIGHTNESS_ORIGINAL.to_vec().iter())
             .map(|(wavelength, brightness)| {
-                // Conversion factors:
-                // 1. Angstrom to nm: already done in WAVELENGTHS_NM
-                // 2. per Angstrom to per Hz: multiply by λ²/c where λ in cm
-                // 3. arcsec² to steradian: multiply by (π/180/3600)²
-                // 4. Surface brightness to spectral irradiance: assume unit steradian
-
+                // Convert from per Angstrom to per Hz
                 let wavelength_nm = wavelength;
                 let wavelength_cm = wavelength_nm * 1e-7; // nm to cm
 
-                // Convert from per Angstrom to per Hz
                 let angstrom_to_cm = 1e-8; // Angstrom to cm
                 let per_angstrom_to_per_hz =
                     (wavelength_cm * wavelength_cm) / (CGS::SPEED_OF_LIGHT * angstrom_to_cm);
 
-                // Convert from surface brightness to spectral irradiance
-                // Assuming unit steradian for zodiacal light background
-                brightness * per_angstrom_to_per_hz * ARCSEC2_TO_STERADIAN * scale_factor
+                brightness * per_angstrom_to_per_hz * scale_factor
             })
             .collect();
 
@@ -153,6 +142,18 @@ impl Spectrum for STISZodiacalSpectrum {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+
+    #[test]
+    fn test_spectrum_rescaling() {
+        // Starting with https://hst-docs.stsci.edu/stisihb/chapter-6-exposure-time-calculations/6-6-tabular-sky-backgrounds
+        // At 500nm / 5000A we see 5.15e–18 erg / (s¹ cm² A¹ arcsec²)
+        let spec = STISZodiacalSpectrum::new(1.0);
+
+        // Check a known value at 500 nm
+        let expected_irradiance = 5.15e-18 * (1e-8 / CGS::SPEED_OF_LIGHT); // Convert to per Hz
+        let actual_irradiance = spec.spectral_irradiance(500.0);
+        assert_relative_eq!(actual_irradiance, expected_irradiance, epsilon = 1e-10);
+    }
 
     #[test]
     fn test_wavelength_bounds() {

@@ -5,12 +5,11 @@
 
 use std::time::Duration;
 
+use crate::algo::process_array_in_parallel_chunks;
+use crate::SensorConfig;
 use ndarray::Array2;
 use rand::{thread_rng, RngCore};
 use rand_distr::{Distribution, Normal, Poisson};
-
-use crate::algo::process_array_in_parallel_chunks;
-use crate::SensorConfig;
 
 /// Generates a plausible noise field for a sensor with given parameters, optimized for performance.
 ///
@@ -188,7 +187,10 @@ pub fn est_noise_floor(
 mod tests {
     use approx::assert_relative_eq;
 
-    use crate::{photometry::Band, QuantumEfficiency};
+    use crate::{
+        photometry::{zodical::SolarAngularCoordinates, Band, ZodicalLight},
+        QuantumEfficiency, TelescopeConfig,
+    };
 
     use super::*;
 
@@ -424,5 +426,33 @@ mod tests {
             noise1, noise2,
             "generate_poisson_noise should produce identical results for the same seed"
         );
+    }
+
+    #[test]
+    fn test_zodical_light_computation() {
+        // Test that the zodiacal light noise is computed correctly
+        let sensor = make_tiny_test_sensor((64, 64), 0.1, 2.0);
+        let telescope = TelescopeConfig::new(
+            "Test Telescope",
+            1.0,  // 1 meter aperture
+            10.0, // 10 meters focal length
+            1.0,  // light efficiency
+        );
+        let exposure_time = Duration::from_secs(60);
+        let coords = SolarAngularCoordinates::new(90.0, 0.0).expect("Invalid coordinates");
+        let z_light = ZodicalLight::new();
+        let zodical_noise =
+            z_light.generate_zodical_background(&sensor, &telescope, &exposure_time, &coords);
+
+        // Check dimensions match sensor
+        assert_eq!(
+            zodical_noise.dim(),
+            (sensor.height_px as usize, sensor.width_px as usize)
+        );
+
+        // Check that all values are positive (photoelectrons should be non-negative)
+        for value in zodical_noise.iter() {
+            assert!(*value >= 0.0, "Zodiacal light noise should be non-negative");
+        }
     }
 }
