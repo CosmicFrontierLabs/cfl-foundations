@@ -7,7 +7,7 @@ use crate::{
     algo::icp::Locatable2d,
     field_diameter, magnitude_to_electrons,
     photometry::{zodical::SolarAngularCoordinates, ZodicalLight},
-    star_math::equatorial_to_pixel,
+    star_math::StarProjector,
     SensorConfig, TelescopeConfig,
 };
 
@@ -110,6 +110,12 @@ pub fn render_star_field(
     // Calculate field of view from telescope and sensor
     let fov_deg = field_diameter(telescope, sensor);
 
+    // Create star projector for coordinate transformation
+    let fov_rad = fov_deg.to_radians();
+    let radians_per_pixel = fov_rad / image_width.max(image_height) as f64;
+    let projector =
+        StarProjector::new(center, radians_per_pixel, sensor.width_px, sensor.height_px);
+
     // Padded bounds check
     let padding = psf_pix * 2.0;
 
@@ -117,7 +123,10 @@ pub fn render_star_field(
     for &star in stars {
         // Convert position to pixel coordinates (sub-pixel precision)
         let star_radec = Equatorial::from_degrees(star.ra_deg(), star.dec_deg());
-        let (x, y) = equatorial_to_pixel(&star_radec, center, fov_deg, image_width, image_height);
+        let (x, y) = match projector.project_unbounded(&star_radec) {
+            Some(coords) => coords,
+            None => continue, // Skip stars behind the camera
+        };
 
         // Check if star is within the image bounds
         if x < -padding
