@@ -243,7 +243,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     // Get coordinates from shared args
-    let (elongation, latitude) = args.shared.coordinates;
+    let elongation = args.shared.coordinates.elongation();
+    let latitude = args.shared.coordinates.latitude();
 
     // Set domain size for our test images
     let domain = 256_usize;
@@ -256,7 +257,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         sensor_models::IMX455.with_dimensions(domain as u32, domain as u32),
     ];
 
-    let exposure = Duration::from_secs_f64(args.shared.exposure);
+    let exposure = args.shared.exposure.0;
     let telescope = DEMO_50CM.clone();
 
     // PSF disk sizes to test (in Airy disk units) - 2 to 8 in steps of 0.25

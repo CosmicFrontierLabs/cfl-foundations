@@ -137,8 +137,8 @@ fn zodical_raw_data() -> [[f64; 11]; 19] {
     ]
 }
 
-const LAT_OF_MIN: f64 = 75.0;
-const ELONG_OF_MIN: f64 = 165.0;
+pub const LAT_OF_MIN: f64 = 75.0;
+pub const ELONG_OF_MIN: f64 = 165.0;
 
 impl ZodicalLight {
     /// Create a new ZodicalLight instance with the embedded data

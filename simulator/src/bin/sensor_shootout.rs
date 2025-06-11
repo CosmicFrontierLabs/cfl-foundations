@@ -297,7 +297,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 scope,
                 ra_dec,
                 &stars,
-                Duration::from_secs_f64(args.shared.exposure),
+                args.shared.exposure.0,
                 i,
                 args.shared.debug,
                 args.shared.wavelength,
