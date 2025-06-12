@@ -17,8 +17,7 @@
 
 use clap::{Parser, ValueEnum};
 use simulator::hardware::telescope::{models, TelescopeConfig};
-use simulator::shared_args::SharedSimulationArgs;
-use std::time::Duration;
+use simulator::shared_args::{load_catalog, DurationArg, SensorModel, SharedSimulationArgs};
 
 /// Available telescope models for selection
 #[derive(Debug, Clone, ValueEnum)]
@@ -36,9 +35,9 @@ enum TelescopeModel {
 impl std::fmt::Display for TelescopeModel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TelescopeModel::Small50mm => write!(f, "small-50mm"),
-            TelescopeModel::Demo50cm => write!(f, "demo-50cm"),
-            TelescopeModel::Final1m => write!(f, "final-1m"),
+            TelescopeModel::Small50mm => write!(f, "small50mm"),
+            TelescopeModel::Demo50cm => write!(f, "demo50cm"),
+            TelescopeModel::Final1m => write!(f, "final1m"),
             TelescopeModel::Weasel => write!(f, "weasel"),
         }
     }
@@ -71,13 +70,17 @@ struct Args {
     #[arg(long, default_value_t = TelescopeModel::Demo50cm)]
     telescope: TelescopeModel,
 
-    /// Simulation duration in seconds
-    #[arg(long, default_value_t = 60.0)]
-    duration: f64,
+    /// Sensor model to use for simulation
+    #[arg(long, default_value_t = SensorModel::Gsense6510bsi)]
+    sensor: SensorModel,
 
-    /// Simulation time step in milliseconds
-    #[arg(long, default_value_t = 100.0)]
-    timestep_ms: f64,
+    /// Simulation duration (e.g., "60s", "1.5m", "2000ms")
+    #[arg(long, default_value = "60s")]
+    duration: DurationArg,
+
+    /// Simulation time step (e.g., "100ms", "0.1s")
+    #[arg(long, default_value = "100ms")]
+    timestep: DurationArg,
 
     /// Output CSV file for motion data
     #[arg(long, default_value = "motion_results.csv")]
@@ -88,15 +91,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let telescope = args.telescope.to_config();
+    let sensor = args.sensor.to_config();
 
     println!("Motion Simulator");
     println!("================");
     println!("Shared parameters:");
-    println!("  Exposure: {} seconds", args.shared.exposure);
+    println!("  Exposure: {}", args.shared.exposure);
     println!("  Wavelength: {} nm", args.shared.wavelength);
     println!("  Temperature: {} °C", args.shared.temperature);
     println!("  Debug mode: {}", args.shared.debug);
-    println!("  Coordinates: {:?}", args.shared.coordinates);
+    println!(
+        "  Coordinates: {:.1}°,{:.1}°",
+        args.shared.coordinates.elongation(),
+        args.shared.coordinates.latitude()
+    );
+    println!("  Catalog: {}", args.shared.catalog.display());
     println!();
     println!("Telescope configuration:");
     println!("  Model: {:?}", args.telescope);
@@ -108,20 +117,56 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         telescope.light_efficiency * 100.0
     );
     println!();
+    println!("Sensor configuration:");
+    println!("  Model: {:?}", args.sensor);
+    println!("  Name: {}", sensor.name);
+    println!(
+        "  Resolution: {}x{} pixels",
+        sensor.width_px, sensor.height_px
+    );
+    println!("  Pixel size: {:.1} μm", sensor.pixel_size_um);
+    println!("  Read noise: {:.1} e⁻", sensor.read_noise_e);
+    println!(
+        "  Dark current: {:.3} e⁻/px/s @ {}°C",
+        sensor.dark_current_at_temperature(args.shared.temperature),
+        args.shared.temperature
+    );
+    println!(
+        "  QE @ {} nm: {:.1}%",
+        args.shared.wavelength as u32,
+        sensor.qe_at_wavelength(args.shared.wavelength as u32) * 100.0
+    );
+    println!("  Max frame rate: {:.1} fps", sensor.max_frame_rate_fps);
+    println!();
     println!("Motion parameters:");
-    println!("  Duration: {} seconds", args.duration);
-    println!("  Timestep: {} ms", args.timestep_ms);
+    println!("  Duration: {}", args.duration);
+    println!("  Timestep: {}", args.timestep);
     println!("  Output file: {}", args.output_csv);
 
     if args.shared.debug {
         println!("\nDebug mode enabled - additional diagnostics will be shown");
     }
 
-    let timestep = Duration::from_millis(args.timestep_ms as u64);
-    let total_steps = (args.duration * 1000.0 / args.timestep_ms) as usize;
+    let timestep = args.timestep.0;
+    let duration = args.duration.0;
+    let total_steps = (duration.as_millis() / timestep.as_millis()) as usize;
 
     println!("\nSimulation will run for {} steps", total_steps);
-    println!("Each step represents {:.1} ms", args.timestep_ms);
+    println!("Each step represents {}", args.timestep);
+
+    // Example of loading catalog using shared helper function
+    if args.shared.debug {
+        println!("\nAttempting to load catalog for demonstration...");
+        match load_catalog(&args.shared.catalog, args.shared.debug) {
+            Ok(catalog) => {
+                println!("Successfully loaded catalog with {} stars", catalog.len());
+            }
+            Err(e) => {
+                println!("Note: Could not load catalog ({})", e);
+                println!("This is not required for motion simulation");
+            }
+        }
+    }
 
     // TODO: Implement actual motion simulation
     println!("\n[STUB] Motion simulation not yet implemented");
