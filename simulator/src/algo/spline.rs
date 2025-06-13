@@ -166,6 +166,48 @@ impl CubicSpline {
         a + b * dx + c * dx * dx + d * dx * dx * dx
     }
 
+    /// Evaluate the spline and its derivatives at a given x value
+    ///
+    /// Returns the interpolated value along with its first and second derivatives
+    /// at the specified x coordinate. This is more efficient than calling
+    /// evaluate() multiple times when derivatives are needed.
+    ///
+    /// # Arguments
+    /// * `x` - Point to evaluate at
+    ///
+    /// # Returns
+    /// Tuple of (value, first_derivative, second_derivative). For x values
+    /// outside the original range, returns the boundary value and zero derivatives.
+    ///
+    /// # Mathematical Background
+    /// For a cubic polynomial S(x) = a + b*(x-xi) + c*(x-xi)² + d*(x-xi)³:
+    /// - S'(x) = b + 2*c*(x-xi) + 3*d*(x-xi)²
+    /// - S''(x) = 2*c + 6*d*(x-xi)
+    ///
+    /// # Performance
+    /// Evaluation time is O(log n) due to binary search for segment location.
+    pub fn evaluate_with_derivatives(&self, x: f64) -> (f64, f64, f64) {
+        // Handle boundary cases - no derivatives outside range
+        if x <= self.x[0] {
+            return (self.y[0], 0.0, 0.0);
+        }
+        if x >= self.x[self.x.len() - 1] {
+            return (self.y[self.y.len() - 1], 0.0, 0.0);
+        }
+
+        // Find the appropriate segment
+        let segment = self.find_segment(x);
+        let dx = x - self.x[segment];
+        let [a, b, c, d] = self.coeffs[segment];
+
+        // Evaluate polynomial and derivatives
+        let value = a + b * dx + c * dx * dx + d * dx * dx * dx;
+        let first_deriv = b + 2.0 * c * dx + 3.0 * d * dx * dx;
+        let second_deriv = 2.0 * c + 6.0 * d * dx;
+
+        (value, first_deriv, second_deriv)
+    }
+
     /// Find which segment contains the given x value
     ///
     /// Uses binary search to efficiently locate the segment containing x.
@@ -462,6 +504,70 @@ mod tests {
         for i in 0..7 {
             assert!((x_interp[i] - x_direct[i]).abs() < 1e-10);
             assert!((y_interp[i] - y_direct[i]).abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn test_evaluate_with_derivatives() {
+        let x = vec![0.0, 1.0, 2.0, 3.0];
+        let y = vec![0.0, 1.0, 4.0, 9.0]; // y = x^2
+        let spline = CubicSpline::new(x, y);
+
+        // Test at a point within range
+        let (value, _, second_deriv) = spline.evaluate_with_derivatives(1.5);
+
+        // Value should match regular evaluate
+        assert!((value - spline.evaluate(1.5)).abs() < 1e-10);
+
+        // For quadratic data, second derivative should be approximately constant
+        assert!(second_deriv.abs() > 0.0); // Should have some curvature
+    }
+
+    #[test]
+    fn test_derivatives_boundary_conditions() {
+        let x = vec![0.0, 1.0, 2.0];
+        let y = vec![0.0, 1.0, 4.0];
+        let spline = CubicSpline::new(x, y);
+
+        // Test outside boundaries - should return zero derivatives
+        let (val_low, deriv1_low, deriv2_low) = spline.evaluate_with_derivatives(-1.0);
+        assert_eq!(val_low, 0.0);
+        assert_eq!(deriv1_low, 0.0);
+        assert_eq!(deriv2_low, 0.0);
+
+        let (val_high, deriv1_high, deriv2_high) = spline.evaluate_with_derivatives(5.0);
+        assert_eq!(val_high, 4.0);
+        assert_eq!(deriv1_high, 0.0);
+        assert_eq!(deriv2_high, 0.0);
+    }
+
+    #[test]
+    fn test_derivatives_linear_function() {
+        let x = vec![0.0, 1.0, 2.0, 3.0];
+        let y = vec![2.0, 5.0, 8.0, 11.0]; // y = 3x + 2 (linear)
+        let spline = CubicSpline::new(x, y);
+
+        let (_, first_deriv, second_deriv) = spline.evaluate_with_derivatives(1.5);
+
+        // For linear function, first derivative should be constant (~3)
+        assert!((first_deriv - 3.0).abs() < 0.1);
+
+        // Second derivative should be near zero for linear function
+        assert!(second_deriv.abs() < 0.1);
+    }
+
+    #[test]
+    fn test_derivatives_consistency() {
+        let x = vec![0.0, 1.0, 2.0, 3.0, 4.0];
+        let y = vec![0.0, 1.0, 8.0, 27.0, 64.0]; // y = x^3
+        let spline = CubicSpline::new(x, y);
+
+        // Test multiple points
+        for test_x in [0.5, 1.5, 2.5, 3.5] {
+            let (value, _first_deriv, _second_deriv) = spline.evaluate_with_derivatives(test_x);
+
+            // Value should match regular evaluate method
+            assert!((value - spline.evaluate(test_x)).abs() < 1e-10);
         }
     }
 }
