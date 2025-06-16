@@ -16,6 +16,7 @@
 //! See --help for detailed options.
 
 use clap::{Parser, ValueEnum};
+use log::debug;
 use simulator::hardware::telescope::{models, TelescopeConfig};
 use simulator::shared_args::{DurationArg, SensorModel, SharedSimulationArgs};
 
@@ -102,7 +103,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Exposure: {}", args.shared.exposure);
     println!("  Wavelength: {} nm", args.shared.wavelength);
     println!("  Temperature: {} °C", args.shared.temperature);
-    println!("  Debug mode: {}", args.shared.debug);
     println!(
         "  Coordinates: {:.1}°,{:.1}°",
         args.shared.coordinates.elongation(),
@@ -146,10 +146,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Timestep: {}", args.timestep);
     println!("  Output file: {}", args.output_csv);
 
-    if args.shared.debug {
-        println!("\nDebug mode enabled - additional diagnostics will be shown");
-    }
-
     let timestep = args.timestep.0;
     let duration = args.duration.0;
     let total_steps = (duration.as_millis() / timestep.as_millis()) as usize;
@@ -158,16 +154,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Each step represents {}", args.timestep);
 
     // Example of loading catalog using shared helper function
-    if args.shared.debug {
-        println!("\nAttempting to load catalog for demonstration...");
-        match args.shared.load_catalog() {
-            Ok(catalog) => {
-                println!("Successfully loaded catalog with {} stars", catalog.len());
-            }
-            Err(e) => {
-                println!("Note: Could not load catalog ({})", e);
-                println!("This is not required for motion simulation");
-            }
+    debug!("Attempting to load catalog for demonstration...");
+    match args.shared.load_catalog() {
+        Ok(catalog) => {
+            debug!("Successfully loaded catalog with {} stars", catalog.len());
+        }
+        Err(e) => {
+            debug!("Note: Could not load catalog ({})", e);
+            debug!("This is not required for motion simulation");
         }
     }
 

@@ -205,10 +205,6 @@ pub struct SharedSimulationArgs {
     #[arg(long, default_value_t = 20.0)]
     pub temperature: f64,
 
-    /// Enable debug output
-    #[arg(long, default_value_t = false)]
-    pub debug: bool,
-
     /// Solar elongation and coordinates for zodiacal background (format: "elongation,latitude")
     /// Defaults to the point of minimum zodiacal light brightness
     #[arg(long, default_value = DEFAULT_ZODIACAL_COORDINATES, value_parser = parse_coordinates)]
