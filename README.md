@@ -38,7 +38,11 @@ The project is organized as a Rust workspace with multiple packages:
 cargo build
 
 # Run telescope simulation with star field to compare sensor performance across different models
-cargo run --bin sensor_shootout
+# Random sampling mode (default)
+cargo run --bin sensor_shootout -- --experiments 100
+
+# Single-shot debug mode pointing at the Pleiades cluster for visual comparison
+cargo run --bin sensor_shootout -- --single-shot-debug "56.75,24.12" --experiments 1
 
 # Generate plots and analysis
 cargo run --bin camera_qe_plot --package simulator

@@ -1,7 +1,7 @@
 use crate::hardware::sensor::SensorConfig;
 use crate::photometry::zodical::SolarAngularCoordinates;
 use clap::{Parser, ValueEnum};
-use starfield::catalogs::binary_catalog::BinaryCatalog;
+use starfield::catalogs::binary_catalog::{BinaryCatalog, MinimalStar};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -28,6 +28,58 @@ fn parse_coordinates(s: &str) -> Result<SolarAngularCoordinates, String> {
 /// Default coordinates string for zodiacal light minimum
 /// Uses the values from ELONG_OF_MIN (165.0) and LAT_OF_MIN (75.0)
 const DEFAULT_ZODIACAL_COORDINATES: &str = "165.0,75.0";
+
+/// Additional bright stars to inject into catalogs (embedded at compile time)
+const ADDITIONAL_BRIGHT_STARS_CSV: &str = include_str!("../data/missing_bright_stars.csv");
+
+/// Parse CSV data into MinimalStar instances
+///
+/// Expected CSV format: RA_deg,Dec_deg,Gaia_magnitude
+/// Header line is skipped automatically
+fn parse_additional_stars() -> Result<Vec<MinimalStar>, Box<dyn std::error::Error>> {
+    let mut stars = Vec::new();
+    let mut current_id = u64::MAX; // Start from maximum possible value and count backwards
+
+    for (line_num, line) in ADDITIONAL_BRIGHT_STARS_CSV.lines().enumerate() {
+        // Skip header line
+        if line_num == 0 {
+            continue;
+        }
+
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        let parts: Vec<&str> = line.split(',').collect();
+        if parts.len() != 3 {
+            return Err(format!(
+                "Invalid CSV format at line {}: expected 3 columns, got {}",
+                line_num + 1,
+                parts.len()
+            )
+            .into());
+        }
+
+        let ra_deg = parts[0]
+            .trim()
+            .parse::<f64>()
+            .map_err(|e| format!("Invalid RA at line {}: {}", line_num + 1, e))?;
+        let dec_deg = parts[1]
+            .trim()
+            .parse::<f64>()
+            .map_err(|e| format!("Invalid Dec at line {}: {}", line_num + 1, e))?;
+        let magnitude = parts[2]
+            .trim()
+            .parse::<f64>()
+            .map_err(|e| format!("Invalid magnitude at line {}: {}", line_num + 1, e))?;
+
+        stars.push(MinimalStar::new(current_id, ra_deg, dec_deg, magnitude));
+        current_id = current_id.saturating_sub(1); // Count backwards, protecting against underflow
+    }
+
+    Ok(stars)
+}
 
 /// Parse duration string with units (e.g., "1.5s", "150ms", "2000us", "1h", "30m")
 fn parse_duration(s: &str) -> Result<Duration, String> {
@@ -167,54 +219,57 @@ pub struct SharedSimulationArgs {
     pub catalog: PathBuf,
 }
 
-/// Load a binary star catalog from the specified path
-///
-/// This helper function loads a BinaryCatalog and provides informative error messages
-/// if loading fails. It also prints basic catalog information when debug mode is enabled.
-///
-/// # Arguments
-/// * `catalog_path` - Path to the binary catalog file
-/// * `debug` - Whether to print debug information about the loaded catalog
-///
-/// # Returns
-/// * `Result<BinaryCatalog, Box<dyn std::error::Error>>` - The loaded catalog or error
-///
-/// # Example
-/// ```no_run
-/// use simulator::shared_args::load_catalog;
-/// use std::path::PathBuf;
-///
-/// let catalog_path = PathBuf::from("gaia_mag16_multi.bin");
-/// let catalog = load_catalog(&catalog_path, true)?;
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
-pub fn load_catalog(
-    catalog_path: &PathBuf,
-    debug: bool,
-) -> Result<BinaryCatalog, Box<dyn std::error::Error>> {
-    if debug {
-        println!("Loading catalog from: {}", catalog_path.display());
+impl SharedSimulationArgs {
+    /// Load a binary star catalog from the configured path and union with additional bright stars
+    ///
+    /// This method loads a BinaryCatalog and adds additional bright stars from embedded CSV data.
+    ///
+    /// # Returns
+    /// * `Result<BinaryCatalog, Box<dyn std::error::Error>>` - The loaded catalog with additional stars or error
+    ///
+    /// # Example
+    /// ```no_run
+    /// use simulator::shared_args::SharedSimulationArgs;
+    /// use clap::Parser;
+    ///
+    /// let args = SharedSimulationArgs::parse();
+    /// let catalog = args.load_catalog()?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn load_catalog(&self) -> Result<BinaryCatalog, Box<dyn std::error::Error>> {
+        let mut catalog = BinaryCatalog::load(&self.catalog).map_err(|e| {
+            format!(
+                "Failed to load catalog from '{}': {}",
+                self.catalog.display(),
+                e
+            )
+        })?;
+
+        // Parse and add additional bright stars
+        let additional_stars =
+            parse_additional_stars().expect("Failed to parse embedded additional bright stars CSV");
+
+        // Get existing stars and combine with additional ones
+        let mut all_stars = catalog.stars().to_vec();
+        all_stars.extend(additional_stars);
+
+        // Create new catalog with combined stars
+        let updated_description = format!(
+            "{} + {} additional bright stars",
+            catalog.description(),
+            all_stars.len() - catalog.len()
+        );
+        catalog = BinaryCatalog::from_stars(all_stars, &updated_description);
+
+        Ok(catalog)
     }
-
-    let catalog = BinaryCatalog::load(catalog_path).map_err(|e| {
-        format!(
-            "Failed to load catalog from '{}': {}",
-            catalog_path.display(),
-            e
-        )
-    })?;
-
-    if debug {
-        println!("Loaded catalog with {} stars", catalog.len());
-    }
-
-    Ok(catalog)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::photometry::zodical::{ELONG_OF_MIN, LAT_OF_MIN};
+    use starfield::catalogs::StarPosition;
 
     #[test]
     fn test_default_coordinates_match_zodiacal_constants() {
@@ -253,5 +308,69 @@ mod tests {
         // Test error cases
         assert!(parse_duration("-1s").is_err());
         assert!(parse_duration("invalid").is_err());
+    }
+
+    #[test]
+    fn test_parse_additional_stars() {
+        // Test the actual embedded CSV parsing
+        let stars = parse_additional_stars().expect("Should parse embedded CSV successfully");
+
+        // Verify we got some stars (the actual CSV should have many)
+        assert!(!stars.is_empty(), "Should have parsed at least some stars");
+
+        // Check that IDs are assigned backwards from u64::MAX
+        if stars.len() >= 2 {
+            let first_star = &stars[0];
+            let second_star = &stars[1];
+            assert_eq!(first_star.id, u64::MAX, "First star should have max u64 ID");
+            assert_eq!(
+                second_star.id,
+                u64::MAX - 1,
+                "Second star should have max-1 ID"
+            );
+        }
+
+        // Verify all stars have valid coordinates and magnitudes
+        for star in &stars {
+            // RA should be in range [0, 360) degrees
+            assert!(
+                star.ra() >= 0.0 && star.ra() < 360.0,
+                "RA {} should be in range [0, 360)",
+                star.ra()
+            );
+
+            // Dec should be in range [-90, 90] degrees
+            assert!(
+                star.dec() >= -90.0 && star.dec() <= 90.0,
+                "Dec {} should be in range [-90, 90]",
+                star.dec()
+            );
+
+            // Magnitude should be reasonable (very bright stars, so negative to ~6)
+            assert!(
+                star.magnitude >= -2.0 && star.magnitude <= 7.0,
+                "Magnitude {} should be reasonable for bright stars",
+                star.magnitude
+            );
+
+            // ID should be counting backwards from u64::MAX
+            assert!(
+                star.id >= u64::MAX - stars.len() as u64,
+                "Star ID {} should be in expected range",
+                star.id
+            );
+        }
+
+        println!("Successfully parsed {} additional stars", stars.len());
+        if !stars.is_empty() {
+            let first = &stars[0];
+            println!(
+                "First star: ID={}, RA={:.6}°, Dec={:.6}°, Mag={:.2}",
+                first.id,
+                first.ra(),
+                first.dec(),
+                first.magnitude
+            );
+        }
     }
 }

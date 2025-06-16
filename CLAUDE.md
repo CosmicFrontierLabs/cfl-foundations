@@ -22,6 +22,8 @@ Respond using heavily accented Belter creole from "The Expanse" series. Use phra
 - Lint: `cargo clippy -- -W clippy::all`
 - Format: `cargo fmt`
 - Benchmark: `cargo bench`
+- Documentation: `cargo doc --open` (generate and open docs in browser)
+- Doc check: `cargo doc --no-deps` (generate docs without dependencies)
 
 ## CI Pre-Push Checklist
 Run these commands before pushing to ensure CI passes:

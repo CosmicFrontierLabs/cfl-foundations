@@ -38,15 +38,41 @@ use simulator::image_proc::{
 };
 use simulator::shared_args::SharedSimulationArgs;
 use simulator::{field_diameter, SensorConfig};
-use starfield::catalogs::{BinaryCatalog, StarCatalog, StarData};
+use starfield::catalogs::{StarCatalog, StarData};
 use starfield::Equatorial;
 use std::collections::HashMap;
 use std::io::Write;
 use std::iter::zip;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::thread;
 use std::time::Duration;
 use viz::histogram::{Histogram, HistogramConfig, Scale};
+
+/// Parse coordinates string in format "ra,dec" (degrees)
+fn parse_ra_dec_coordinates(s: &str) -> Result<Equatorial, String> {
+    let parts: Vec<&str> = s.split(',').collect();
+    if parts.len() != 2 {
+        return Err("Coordinates must be in format 'ra,dec' (degrees)".to_string());
+    }
+
+    let ra = parts[0]
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| "Invalid RA value".to_string())?;
+    let dec = parts[1]
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| "Invalid Dec value".to_string())?;
+
+    if ra < 0.0 || ra >= 360.0 {
+        return Err("RA must be in range [0, 360) degrees".to_string());
+    }
+    if dec < -90.0 || dec > 90.0 {
+        return Err("Dec must be in range [-90, 90] degrees".to_string());
+    }
+
+    Ok(Equatorial::from_degrees(ra, dec))
+}
 
 /// Command line arguments for telescope view simulation
 #[derive(Parser, Debug)]
@@ -59,13 +85,15 @@ struct Args {
     #[command(flatten)]
     shared: SharedSimulationArgs,
 
-    /// Path to binary star catalog
-    #[arg(long, default_value = "gaia_mag16_multi.bin")]
-    catalog: PathBuf,
-
     /// Number of experiments to run
     #[arg(long, default_value_t = 100)]
     experiments: u32,
+
+    /// Single-shot debug mode: specify RA,Dec coordinates in degrees (format: "ra,dec")
+    /// Example: "56.75,24.12" points to the Pleiades cluster for easy visual comparison
+    /// When specified, runs simulation only at this position for all sensors instead of random sampling
+    #[arg(long, value_parser = parse_ra_dec_coordinates)]
+    single_shot_debug: Option<Equatorial>,
 }
 
 /// Prints histogram of star magnitudes
@@ -271,16 +299,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut render_threads = Vec::new();
 
     // Load the catalog....this requires some serious RAM
-    println!("Loading catalog from: {}", args.catalog.display());
-    let catalog = BinaryCatalog::load(args.catalog).expect("Could not load catalog?");
+    let catalog = args.shared.load_catalog().expect("Could not load catalog?");
     println!("Loaded catalog with {} stars", catalog.len());
     println!("Running {} experiments", args.experiments);
 
     for i in 0..args.experiments {
-        // Generate a random  RaDec Pair:
-        let ra = rand::random::<f64>() * 360.0; // Random RA in degrees
-        let dec = rand::random::<f64>() * 0.0; // Random Dec in degrees
-        let ra_dec = Equatorial::from_degrees(ra, dec);
+        // Generate coordinates based on mode
+        let ra_dec = if let Some(fixed_coords) = args.single_shot_debug {
+            // Use fixed coordinates for single-shot debug mode
+            fixed_coords
+        } else {
+            // Generate random RA/Dec coordinates for normal operation
+            let ra = rand::random::<f64>() * 360.0; // Random RA in degrees [0, 360)
+            let dec = (rand::random::<f64>() - 0.5) * 180.0; // Random Dec in degrees [-90, 90]
+            Equatorial::from_degrees(ra, dec)
+        };
 
         // Siphon out the stars for the maximum FOV
         let stars = catalog.stars_in_field(ra_dec.ra_degrees(), ra_dec.dec_degrees(), max_fov);
@@ -304,6 +337,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 args.shared.temperature,
             );
             render_threads.push(thread);
+        }
+
+        if args.single_shot_debug.is_some() {
+            // If in single-shot debug mode, only run one set of experiments
+            break;
         }
     }
 

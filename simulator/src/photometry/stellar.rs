@@ -54,10 +54,10 @@ impl FlatStellarSpectrum {
         Self::new(spectral_flux_density)
     }
 
-    /// Create a new FlatStellarSpectrum from a GaiaV2/V3 value
+    /// Create a new FlatStellarSpectrum from a Gaia value
     /// # Arguments
     ///
-    /// `gaia_magnitude` - The GaiaV2/V3 magnitude of the source
+    /// `gaia_magnitude` - The Gaia magnitude of the source
     /// # Returns
     ///
     /// A new FlatStellarSpectrum with the spectral flux density corresponding to the given Gaia magnitude

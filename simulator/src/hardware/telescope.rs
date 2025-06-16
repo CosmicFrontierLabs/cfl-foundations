@@ -125,7 +125,10 @@ pub fn build_optics_for_sensor(
 
     // Create a new TelescopeConfig with the calculated focal length
     let name = format!("{} for {:.1}", telescope.name, focal_length_m);
-
+    println!(
+        "Building telescope optics to match {}: {:.2}m focal length",
+        sensor.name, focal_length_m
+    );
     TelescopeConfig::new(
         &name,
         telescope.aperture_m, // Use the same aperture

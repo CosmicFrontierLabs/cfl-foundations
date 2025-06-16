@@ -17,7 +17,7 @@
 
 use clap::{Parser, ValueEnum};
 use simulator::hardware::telescope::{models, TelescopeConfig};
-use simulator::shared_args::{load_catalog, DurationArg, SensorModel, SharedSimulationArgs};
+use simulator::shared_args::{DurationArg, SensorModel, SharedSimulationArgs};
 
 /// Available telescope models for selection
 #[derive(Debug, Clone, ValueEnum)]
@@ -157,7 +157,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Example of loading catalog using shared helper function
     if args.shared.debug {
         println!("\nAttempting to load catalog for demonstration...");
-        match load_catalog(&args.shared.catalog, args.shared.debug) {
+        match args.shared.load_catalog() {
             Ok(catalog) => {
                 println!("Successfully loaded catalog with {} stars", catalog.len());
             }

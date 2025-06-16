@@ -24,3 +24,5 @@ histogram_output.txt
 # Were I keep star catalogs
 cats/
 .vscode/
+experiment_output*/
+plots/
