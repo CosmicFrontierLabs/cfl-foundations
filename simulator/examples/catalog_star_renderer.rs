@@ -21,6 +21,9 @@ use usvg::fontdb;
 
 /// Main function to render a star field from a catalog
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logging from environment variables
+    env_logger::init();
+
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
 

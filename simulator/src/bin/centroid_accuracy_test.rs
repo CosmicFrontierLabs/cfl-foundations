@@ -373,6 +373,9 @@ fn test_sigma_effect(image_size: usize) {
 }
 
 fn main() {
+    // Initialize logging from environment variables
+    env_logger::init();
+
     // Test parameters
     let image_size = 256;
     let sigma = 1.0; // Standard deviation of the Gaussian PSF

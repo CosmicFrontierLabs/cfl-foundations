@@ -55,6 +55,34 @@ cargo run --bin centroid_accuracy_test --package simulator
 cargo run --bin sensor_floor_est --package simulator
 ```
 
+## Logging
+
+The project uses `env_logger` for configurable logging output. Control log levels by setting the `RUST_LOG` environment variable:
+
+```bash
+# Show all logs (very verbose)
+RUST_LOG=debug cargo run --bin sensor_shootout
+
+# Show info and higher priority logs (recommended)
+RUST_LOG=info cargo run --bin sensor_shootout
+
+# Show only warnings and errors (minimal output)
+RUST_LOG=warn cargo run --bin sensor_shootout
+
+# Show logs for specific modules only
+RUST_LOG=sensor_shootout=debug cargo run --bin sensor_shootout
+
+# Multiple modules with different levels
+RUST_LOG=sensor_shootout=info,simulator::image_proc=debug cargo run --bin sensor_shootout
+```
+
+Available log levels (in order of priority):
+- `error`: Critical errors only
+- `warn`: Warnings and errors
+- `info`: General information, warnings, and errors (recommended default)
+- `debug`: Detailed debugging information (very verbose)
+- `trace`: Extremely detailed tracing information (rarely needed)
+
 ## Documentation
 
 Generate and view the documentation with:

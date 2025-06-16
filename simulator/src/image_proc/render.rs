@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use ndarray::Array2;
-use starfield::{catalogs::StarData, framelib::inertial::Ecliptic, Equatorial};
+use starfield::{catalogs::StarData, Equatorial};
 
 use crate::{
     algo::icp::Locatable2d,
@@ -83,6 +83,7 @@ pub fn approx_airy_pixels(
 /// * `exposure` - Reference to exposure duration
 /// * `wavelength_nm` - Wavelength in nanometers to use for PSF calculation
 /// * `temp_c` - Sensor temperature in degrees Celsius for dark current calculation
+/// * `zodiacal_coords` - Solar angular coordinates for zodiacal light calculation
 ///
 /// # Returns
 /// * `RenderingResult` - Contains the rendered image, electron counts, noise, star positions, and saturation info
@@ -94,6 +95,7 @@ pub fn render_star_field(
     exposure: &Duration,
     wavelength_nm: f64,
     temp_c: f64,
+    zodiacal_coords: &SolarAngularCoordinates,
 ) -> RenderingResult {
     // Create image array dimensions
     let image_width = sensor.width_px as usize;
@@ -163,10 +165,8 @@ pub fn render_star_field(
     );
 
     let z_light = ZodicalLight::new();
-    let ecliptic: Ecliptic = (*center).into();
-    let coords = SolarAngularCoordinates::new(ecliptic.lon.to_degrees(), ecliptic.lat.to_degrees())
-        .expect("Invalid zodical coordinates");
-    let zodiacal_noise = z_light.generate_zodical_background(sensor, telescope, exposure, &coords);
+    let zodiacal_noise =
+        z_light.generate_zodical_background(sensor, telescope, exposure, zodiacal_coords);
 
     image += &sensor_noise;
 

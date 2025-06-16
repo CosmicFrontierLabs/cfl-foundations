@@ -128,6 +128,9 @@ fn create_stellar_spectra(args: &Args) -> Vec<StellarInfo> {
 
 /// Main function to generate the plot
 fn main() -> Result<(), Box<dyn Error>> {
+    // Initialize logging from environment variables
+    env_logger::init();
+
     // Parse command line arguments
     let args = Args::parse();
 

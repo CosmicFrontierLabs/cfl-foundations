@@ -23,6 +23,7 @@
 use clap::Parser;
 use core::f64;
 use image::DynamicImage;
+use log::{debug, info, warn};
 use ndarray::Array2;
 use simulator::algo::icp::{icp_match_objects, Locatable2d};
 use simulator::hardware::sensor::models as sensor_models;
@@ -36,6 +37,7 @@ use simulator::image_proc::segment::do_detections;
 use simulator::image_proc::{
     draw_stars_with_x_markers, save_u8_image, stretch_histogram, u16_to_u8_scaled, StarDetection,
 };
+use simulator::photometry::zodical::SolarAngularCoordinates;
 use simulator::shared_args::SharedSimulationArgs;
 use simulator::{field_diameter, SensorConfig};
 use starfield::catalogs::{StarCatalog, StarData};
@@ -47,6 +49,15 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 use viz::histogram::{Histogram, HistogramConfig, Scale};
+
+/// Common arguments for experiments
+#[derive(Debug, Clone)]
+struct ExperimentCommonArgs {
+    temperature: f64,
+    wavelength: f64,
+    exposure: Duration,
+    coordinates: SolarAngularCoordinates,
+}
 
 /// Parse coordinates string in format "ra,dec" (degrees)
 fn parse_ra_dec_coordinates(s: &str) -> Result<Equatorial, String> {
@@ -103,10 +114,10 @@ struct Args {
 fn print_am_hist(stars: &[StarData]) {
     // Print histogram of star magnitudes
     if stars.is_empty() {
-        println!("No stars available to create histogram");
+        warn!("No stars available to create histogram");
     } else {
-        println!("Creating histogram of star magnitudes...");
-        println!("Note that these stats include stars in the sensor circumcircle");
+        debug!("Creating histogram of star magnitudes...");
+        debug!("Note that these stats include stars in the sensor circumcircle");
         let star_magnitudes: Vec<f64> = stars.iter().map(|star| star.magnitude).collect();
 
         // Create a magnitude histogram using the new specialized function
@@ -119,7 +130,7 @@ fn print_am_hist(stars: &[StarData]) {
         .expect("Failed to create magnitude histogram");
 
         // Print the histogram
-        println!(
+        debug!(
             "\n{}",
             mag_hist.format().expect("Failed to format histogram")
         );
@@ -134,12 +145,9 @@ fn print_am_hist(stars: &[StarData]) {
 /// * `sensor` - Sensor configuration
 /// * `telescope` - Telescope configuration
 /// * `ra_dec` - Right ascension and declination pointing
-/// * `stars` - Vector of stars to render
-/// * `exposure` - Exposure duration
+/// * `stars` - Pre-selected stars to render
 /// * `experiment_num` - Experiment identifier
-/// * `debug` - Enable debug output
-/// * `wavelength` - Wavelength in nanometers for PSF calculation
-/// * `temperature` - Sensor temperature in degrees Celsius
+/// * `common_args` - Common experiment parameters
 ///
 /// # Returns
 /// * Thread handle for the background image saving task
@@ -148,20 +156,13 @@ fn run_experiment(
     telescope: &TelescopeConfig,
     ra_dec: Equatorial,
     stars: &[StarData],
-    exposure: Duration,
     experiment_num: u32,
-    debug: bool,
-    wavelength: f64,
-    temperature: f64,
+    common_args: &ExperimentCommonArgs,
 ) -> thread::JoinHandle<()> {
     let output_path = Path::new("experiment_output");
 
-    // Ensure the output directory exists
-    if !output_path.exists() {
-        std::fs::create_dir_all(output_path).expect("Failed to create output directory");
-    }
+    print_am_hist(stars);
 
-    // Convert Vec<StarData> to Vec<&StarData> for filtering
     let star_refs: Vec<&StarData> = stars.iter().collect();
 
     // Render the star field
@@ -170,24 +171,23 @@ fn run_experiment(
         &ra_dec,
         telescope,
         sensor,
-        &exposure,
-        wavelength,
-        temperature,
+        &common_args.exposure,
+        common_args.wavelength,
+        common_args.temperature,
+        &common_args.coordinates,
     );
 
-    if debug {
-        // Print some statistics about the rendered image
-        println!(
-            "Total electrons in image: {:.2}e-",
-            render_result.electron_image.sum()
-        );
-        println!(
-            "Total noise in image: {:.2}e-",
-            render_result.noise_image.sum()
-        );
+    // Print some statistics about the rendered image
+    debug!(
+        "Total electrons in image: {:.2}e-",
+        render_result.electron_image.sum()
+    );
+    debug!(
+        "Total noise in image: {:.2}e-",
+        render_result.noise_image.sum()
+    );
 
-        display_electron_histogram(&render_result.electron_image, 25).unwrap();
-    }
+    display_electron_histogram(&render_result.electron_image, 25).unwrap();
 
     let prefix = format!("{}_{}_", experiment_num, sensor.name.replace(" ", "_"),);
 
@@ -222,21 +222,18 @@ fn run_experiment(
         0.25,
     );
 
-    if debug {
-        for (dete, star) in matches.iter() {
-            let distance =
-                ((dete.x() - star.x()).powf(2.0) + (dete.y() - star.y()).powf(2.0)).sqrt();
-            println!(
-                "Matched star {:?} to source {:?} with distance {:.2}",
-                dete, star, distance
-            );
-        }
+    for (dete, star) in matches.iter() {
+        let distance = ((dete.x() - star.x()).powf(2.0) + (dete.y() - star.y()).powf(2.0)).sqrt();
+        debug!(
+            "Matched star {:?} to source {:?} with distance {:.2}",
+            dete, star, distance
+        );
     }
 
     let mut magnitudes: Vec<f64> = matches.iter().map(|(_, s)| s.star.magnitude).collect();
     magnitudes.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-    println!(
+    info!(
         "Detected {} stars. Faintest magnitude: {:.2}",
         magnitudes.len(),
         magnitudes.last().unwrap_or(&f64::NAN)
@@ -270,6 +267,9 @@ fn run_experiment(
 
 /// Main function for telescope view simulation
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logging from environment variables
+    env_logger::init();
+
     // Parse command line arguments
     let args = Args::parse();
 
@@ -289,7 +289,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut max_fov = 0.0;
     for (sensor, scope) in zip(all_sensors.iter(), all_scopes.iter()) {
         let fov_deg = field_diameter(scope, sensor);
-        println!("Sensor: {}, FOV: {:.4}°", sensor.name, fov_deg);
+        info!("Sensor: {}, FOV: {:.4}°", sensor.name, fov_deg);
         if fov_deg > max_fov {
             max_fov = fov_deg;
         }
@@ -300,8 +300,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load the catalog....this requires some serious RAM
     let catalog = args.shared.load_catalog().expect("Could not load catalog?");
-    println!("Loaded catalog with {} stars", catalog.len());
-    println!("Running {} experiments", args.experiments);
+    info!("Loaded catalog with {} stars", catalog.len());
+    info!("Running {} experiments", args.experiments);
+
+    // Ensure the output directory exists
+    let output_path = Path::new("experiment_output");
+    if !output_path.exists() {
+        std::fs::create_dir_all(output_path).expect("Failed to create output directory");
+    }
+
+    // Create common experiment arguments
+    let common_args = ExperimentCommonArgs {
+        temperature: args.shared.temperature,
+        wavelength: args.shared.wavelength,
+        exposure: args.shared.exposure.0,
+        coordinates: args.shared.coordinates,
+    };
 
     for i in 0..args.experiments {
         // Generate coordinates based on mode
@@ -315,27 +329,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Equatorial::from_degrees(ra, dec)
         };
 
-        // Siphon out the stars for the maximum FOV
+        // Siphon out the stars for the maximum FOV once per experiment
         let stars = catalog.stars_in_field(ra_dec.ra_degrees(), ra_dec.dec_degrees(), max_fov);
 
-        print_am_hist(&stars);
-
         for (sensor, scope) in zip(all_sensors.iter(), all_scopes.iter()) {
-            println!(
+            info!(
                 "Running experiment {} with sensor: {}, telescope: {}",
                 i, sensor.name, scope.name
             );
-            let thread = run_experiment(
-                sensor,
-                scope,
-                ra_dec,
-                &stars,
-                args.shared.exposure.0,
-                i,
-                args.shared.debug,
-                args.shared.wavelength,
-                args.shared.temperature,
-            );
+            let thread = run_experiment(sensor, scope, ra_dec, &stars, i, &common_args);
             render_threads.push(thread);
         }
 
@@ -346,13 +348,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Wait for all rendering threads to complete
-    println!(
+    info!(
         "Waiting for {} rendering threads to complete...",
         render_threads.len()
     );
     for thread in render_threads {
         if let Err(e) = thread.join() {
-            eprintln!("Error joining render thread: {:?}", e);
+            warn!("Error joining render thread: {:?}", e);
         }
     }
 
@@ -494,7 +496,7 @@ fn display_electron_histogram(
 
     // Skip if all values are the same
     if (max_val - min_val).abs() < 1e-10 {
-        println!("  All pixel values are approximately: {:.2}", min_val);
+        debug!("  All pixel values are approximately: {:.2}", min_val);
         return Ok(());
     }
 
@@ -520,13 +522,13 @@ fn display_electron_histogram(
     };
 
     // Display basic statistics
-    println!("\nElectron Count Statistics:");
-    println!("  Total Pixels: {}", total_pixels);
-    println!("  Min Value: {:.2} electrons", min_val);
-    println!("  Max Value: {:.2} electrons", max_val);
+    debug!("\nElectron Count Statistics:");
+    debug!("  Total Pixels: {}", total_pixels);
+    debug!("  Min Value: {:.2} electrons", min_val);
+    debug!("  Max Value: {:.2} electrons", max_val);
 
     // Print the histograms
-    println!("\n{}", full_hist.with_config(full_config).format()?);
+    debug!("\n{}", full_hist.with_config(full_config).format()?);
 
     Ok(())
 }

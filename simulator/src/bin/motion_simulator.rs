@@ -88,6 +88,9 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logging from environment variables
+    env_logger::init();
+
     let args = Args::parse();
 
     let telescope = args.telescope.to_config();

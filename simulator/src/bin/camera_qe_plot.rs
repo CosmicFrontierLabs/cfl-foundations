@@ -26,6 +26,9 @@ struct SensorInfo<'a> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logging from environment variables
+    env_logger::init();
+
     println!("Generating QE curves plot...");
 
     // Create a list of all camera sensors with display info

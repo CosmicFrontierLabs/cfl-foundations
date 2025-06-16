@@ -239,6 +239,9 @@ fn run_single_experiment(params: &ExperimentParams) -> ExperimentResults {
 
 /// Main function for sensor floor estimation
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logging from environment variables
+    env_logger::init();
+
     // Parse command line arguments
     let args = Args::parse();
 
