@@ -39,6 +39,7 @@ indicatif = "0.17"                                           # Progress bars
 plotters = "0.3"                                             # Plotting library
 rustfft = "6.3.0"
 num-complex = "0.4.6"
+scilib = "1.0"                                                    # Scientific computing library for Bessel functions
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] } # Benchmarking

@@ -2150,6 +2150,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "scilib"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acf03303d83bf30bb4a4637ac7b3d9e4fa96c51e4d8960043d552e0fb4937cb3"
+dependencies = [
+ "num-complex",
+]
+
+[[package]]
 name = "security-framework"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2281,6 +2290,7 @@ dependencies = [
  "rayon",
  "resvg",
  "rustfft",
+ "scilib",
  "starfield",
  "tempfile",
  "test_helpers",

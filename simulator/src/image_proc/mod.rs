@@ -5,6 +5,7 @@
 //! other operations needed for realistic image generation and analysis.
 
 pub mod aabb;
+pub mod airy;
 pub mod centroid;
 pub mod convolve2d;
 pub mod histogram_stretch;
@@ -19,6 +20,7 @@ pub mod thresholding;
 
 // Re-export key functionality for easier access
 pub use aabb::{aabbs_to_tuples, merge_overlapping_aabbs, tuples_to_aabbs, union_aabbs, AABB};
+pub use airy::AiryDisk;
 pub use centroid::{detect_stars, get_centroids, StarDetection};
 pub use convolve2d::{convolve2d, gaussian_kernel, ConvolveMode, ConvolveOptions};
 pub use histogram_stretch::stretch_histogram;
