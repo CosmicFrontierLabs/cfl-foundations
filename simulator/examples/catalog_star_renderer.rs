@@ -14,7 +14,7 @@ use simulator::image_proc::convolve2d::{
     convolve2d, gaussian_kernel, ConvolveMode, ConvolveOptions,
 };
 use starfield::catalogs::binary_catalog::BinaryCatalog;
-use starfield::catalogs::StarPosition;
+use starfield::catalogs::{StarData, StarPosition};
 use std::path::PathBuf;
 use std::time::Duration;
 use usvg::fontdb;
@@ -140,10 +140,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Loaded catalog with {} stars", catalog.len());
 
     // Filter stars by magnitude
-    let stars: Vec<_> = catalog
+    let stars: Vec<StarData> = catalog
         .stars()
         .iter()
         .filter(|star| star.magnitude <= max_magnitude)
+        .map(|star| {
+            // Convert to a reference type for easier handling
+            let star_data = StarData {
+                id: star.id,
+                position: star.position.clone(),
+                magnitude: star.magnitude,
+                b_v: None,
+            };
+            star_data
+        })
         .collect();
 
     println!(
@@ -382,23 +392,9 @@ fn blend_channel(base: u8, overlay: u8, alpha: u8) -> u8 {
     (base_f * (1.0 - alpha_f) + overlay_f * alpha_f).round() as u8
 }
 
-/// Helper function to get a star's magnitude
-fn get_star_magnitude<T: StarPosition + 'static>(star: &T) -> Option<f64> {
-    // For BinaryCatalog stars (MinimalStar), access the magnitude field directly
-    if let Some(binary_star) = (star as &dyn std::any::Any)
-        .downcast_ref::<starfield::catalogs::binary_catalog::MinimalStar>()
-    {
-        return Some(binary_star.magnitude);
-    }
-
-    // For other star types that might implement different approaches
-    // Could be extended for other catalog types
-    None
-}
-
 /// Render a star field visualization from catalog data
-fn render_catalog_star_field<T: StarPosition + 'static + Clone>(
-    stars: &[&T],
+fn render_catalog_star_field(
+    stars: &[StarData],
     ra_deg: f64,
     dec_deg: f64,
     sensor_fov_deg: f64,
@@ -408,7 +404,7 @@ fn render_catalog_star_field<T: StarPosition + 'static + Clone>(
     exposure_time: f64,
 ) -> Result<DynamicImage, Box<dyn std::error::Error>> {
     // Create Vec of stars (cloned to avoid ownership issues)
-    let stars_vec: Vec<T> = stars.iter().map(|&star| star.clone()).collect();
+    let stars_vec: Vec<StarData> = stars.iter().map(|&star| star.clone()).collect();
 
     // Filter stars in the expanded field of view
     println!("Filtering stars in expanded field of view...");
@@ -443,9 +439,6 @@ fn render_catalog_star_field<T: StarPosition + 'static + Clone>(
 
     println!("Rendering stars across full field and sensor...");
 
-    // Keep track of stars without magnitude
-    let mut stars_without_magnitude = 0;
-
     // Print effective collecting area of telescope
     let effective_area = telescope.effective_collecting_area_m2();
     println!(
@@ -455,16 +448,6 @@ fn render_catalog_star_field<T: StarPosition + 'static + Clone>(
 
     // Process each visible star
     for star in visible_stars {
-        // Get star magnitude
-        let magnitude = match get_star_magnitude(star) {
-            Some(mag) => mag,
-            None => {
-                // Skip stars without magnitude
-                stars_without_magnitude += 1;
-                continue;
-            }
-        };
-
         // Convert position to visualization pixel coordinates
         let (viz_x, viz_y) = equatorial_to_pixel(
             star.ra(),
@@ -488,7 +471,7 @@ fn render_catalog_star_field<T: StarPosition + 'static + Clone>(
         // Convert magnitude directly to electrons
         let duration = Duration::from_secs_f64(exposure_time);
         let electron_flux =
-            star_projection::magnitude_to_electrons(magnitude, &duration, telescope, sensor);
+            star_projection::star_data_to_electrons(star, &duration, telescope, sensor);
 
         // Add star to visualization array (integer coordinates)
         let viz_x_int = viz_x.round() as usize;
@@ -638,14 +621,6 @@ fn render_catalog_star_field<T: StarPosition + 'static + Clone>(
         ),
         sensor_fov_radius,
     );
-
-    // Report any skipped stars
-    if stars_without_magnitude > 0 {
-        println!(
-            "Warning: Skipped {} stars that had no magnitude information",
-            stars_without_magnitude
-        );
-    }
 
     Ok(result)
 }

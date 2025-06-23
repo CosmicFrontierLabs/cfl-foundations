@@ -1,0 +1,133 @@
+use simulator::shared_args::SensorModel;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Sensor Comparison Table");
+    println!("======================");
+    println!();
+
+    // Define all 4 sensors
+    let sensors = vec![
+        (SensorModel::Gsense4040bsi, "GSENSE4040BSI"),
+        (SensorModel::Gsense6510bsi, "GSENSE6510BSI"),
+        (SensorModel::Hwk4123, "HWK4123"),
+        (SensorModel::Imx455, "IMX455"),
+    ];
+
+    // Temperature for dark current comparison
+    let temp_c = 0.0;
+
+    // Wavelength range for QE integration (150nm to 1100nm)
+    let wavelength_start = 150.0;
+    let wavelength_end = 1100.0;
+    let wavelength_step = 1.0; // 1nm steps
+
+    println!("Comparison at {}°C", temp_c);
+    println!();
+
+    // Markdown table header
+    println!("| Sensor | Resolution | Area (cm²) | Dark Current @ 0°C | Read Noise | Avg QE |");
+    println!("|--------|------------|------------|-------------------|------------|--------|");
+    println!(
+        "|        | (W×H)      |            | (e⁻/pixel/s)      | (e⁻)       | (150-1100nm) |"
+    );
+
+    // Calculate and display data for each sensor
+    for (sensor_type, name) in sensors {
+        let config = sensor_type.to_config();
+
+        // Dark current at 0°C
+        let dark_current = config
+            .dark_current_estimator
+            .estimate_at_temperature(temp_c);
+
+        // Read noise
+        let read_noise = config.read_noise_e;
+
+        // Resolution and area
+        let resolution = format!("{}×{}", config.width_px, config.height_px);
+        let sensor_width_cm = (config.width_px as f64 * config.pixel_size_um) / 10000.0; // μm to cm
+        let sensor_height_cm = (config.height_px as f64 * config.pixel_size_um) / 10000.0; // μm to cm
+        let area_cm2 = sensor_width_cm * sensor_height_cm;
+
+        // Calculate average QE from 150nm to 1100nm
+        let mut qe_sum = 0.0;
+        let mut count = 0;
+
+        let mut wavelength = wavelength_start;
+        while wavelength <= wavelength_end {
+            qe_sum += config.quantum_efficiency.at(wavelength);
+            count += 1;
+            wavelength += wavelength_step;
+        }
+
+        let avg_qe = qe_sum / count as f64;
+
+        // Print markdown table row
+        println!(
+            "| {} | {} | {:.3} | {:.4} | {:.2} | {:.3} |",
+            name, resolution, area_cm2, dark_current, read_noise, avg_qe
+        );
+    }
+
+    println!();
+    println!("**Notes:**");
+    println!("- Dark current shown at 0°C (varies exponentially with temperature)");
+    println!("- QE average calculated with 1nm steps from 150nm to 1100nm");
+    println!("- All values from manufacturer specifications");
+    println!();
+
+    // Additional detailed breakdown
+    println!("## Detailed Sensor Specifications");
+
+    for (sensor_type, name) in vec![
+        (SensorModel::Gsense4040bsi, "GSENSE4040BSI"),
+        (SensorModel::Gsense6510bsi, "GSENSE6510BSI"),
+        (SensorModel::Hwk4123, "HWK4123"),
+        (SensorModel::Imx455, "IMX455"),
+    ] {
+        let config = sensor_type.to_config();
+
+        println!();
+        let sensor_width_cm = (config.width_px as f64 * config.pixel_size_um) / 10000.0;
+        let sensor_height_cm = (config.height_px as f64 * config.pixel_size_um) / 10000.0;
+        let area_cm2 = sensor_width_cm * sensor_height_cm;
+
+        println!();
+        println!("### {}", name);
+        println!(
+            "- **Resolution:** {} × {} pixels",
+            config.width_px, config.height_px
+        );
+        println!(
+            "- **Sensor area:** {:.3} cm² ({:.2} × {:.2} cm)",
+            area_cm2, sensor_width_cm, sensor_height_cm
+        );
+        println!("- **Pixel size:** {:.2} μm", config.pixel_size_um);
+        println!(
+            "- **Max well depth:** {} e⁻",
+            config.max_well_depth_e as u64
+        );
+        println!("- **Frame rate:** {:.1} fps", config.max_frame_rate_fps);
+        println!("- **Bit depth:** {}-bit", config.bit_depth);
+
+        // Find peak QE wavelength and value
+        let mut peak_qe = 0.0;
+        let mut peak_wavelength = 0.0;
+
+        for wavelength_nm in 300..=1000 {
+            let qe = config.quantum_efficiency.at(wavelength_nm as f64);
+            if qe > peak_qe {
+                peak_qe = qe;
+                peak_wavelength = wavelength_nm as f64;
+            }
+        }
+
+        println!("- **Peak QE:** {:.3} at {:.0}nm", peak_qe, peak_wavelength);
+
+        // Dark current at 0°C only
+        let dc_0c = config.dark_current_estimator.estimate_at_temperature(0.0);
+        println!("- **Dark current @ 0°C:** {:.4} e⁻/pixel/s", dc_0c);
+    }
+
+    Ok(())
+}

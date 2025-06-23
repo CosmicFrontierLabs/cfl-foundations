@@ -5,8 +5,9 @@ use starfield::{catalogs::StarData, Equatorial};
 
 use crate::{
     algo::icp::Locatable2d,
-    field_diameter, magnitude_to_electrons,
+    field_diameter,
     photometry::{zodical::SolarAngularCoordinates, ZodicalLight},
+    star_data_to_electrons,
     star_math::StarProjector,
     SensorConfig, TelescopeConfig,
 };
@@ -143,7 +144,7 @@ pub fn render_star_field(
         xy_mag.push((x, y, *star));
 
         // Calculate photon flux using telescope model
-        let electrons = magnitude_to_electrons(star.magnitude, exposure, telescope, sensor);
+        let electrons = star_data_to_electrons(star, exposure, telescope, sensor);
 
         // Add star to image with PSF
         to_render.push(StarInFrame {

@@ -6,10 +6,16 @@
 
 use std::time::Duration;
 
-use crate::{photometry::FlatStellarSpectrum, Spectrum};
+use crate::{photometry::BlackbodyStellarSpectrum, Spectrum};
 
 use super::{SensorConfig, TelescopeConfig};
-use starfield::catalogs::StarPosition;
+use starfield::catalogs::{StarData, StarPosition};
+
+// A majority of stars have a B-V color index around 1.4
+// This is used when the catalog does not provide a B-V value
+// In practice this is mostly for faint stars, but this is a
+// reasonable guess for stuff on the main sequence
+const DEFAULT_BV: f64 = 1.4;
 
 /// Calculate the diameter of the field of view in degrees
 ///
@@ -67,15 +73,17 @@ pub fn pixel_scale(telescope: &TelescopeConfig, sensor: &SensorConfig) -> f64 {
 ///
 /// # Returns
 /// Expected photo electrons captured by the sensor for the given star
-pub fn magnitude_to_electrons(
-    magnitude: f64,
+pub fn star_data_to_electrons(
+    star_data: &StarData,
     exposure: &Duration,
     telescope: &TelescopeConfig,
     sensor: &SensorConfig,
 ) -> f64 {
-    let spectrum = FlatStellarSpectrum::from_gaia_magnitude(magnitude);
+    let spectrum = BlackbodyStellarSpectrum::from_gaia_bv_magnitude(
+        star_data.b_v.unwrap_or(1.0),
+        star_data.magnitude,
+    );
     let aperture_cm2 = telescope.collecting_area_m2() * 1.0e4; // Convert m^2 to cm^2
-
     spectrum.photo_electrons(&sensor.quantum_efficiency, aperture_cm2, exposure)
 }
 
@@ -135,6 +143,7 @@ mod tests {
     use crate::hardware::sensor::models as sensor_models;
     use crate::hardware::telescope::models as telescope_models;
     use float_cmp::approx_eq;
+    use starfield::Equatorial;
 
     #[test]
     fn test_field_diameter() {
@@ -239,9 +248,16 @@ mod tests {
         let large_telescope = telescope_models::FINAL_1M.clone();
         let sensor = sensor_models::GSENSE4040BSI.clone();
 
+        let star_data = StarData {
+            id: 0,
+            position: Equatorial::from_degrees(0.0, 0.0),
+            magnitude: 2.0,
+            b_v: None,
+        };
+
         let second = Duration::from_secs_f64(1.0);
-        let elec_small = magnitude_to_electrons(2.0, &second, &small_telescope, &sensor);
-        let elec_large = magnitude_to_electrons(2.0, &second, &large_telescope, &sensor);
+        let elec_small = star_data_to_electrons(&star_data, &second, &small_telescope, &sensor);
+        let elec_large = star_data_to_electrons(&star_data, &second, &large_telescope, &sensor);
 
         // Aperture ratio squared: 1.0^2 / 0.5^2 = 4.0
         // But also need to consider light efficiency differences

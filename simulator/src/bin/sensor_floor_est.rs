@@ -36,7 +36,7 @@ use simulator::image_proc::render::{
 use simulator::image_proc::segment::do_detections;
 use simulator::photometry::{zodical::SolarAngularCoordinates, ZodicalLight};
 use simulator::shared_args::SharedSimulationArgs;
-use simulator::{magnitude_to_electrons, SensorConfig};
+use simulator::{star_data_to_electrons, SensorConfig};
 use starfield::catalogs::StarData;
 use starfield::Equatorial;
 use std::collections::HashMap;
@@ -115,7 +115,8 @@ impl ExperimentParams {
         };
 
         // Calculate electrons based on magnitude
-        let flux = magnitude_to_electrons(self.mag, &self.exposure, &self.telescope, &self.sensor);
+        let flux =
+            star_data_to_electrons(&star_data, &self.exposure, &self.telescope, &self.sensor);
 
         StarInFrame {
             star: star_data,
