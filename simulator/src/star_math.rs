@@ -8,6 +8,39 @@ use starfield::Equatorial;
 use starfield::{catalogs::StarData, framelib::inertial::InertialFrame};
 
 use nalgebra::Vector3;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+
+/// Random Equatorial coordinate generator
+///
+/// Generates random RA/Dec coordinates using a seeded random number generator.
+/// RA is generated uniformly in [0, 360) degrees, and Dec is generated
+/// uniformly in [-90, 90] degrees.
+pub struct EquatorialRandomizer {
+    rng: StdRng,
+}
+
+impl EquatorialRandomizer {
+    /// Create a new EquatorialRandomizer with the given seed
+    ///
+    /// # Arguments
+    /// * `seed` - Random number generator seed for reproducible results
+    pub fn new(seed: u64) -> Self {
+        Self {
+            rng: StdRng::seed_from_u64(seed),
+        }
+    }
+
+    /// Generate a new random Equatorial coordinate
+    ///
+    /// # Returns
+    /// * `Equatorial` - Random sky coordinates with RA in [0, 360) and Dec in [-90, 90] degrees
+    pub fn generate(&mut self) -> Equatorial {
+        let ra = self.rng.gen::<f64>() * 360.0; // Random RA in degrees [0, 360)
+        let dec = (self.rng.gen::<f64>() - 0.5) * 180.0; // Random Dec in degrees [-90, 90]
+        Equatorial::from_degrees(ra, dec)
+    }
+}
 
 /// Star projector that maps celestial coordinates to image pixels
 pub struct StarProjector {
@@ -607,5 +640,103 @@ mod tests {
         // Should map to sensor center
         assert_relative_eq!(pixel_x, 960.0, epsilon = 0.1);
         assert_relative_eq!(pixel_y, 540.0, epsilon = 0.1);
+    }
+
+    #[test]
+    fn test_equatorial_randomizer_reproducible() {
+        // Test that the randomizer produces the same sequence with the same seed
+        let mut randomizer1 = EquatorialRandomizer::new(42);
+        let mut randomizer2 = EquatorialRandomizer::new(42);
+
+        for _ in 0..10 {
+            let coord1 = randomizer1.generate();
+            let coord2 = randomizer2.generate();
+
+            assert_relative_eq!(coord1.ra_degrees(), coord2.ra_degrees(), epsilon = 1e-10);
+            assert_relative_eq!(coord1.dec_degrees(), coord2.dec_degrees(), epsilon = 1e-10);
+        }
+    }
+
+    #[test]
+    fn test_equatorial_randomizer_different_seeds() {
+        // Test that different seeds produce different sequences
+        let mut randomizer1 = EquatorialRandomizer::new(42);
+        let mut randomizer2 = EquatorialRandomizer::new(43);
+
+        let coord1 = randomizer1.generate();
+        let coord2 = randomizer2.generate();
+
+        // Should be different (extremely unlikely to be the same)
+        assert!(
+            coord1.ra_degrees() != coord2.ra_degrees()
+                || coord1.dec_degrees() != coord2.dec_degrees()
+        );
+    }
+
+    #[test]
+    fn test_equatorial_randomizer_bounds() {
+        // Test that generated coordinates are within expected bounds
+        let mut randomizer = EquatorialRandomizer::new(123);
+
+        for _ in 0..100 {
+            let coord = randomizer.generate();
+            let ra = coord.ra_degrees();
+            let dec = coord.dec_degrees();
+
+            // RA should be in [0, 360)
+            assert!(ra >= 0.0 && ra < 360.0, "RA out of bounds: {}", ra);
+
+            // Dec should be in [-90, 90]
+            assert!(dec >= -90.0 && dec <= 90.0, "Dec out of bounds: {}", dec);
+        }
+    }
+
+    #[test]
+    fn test_equatorial_randomizer_uniform_distribution() {
+        // Basic test for uniform distribution - not rigorous but catches obvious problems
+        let mut randomizer = EquatorialRandomizer::new(456);
+        let mut ra_values = Vec::new();
+        let mut dec_values = Vec::new();
+
+        for _ in 0..1000 {
+            let coord = randomizer.generate();
+            ra_values.push(coord.ra_degrees());
+            dec_values.push(coord.dec_degrees());
+        }
+
+        // Check that we get values across the full range
+        let min_ra = ra_values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+        let max_ra = ra_values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+        let min_dec = dec_values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+        let max_dec = dec_values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+
+        // Should span a significant portion of the range
+        assert!(
+            max_ra - min_ra > 200.0,
+            "RA range too narrow: {} - {}",
+            min_ra,
+            max_ra
+        );
+        assert!(
+            max_dec - min_dec > 100.0,
+            "Dec range too narrow: {} - {}",
+            min_dec,
+            max_dec
+        );
+
+        // Rough check of means (should be around 180 for RA, 0 for Dec)
+        let mean_ra: f64 = ra_values.iter().sum::<f64>() / ra_values.len() as f64;
+        let mean_dec: f64 = dec_values.iter().sum::<f64>() / dec_values.len() as f64;
+
+        assert!(
+            mean_ra > 150.0 && mean_ra < 210.0,
+            "RA mean suspicious: {}",
+            mean_ra
+        );
+        assert!(
+            mean_dec > -10.0 && mean_dec < 10.0,
+            "Dec mean suspicious: {}",
+            mean_dec
+        );
     }
 }
