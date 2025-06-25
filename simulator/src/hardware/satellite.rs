@@ -161,6 +161,37 @@ impl SatelliteConfig {
     pub fn fwhm_sampling_ratio(&self) -> f64 {
         self.telescope.fwhm_image_spot_um(self.wavelength_nm) / self.sensor.pixel_size_um
     }
+
+    /// Generate a descriptive string for this satellite configuration
+    ///
+    /// Returns a human-readable description including telescope specifications
+    /// (aperture, focal length, f-number) and sensor name, useful for logging,
+    /// reports, and user interfaces.
+    ///
+    /// # Returns
+    /// A string describing the satellite configuration
+    ///
+    /// # Example
+    /// ```
+    /// use simulator::hardware::{SatelliteConfig, telescope::TelescopeConfig};
+    /// use simulator::hardware::sensor::models::GSENSE4040BSI;
+    ///
+    /// let telescope = TelescopeConfig::new("Test Scope", 0.5, 2.5, 0.8);
+    /// let satellite = SatelliteConfig::new(telescope, GSENSE4040BSI.clone(), -10.0, 550.0);
+    ///
+    /// let description = satellite.description();
+    /// println!("{}", description);
+    /// // Output: "Test Scope (0.50m f/5.0) + GSENSE4040BSI"
+    /// ```
+    pub fn description(&self) -> String {
+        format!(
+            "{} ({:.2}m f/{:.1}) + {}",
+            self.telescope.name,
+            self.telescope.aperture_m,
+            self.telescope.f_number(),
+            self.sensor.name
+        )
+    }
 }
 
 #[cfg(test)]
@@ -278,5 +309,26 @@ mod tests {
 
         // Verify that the FWHM is different from the original
         assert!((airy_disk.fwhm() - resampled_airy.fwhm()).abs() > 1e-6);
+    }
+
+    #[test]
+    fn test_description() {
+        let telescope = TelescopeConfig::new("Test Scope", 0.5, 2.5, 0.8);
+        let sensor = crate::hardware::sensor::models::GSENSE4040BSI.clone();
+
+        let satellite = SatelliteConfig::new(telescope.clone(), sensor.clone(), -10.0, 550.0);
+
+        let description = satellite.description();
+
+        // Should include telescope name, aperture, f-number, and sensor name
+        assert!(description.contains("Test Scope"));
+        assert!(description.contains("0.50m"));
+        assert!(description.contains("f/5.0")); // f-number = focal_length / aperture = 2.5 / 0.5 = 5.0
+        assert!(description.contains("GSENSE4040BSI"));
+        assert!(description.contains("+")); // Should have the '+' separator
+
+        // Verify the exact format
+        let expected = "Test Scope (0.50m f/5.0) + GSENSE4040BSI";
+        assert_eq!(description, expected);
     }
 }

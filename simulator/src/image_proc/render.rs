@@ -6,6 +6,7 @@ use starfield::{catalogs::StarData, Equatorial};
 use crate::{
     algo::icp::Locatable2d,
     field_diameter,
+    hardware::SatelliteConfig,
     image_proc::airy::ScaledAiryDisk,
     photometry::{zodical::SolarAngularCoordinates, ZodicalLight},
     star_data_to_electrons,
@@ -80,11 +81,8 @@ pub fn approx_airy_pixels(
 /// # Arguments
 /// * `stars` - Reference to a vector of StarData pointers containing catalog information
 /// * `center` - Equatorial coordinates of field center
-/// * `telescope` - Reference to telescope configuration
-/// * `sensor` - Reference to sensor configuration
+/// * `satellite` - Reference to satellite configuration (telescope, sensor, temperature, wavelength)
 /// * `exposure` - Reference to exposure duration
-/// * `wavelength_nm` - Wavelength in nanometers to use for PSF calculation
-/// * `temp_c` - Sensor temperature in degrees Celsius for dark current calculation
 /// * `zodiacal_coords` - Solar angular coordinates for zodiacal light calculation
 ///
 /// # Returns
@@ -92,16 +90,13 @@ pub fn approx_airy_pixels(
 pub fn render_star_field(
     stars: &Vec<&StarData>,
     center: &Equatorial,
-    telescope: &TelescopeConfig,
-    sensor: &SensorConfig,
+    satellite: &SatelliteConfig,
     exposure: &Duration,
-    wavelength_nm: f64,
-    temp_c: f64,
     zodiacal_coords: &SolarAngularCoordinates,
 ) -> RenderingResult {
     // Create image array dimensions
-    let image_width = sensor.width_px as usize;
-    let image_height = sensor.height_px as usize;
+    let image_width = satellite.sensor.width_px as usize;
+    let image_height = satellite.sensor.height_px as usize;
 
     // Create a star field image (in electron counts)
     let mut image = Array2::zeros((image_height, image_width));
@@ -109,16 +104,24 @@ pub fn render_star_field(
 
     let mut xy_mag = Vec::with_capacity(stars.len());
 
-    let airy_pix = approx_airy_pixels(telescope, sensor, wavelength_nm);
+    let airy_pix = approx_airy_pixels(
+        &satellite.telescope,
+        &satellite.sensor,
+        satellite.wavelength_nm,
+    );
 
     // Calculate field of view from telescope and sensor
-    let fov_deg = field_diameter(telescope, sensor);
+    let fov_deg = field_diameter(&satellite.telescope, &satellite.sensor);
 
     // Create star projector for coordinate transformation
     let fov_rad = fov_deg.to_radians();
     let radians_per_pixel = fov_rad / image_width.max(image_height) as f64;
-    let projector =
-        StarProjector::new(center, radians_per_pixel, sensor.width_px, sensor.height_px);
+    let projector = StarProjector::new(
+        center,
+        radians_per_pixel,
+        satellite.sensor.width_px,
+        satellite.sensor.height_px,
+    );
 
     // Padded bounds check
     let padding = airy_pix.first_zero() * 2.0;
@@ -145,7 +148,8 @@ pub fn render_star_field(
         xy_mag.push((x, y, *star));
 
         // Calculate photon flux using telescope model
-        let electrons = star_data_to_electrons(star, exposure, telescope, sensor);
+        let electrons =
+            star_data_to_electrons(star, exposure, &satellite.telescope, &satellite.sensor);
 
         // Add star to image with PSF
         to_render.push(StarInFrame {
@@ -163,16 +167,18 @@ pub fn render_star_field(
 
     // Generate sensor noise (read noise and dark current)
     let sensor_noise = generate_sensor_noise(
-        sensor, exposure, temp_c, None, // Use specified temperature and random noise
+        &satellite.sensor,
+        exposure,
+        satellite.temperature_c,
+        None, // Use specified temperature and random noise
     );
 
     let z_light = ZodicalLight::new();
-    let zodiacal_noise =
-        z_light.generate_zodical_background(sensor, telescope, exposure, zodiacal_coords);
+    let zodiacal_noise = z_light.generate_zodical_background(satellite, exposure, zodiacal_coords);
 
     image += &sensor_noise;
 
-    let quantized = quantize_image(&image, sensor);
+    let quantized = quantize_image(&image, &satellite.sensor);
 
     let noise_image = &sensor_noise + &zodiacal_noise;
 

@@ -14,8 +14,10 @@ use ndarray::{Array1, Array2};
 use plotters::prelude::*;
 use simulator::hardware::sensor::models::ALL_SENSORS;
 use simulator::hardware::telescope::models::DEMO_50CM;
+use simulator::hardware::SatelliteConfig;
 use simulator::image_proc::render::quantize_image;
 use simulator::photometry::{spectrum::Spectrum, zodical::SolarAngularCoordinates, ZodicalLight};
+use simulator::shared_args::DurationArg;
 use std::time::Duration;
 
 /// Command line arguments for zodiacal background computation
@@ -37,6 +39,10 @@ struct Args {
     /// Latitude range: start,end,step (degrees)
     #[arg(long, default_value = "0.0,30.0,5.0")]
     latitude_range: String,
+
+    /// Exposure time for averaging (e.g., "1s", "500ms", "0.1s", "10m")
+    #[arg(long, default_value = "1000s")]
+    exposure: DurationArg,
 }
 
 /// Parse range string in format "start,end,step"
@@ -176,7 +182,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     let telescope = DEMO_50CM.clone();
-    let exposure = Duration::from_secs_f64(1000.0); // 1000 second exposure
+    let exposure = args.exposure.0;
 
     println!("Zodiacal Background Analysis (DN/second & electrons/second)");
     println!("===========================================================");
@@ -207,31 +213,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut dn_matrix = Array2::<f64>::zeros((elongations.len(), latitudes.len()));
         let mut electron_matrix = Array2::<f64>::zeros((elongations.len(), latitudes.len()));
 
+        // Create SatelliteConfig for zodiacal background calculation
+        let satellite = SatelliteConfig::new(
+            telescope.clone(),
+            sensor.clone(),
+            -10.0, // Default temperature for example
+            550.0, // Default wavelength for example
+        );
+
         // Compute DN/s and electrons/s for each coordinate combination
         for (elong_idx, &elongation) in elongations.iter().enumerate() {
             for (lat_idx, &latitude) in latitudes.iter().enumerate() {
                 // Create coordinates
-                if let Ok(coords) = SolarAngularCoordinates::new(elongation, latitude) {
-                    // Generate zodiacal background in electrons
-                    let zodical_e =
-                        z_light.generate_zodical_background(sensor, &telescope, &exposure, &coords);
+                let coords = SolarAngularCoordinates::new(elongation, latitude)
+                    .expect("Invalid solar angular coordinates from parsed ranges");
 
-                    // Calculate mean electrons/s (divide by exposure time to get per second)
-                    let mean_electrons_total = zodical_e.mean().unwrap();
-                    let mean_electrons_per_s = mean_electrons_total / 1000.0; // Divide by 1000s exposure
-                    electron_matrix[[elong_idx, lat_idx]] = mean_electrons_per_s;
+                // Generate zodiacal background in electrons
+                let zodical_e = z_light.generate_zodical_background(&satellite, &exposure, &coords);
 
-                    // Convert to DN
-                    let zodical_dn = quantize_image(&zodical_e, sensor);
+                // Calculate mean electrons/s (divide by exposure time to get per second)
+                let mean_electrons_total = zodical_e.mean().unwrap();
+                let mean_electrons_per_s = mean_electrons_total / exposure.as_secs_f64();
+                electron_matrix[[elong_idx, lat_idx]] = mean_electrons_per_s;
 
-                    // Calculate mean DN/s (divide by exposure time to get per second)
-                    let mean_dn_total = zodical_dn.map(|&x| x as f64).mean().unwrap();
-                    let mean_dn_per_s = mean_dn_total / 1000.0; // Divide by 1000s exposure
-                    dn_matrix[[elong_idx, lat_idx]] = mean_dn_per_s;
-                } else {
-                    dn_matrix[[elong_idx, lat_idx]] = f64::NAN;
-                    electron_matrix[[elong_idx, lat_idx]] = f64::NAN;
-                }
+                // Convert to DN
+                let zodical_dn = quantize_image(&zodical_e, &satellite.sensor);
+
+                // Calculate mean DN/s (divide by exposure time to get per second)
+                let mean_dn_total = zodical_dn.map(|&x| x as f64).mean().unwrap();
+                let mean_dn_per_s = mean_dn_total / exposure.as_secs_f64();
+                dn_matrix[[elong_idx, lat_idx]] = mean_dn_per_s;
             }
         }
 

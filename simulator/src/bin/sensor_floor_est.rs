@@ -28,14 +28,13 @@ use ndarray::{Array1, Array2};
 use rayon::prelude::*;
 use simulator::hardware::sensor::models::ALL_SENSORS;
 use simulator::hardware::telescope::models::DEMO_50CM;
-use simulator::hardware::telescope::TelescopeConfig;
-use simulator::image_proc::airy::ScaledAiryDisk;
+use simulator::hardware::SatelliteConfig;
 use simulator::image_proc::generate_sensor_noise;
 use simulator::image_proc::render::{add_stars_to_image, quantize_image, StarInFrame};
 use simulator::image_proc::segment::do_detections;
 use simulator::photometry::{zodical::SolarAngularCoordinates, ZodicalLight};
 use simulator::shared_args::SharedSimulationArgs;
-use simulator::{star_data_to_electrons, SensorConfig};
+use simulator::star_data_to_electrons;
 use starfield::catalogs::StarData;
 use starfield::Equatorial;
 use std::collections::HashMap;
@@ -67,6 +66,10 @@ struct Args {
     /// Run experiments serially instead of in parallel
     #[arg(long, default_value_t = false)]
     serial: bool,
+
+    /// Domain size for test images (width and height in pixels)
+    #[arg(long, default_value_t = 256)]
+    domain: u32,
 }
 
 /// Parameters for a single experiment
@@ -74,28 +77,20 @@ struct Args {
 struct ExperimentParams {
     /// Domain size (image dimensions)
     domain: usize,
-    /// Sensor configuration
-    sensor: SensorConfig,
-    /// Telescope configuration
-    telescope: TelescopeConfig,
+    /// Satellite configuration (telescope, sensor, temperature, wavelength)
+    satellite: SatelliteConfig,
     /// Exposure duration
     exposure: Duration,
     /// Star magnitude
     mag: f64,
-    /// PSF size in pixels
-    airy_pix: ScaledAiryDisk,
     /// Noise floor multiplier for detection threshold
     noise_floor_multiplier: f64,
     /// Indices for result matrix (disk_idx, mag_idx)
     indices: (usize, usize),
     /// Number of times to run the experiment
     experiment_count: u32,
-    /// Sensor temperature in degrees Celsius
-    temperature: f64,
-    /// Solar elongation for zodiacal background
-    elongation: f64,
-    /// Ecliptic latitude for zodiacal background
-    latitude: f64,
+    /// Solar coordinates for zodiacal background
+    coordinates: SolarAngularCoordinates,
 }
 
 impl ExperimentParams {
@@ -110,8 +105,12 @@ impl ExperimentParams {
         };
 
         // Calculate electrons based on magnitude
-        let flux =
-            star_data_to_electrons(&star_data, &self.exposure, &self.telescope, &self.sensor);
+        let flux = star_data_to_electrons(
+            &star_data,
+            &self.exposure,
+            &self.satellite.telescope,
+            &self.satellite.sensor,
+        );
 
         StarInFrame {
             star: star_data,
@@ -151,8 +150,8 @@ impl ExperimentResults {
 
     fn rms_error_radians(&self) -> f64 {
         let pix_err = self.rms_error();
-        let err_m = self.params.sensor.pixel_size_um * pix_err / 1_000_000.0;
-        (err_m / self.params.telescope.focal_length_m).tan()
+        let err_m = self.params.satellite.sensor.pixel_size_um * pix_err / 1_000_000.0;
+        (err_m / self.params.satellite.telescope.focal_length_m).tan()
     }
 
     fn rms_err_mas(&self) -> f64 {
@@ -178,31 +177,33 @@ fn run_single_experiment(params: &ExperimentParams) -> ExperimentResults {
 
         // Create electron image and add star
         let mut e_image: Array2<f64> = Array2::zeros((params.domain, params.domain));
-        add_stars_to_image(&mut e_image, &vec![star], params.airy_pix);
+        let airy_disk = params.satellite.airy_disk_fwhm_sampled();
+        add_stars_to_image(&mut e_image, &vec![star], airy_disk);
 
         // Generate and add noise to image
-        let sensor_noise =
-            generate_sensor_noise(&params.sensor, &params.exposure, params.temperature, None);
+        let sensor_noise = generate_sensor_noise(
+            &params.satellite.sensor,
+            &params.exposure,
+            params.satellite.temperature_c,
+            None,
+        );
 
         // Background light sources - using coordinates from CLI arguments
-        let coords = SolarAngularCoordinates::new(params.elongation, params.latitude)
-            .expect("Invalid coordinates");
         let z_light = ZodicalLight::new();
         let zodical = z_light.generate_zodical_background(
-            &params.sensor,
-            &params.telescope,
+            &params.satellite,
             &params.exposure,
-            &coords,
+            &params.coordinates,
         );
 
         let noise = &sensor_noise + &zodical;
         let total_e_image = &e_image + &noise;
 
         // Quantize to digital numbers
-        let quantized = quantize_image(&total_e_image, &params.sensor);
+        let quantized = quantize_image(&total_e_image, &params.satellite.sensor);
 
         // Calculate detection threshold based on noise floor
-        let quantized_noise = quantize_image(&noise, &params.sensor);
+        let quantized_noise = quantize_image(&noise, &params.satellite.sensor);
         let noise_mean = quantized_noise.map(|&x| x as f64).mean().unwrap();
         let cutoff_value = noise_mean * params.noise_floor_multiplier;
 
@@ -228,7 +229,8 @@ fn run_single_experiment(params: &ExperimentParams) -> ExperimentResults {
             let err = (x_diff * x_diff + y_diff * y_diff).sqrt();
 
             // Detect spurious detections (mostly) and skip them
-            if err > params.airy_pix.first_zero().max(1.0) * 3.0 {
+            let airy_disk = params.satellite.airy_disk_fwhm_sampled();
+            if err > airy_disk.first_zero().max(1.0) * 3.0 {
                 println!("Spurious detection: {} pixels", err);
                 continue;
             }
@@ -258,21 +260,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse command line arguments
     let args = Args::parse();
 
-    // Get coordinates from shared args
-    let elongation = args.shared.coordinates.elongation();
-    let latitude = args.shared.coordinates.latitude();
+    // Use domain size from CLI arguments
+    let domain = args.domain as usize;
 
-    // Set domain size for our test images
-    let domain = 256_usize;
-
-    // Define all sensors to test with same dimensions
-    let all_sensors: Vec<_> = ALL_SENSORS
+    // Create satellite configurations with sensors sized to domain
+    let all_satellites: Vec<SatelliteConfig> = ALL_SENSORS
         .iter()
-        .map(|sensor| sensor.with_dimensions(domain as u32, domain as u32))
+        .map(|sensor| {
+            let sized_sensor = sensor.with_dimensions(args.domain, args.domain);
+            SatelliteConfig::new(
+                DEMO_50CM.clone(),
+                sized_sensor,
+                args.shared.temperature,
+                args.shared.wavelength,
+            )
+        })
         .collect();
 
     let exposure = args.shared.exposure.0;
-    let telescope = DEMO_50CM.clone();
 
     // PSF disk sizes to test (in Airy disk units) - 2 to 8 in steps of 0.25
     let disks = Array1::range(1.0, 5.0, 0.25);
@@ -289,37 +294,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build a vector of all experiments to run
     let mut all_experiments = Vec::new();
 
-    // For each sensor, initialize the results array
-    for sensor in &all_sensors {
+    // For each satellite, initialize the results array
+    for satellite in &all_satellites {
         let sensor_results_array = Array2::<f64>::from_elem((disks.len(), mags.len()), f64::NAN);
-        sensor_results.insert(sensor.name.clone(), sensor_results_array);
+        sensor_results.insert(satellite.sensor.name.clone(), sensor_results_array);
 
         let sensor_pixel_results_array =
             Array2::<f64>::from_elem((disks.len(), mags.len()), f64::NAN);
-        sensor_pixel_results.insert(sensor.name.clone(), sensor_pixel_results_array);
+        sensor_pixel_results.insert(satellite.sensor.name.clone(), sensor_pixel_results_array);
 
-        println!("Preparing experiments for sensor: {}", sensor.name);
+        println!(
+            "Preparing experiments for satellite: {}",
+            satellite.sensor.name
+        );
 
-        // Create a vector of experiment parameters for this sensor
+        // Create a vector of experiment parameters for this satellite
         for (disk_idx, disk) in disks.iter().enumerate() {
-            // Calculate PSF size in pixels for this disk configuration
-            let airy_pix = ScaledAiryDisk::with_fwhm(*disk);
-
             for (mag_idx, mag) in mags.iter().enumerate() {
+                // Adjust satellite to have the desired FWHM sampling
+                let adjusted_satellite = satellite.with_fwhm_sampling(*disk);
+
                 // Create experiment parameters
                 let params = ExperimentParams {
                     domain,
-                    sensor: sensor.clone(),
-                    telescope: telescope.clone(),
+                    satellite: adjusted_satellite,
                     exposure,
                     mag: *mag,
-                    airy_pix,
                     noise_floor_multiplier: args.shared.noise_multiple,
                     indices: (disk_idx, mag_idx),
                     experiment_count: args.experiments,
-                    temperature: args.shared.temperature,
-                    elongation,
-                    latitude,
+                    coordinates: args.shared.coordinates,
                 };
 
                 all_experiments.push(params);
@@ -341,9 +345,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut detection_rates: HashMap<String, Array2<f64>> = HashMap::new();
 
     // Initialize detection rates arrays
-    for sensor in &all_sensors {
+    for satellite in &all_satellites {
         let detection_rate_array = Array2::<f64>::from_elem((disks.len(), mags.len()), 0.0);
-        detection_rates.insert(sensor.name.clone(), detection_rate_array);
+        detection_rates.insert(satellite.sensor.name.clone(), detection_rate_array);
     }
 
     // Setup progress tracking
@@ -382,7 +386,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Process results
     println!("Processing results...");
     for result in results {
-        let sensor_name = result.params.sensor.name.clone();
+        let sensor_name = result.params.satellite.sensor.name.clone();
         let detection_rate = result.detection_rate();
         let (disk_idx, mag_idx) = result.params.indices;
 
@@ -420,7 +424,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .unwrap();
     writeln!(csv_file, "Wavelength: {} nm", args.shared.wavelength).unwrap();
-    writeln!(csv_file, "Aperture diameter {} m", telescope.aperture_m).unwrap();
+    writeln!(csv_file, "Aperture diameter {} m", DEMO_50CM.aperture_m).unwrap();
     writeln!(
         csv_file,
         "Experiments per configuration: {}",
@@ -430,9 +434,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     writeln!(csv_file).unwrap();
 
     // Sort the sensor names for consistent output
-    let mut sensors_ordered: Vec<_> = all_sensors
+    let mut sensors_ordered: Vec<_> = all_satellites
         .iter()
-        .map(|sensor| sensor.name.clone())
+        .map(|satellite| satellite.sensor.name.clone())
         .collect();
 
     sensors_ordered.sort();

@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 use crate::algo::process_array_in_parallel_chunks;
+use crate::hardware::SatelliteConfig;
 use crate::SensorConfig;
 use ndarray::Array2;
 use rand::{thread_rng, RngCore};
@@ -448,8 +449,15 @@ mod tests {
         let exposure_time = Duration::from_secs(60);
         let coords = SolarAngularCoordinates::new(90.0, 0.0).expect("Invalid coordinates");
         let z_light = ZodicalLight::new();
+        // Create temporary SatelliteConfig for zodiacal background calculation
+        let temp_satellite = SatelliteConfig::new(
+            telescope.clone(),
+            sensor.clone(),
+            -10.0, // Default temperature for test
+            550.0, // Default wavelength for test
+        );
         let zodical_noise =
-            z_light.generate_zodical_background(&sensor, &telescope, &exposure_time, &coords);
+            z_light.generate_zodical_background(&temp_satellite, &exposure_time, &coords);
 
         // Check dimensions match sensor
         assert_eq!(

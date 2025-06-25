@@ -12,8 +12,8 @@ use ndarray::Array2;
 use std::time::Duration;
 use thiserror::Error;
 
+use crate::hardware::SatelliteConfig;
 use crate::photometry::{spectrum::Spectrum, STISZodiacalSpectrum};
-use crate::{SensorConfig, TelescopeConfig};
 
 /// Errors that can occur when working with zodiacal light data
 #[derive(Error, Debug)]
@@ -383,8 +383,7 @@ impl ZodicalLight {
     /// to the noise in an astronomical image. The result is expressed in units of photoelectrons.
     ///
     /// # Arguments
-    /// * `sensor` - Configuration of the sensor
-    /// * `telescope` - Configuration of the telescope
+    /// * `satellite` - Configuration of the satellite (telescope and sensor)
     /// * `exposure` - Duration of the exposure
     /// * `coords` - Solar angular coordinates (elongation and ecliptic latitude)
     ///
@@ -397,19 +396,18 @@ impl ZodicalLight {
     /// across the field of view.
     pub fn generate_zodical_background(
         &self,
-        sensor: &SensorConfig,
-        telescope: &TelescopeConfig,
+        satellite: &SatelliteConfig,
         exposure: &Duration,
         coords: &SolarAngularCoordinates,
     ) -> Array2<f64> {
         // Convert telescope focal length from meters to mm
-        let focal_length_mm = telescope.focal_length_m * 1000.0;
+        let focal_length_mm = satellite.telescope.focal_length_m * 1000.0;
 
         // Calculate pixel scale in arcseconds per pixel
         // Pixel scale = (206265 * pixel_size) / focal_length
         // where 206265 is the number of arcseconds in a radian
         let pixel_scale_arcsec_per_pixel =
-            206265.0 * (sensor.pixel_size_um / 1000.0) / focal_length_mm;
+            206265.0 * (satellite.sensor.pixel_size_um / 1000.0) / focal_length_mm;
 
         let z_spect = self
             .get_zodical_spectrum(coords)
@@ -418,12 +416,18 @@ impl ZodicalLight {
         let pixel_solid_angle_arcsec2 = pixel_scale_arcsec_per_pixel * pixel_scale_arcsec_per_pixel;
 
         // Compute the photoelectrons per solid angle and multiply by the pixel solid angle
-        let aperture_cmsq = telescope.aperture_m * 10000.0;
-        let mean_pe = z_spect.photo_electrons(&sensor.quantum_efficiency, aperture_cmsq, exposure)
-            * pixel_solid_angle_arcsec2
-            * telescope.light_efficiency;
+        let aperture_cmsq = satellite.telescope.aperture_m * 10000.0;
+        let mean_pe = z_spect.photo_electrons(
+            &satellite.sensor.quantum_efficiency,
+            aperture_cmsq,
+            exposure,
+        ) * pixel_solid_angle_arcsec2
+            * satellite.telescope.light_efficiency;
 
-        Array2::ones((sensor.height_px as usize, sensor.width_px as usize)) * mean_pe
+        Array2::ones((
+            satellite.sensor.height_px as usize,
+            satellite.sensor.width_px as usize,
+        )) * mean_pe
     }
 }
 

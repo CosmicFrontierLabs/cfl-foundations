@@ -28,7 +28,6 @@ use log::{debug, info, warn};
 use rayon::prelude::*;
 use simulator::algo::icp::{icp_match_objects, Locatable2d};
 use simulator::hardware::sensor::models as sensor_models;
-use simulator::hardware::telescope::build_optics_for_sensor;
 use simulator::hardware::telescope::models::DEMO_50CM;
 use simulator::hardware::SatelliteConfig;
 use simulator::image_proc::histogram_stretch::sigma_stretch;
@@ -47,7 +46,6 @@ use starfield::catalogs::{StarCatalog, StarData};
 use starfield::Equatorial;
 use std::collections::HashMap;
 use std::io::Write;
-use std::iter::zip;
 use std::path::Path;
 use std::time::Duration;
 use viz::histogram::{Histogram, HistogramConfig, Scale};
@@ -146,7 +144,7 @@ struct Args {
     #[arg(long, default_value_t = false)]
     serial: bool,
 
-    /// Match pixel sampling across all sensors using this value (arcsec/pixel). If not specified, uses individual telescopes from shared args
+    /// Match FWHM sampling across all sensors using this value (pixels per FWHM). If not specified, uses base DEMO_50CM telescope with each sensor
     #[arg(long)]
     match_pixel_sampling: Option<f64>,
 
@@ -241,11 +239,8 @@ fn run_experiment<T: StarCatalog>(
         let render_result = render_star_field(
             &star_refs,
             &params.ra_dec,
-            &satellite.telescope,
-            &satellite.sensor,
+            satellite,
             &params.common_args.exposure,
-            satellite.wavelength_nm,
-            satellite.temperature_c,
             &params.common_args.coordinates,
         );
 
@@ -392,13 +387,13 @@ fn write_results_to_csv(
     if let Some(pixel_sampling) = args.match_pixel_sampling {
         writeln!(
             csv_file,
-            "Pixel Sampling Mode: Matched at {:.3} arcsec/pixel",
+            "FWHM Sampling Mode: Matched at {:.3} pixels per FWHM",
             pixel_sampling
         )?;
     } else {
         writeln!(
             csv_file,
-            "Pixel Sampling Mode: Individual telescopes (DEMO_50CM clones)"
+            "FWHM Sampling Mode: Individual telescopes (DEMO_50CM base with each sensor)"
         )?;
     }
 
@@ -476,30 +471,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let all_sensors = &*sensor_models::ALL_SENSORS;
 
-    let all_scopes = if let Some(pixel_sampling) = args.match_pixel_sampling {
-        // Use the current build_optics_for_sensor implementation with match-pixel-sampling value
+    // Create satellite configurations directly from sensors and base telescope
+    let satellites: Vec<SatelliteConfig> = if let Some(pixel_sampling) = args.match_pixel_sampling {
+        // Use with_fwhm_sampling() to match pixel sampling across all sensors
         all_sensors
             .iter()
-            .map(|s| build_optics_for_sensor(&DEMO_50CM, s, args.shared.wavelength, pixel_sampling))
-            .collect::<Vec<_>>()
-    } else {
-        // Use N clones of the base DEMO_50CM scope
-        (0..all_sensors.len())
-            .map(|_| DEMO_50CM.clone())
-            .collect::<Vec<_>>()
-    };
+            .map(|sensor| {
+                // Create base satellite with DEMO_50CM telescope
+                let base_satellite = SatelliteConfig::new(
+                    DEMO_50CM.clone(),
+                    sensor.clone(),
+                    args.shared.temperature,
+                    args.shared.wavelength,
+                );
 
-    // Create satellite configurations by combining sensors and telescopes
-    let satellites: Vec<SatelliteConfig> = zip(all_sensors.iter(), all_scopes.iter())
-        .map(|(sensor, telescope)| {
-            SatelliteConfig::new(
-                telescope.clone(),
-                sensor.clone(),
-                args.shared.temperature,
-                args.shared.wavelength,
-            )
-        })
-        .collect();
+                // Adjust to match the desired pixel sampling
+                base_satellite.with_fwhm_sampling(pixel_sampling)
+            })
+            .collect()
+    } else {
+        // Use base DEMO_50CM telescope with each sensor (no resampling)
+        all_sensors
+            .iter()
+            .map(|sensor| {
+                SatelliteConfig::new(
+                    DEMO_50CM.clone(),
+                    sensor.clone(),
+                    args.shared.temperature,
+                    args.shared.wavelength,
+                )
+            })
+            .collect()
+    };
 
     // Compute the maximal FOV of all satellites:
     let mut max_fov = 0.0;
