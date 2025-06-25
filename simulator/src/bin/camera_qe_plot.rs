@@ -8,9 +8,8 @@
 //! cargo run --example camera_qe_plot
 //! ```
 
-use once_cell::sync::Lazy;
 use plotters::prelude::*;
-use simulator::hardware::sensor::{models, SensorConfig};
+use simulator::hardware::sensor::models::ALL_SENSORS;
 
 const OUTPUT_PATH: &str = "plots/camera_qe_curves.png";
 const WAVELENGTH_MIN: f32 = 150.0;
@@ -18,42 +17,17 @@ const WAVELENGTH_MAX: f32 = 1150.0;
 const TITLE: &str = "Camera Quantum Efficiency Curves";
 const SAMPLE_POINTS: usize = 100;
 
-// A struct to hold sensor information including display name and color
-struct SensorInfo<'a> {
-    sensor: &'a Lazy<SensorConfig>,
-    name: &'a str,
-    color: RGBColor,
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging from environment variables
     env_logger::init();
 
     println!("Generating QE curves plot...");
 
-    // Create a list of all camera sensors with display info
-    let sensor_list = vec![
-        SensorInfo {
-            sensor: &models::GSENSE4040BSI,
-            name: "GSENSE4040BSI",
-            color: RED,
-        },
-        SensorInfo {
-            sensor: &models::GSENSE6510BSI,
-            name: "GSENSE6510BSI",
-            color: MAGENTA,
-        },
-        SensorInfo {
-            sensor: &models::HWK4123,
-            name: "HWK4123",
-            color: GREEN,
-        },
-        SensorInfo {
-            sensor: &models::IMX455,
-            name: "IMX455",
-            color: BLUE,
-        },
-    ];
+    // Define colors for each sensor
+    let colors = [RED, MAGENTA, GREEN, BLUE];
+
+    // Zip sensors with colors for plotting
+    let sensor_color_pairs: Vec<_> = ALL_SENSORS.iter().zip(colors.iter()).collect();
 
     // Create plots directory if it doesn't exist
     std::fs::create_dir_all("plots")?;
@@ -93,23 +67,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     // Draw each sensor's QE curve
-    for sensor_info in &sensor_list {
+    for (sensor, color) in &sensor_color_pairs {
         // Generate QE points for this sensor
         let qe_points: Vec<(f32, f64)> = wavelengths
             .iter()
-            .map(|&wavelength| {
-                (
-                    wavelength,
-                    sensor_info.sensor.qe_at_wavelength(wavelength as u32),
-                )
-            })
+            .map(|&wavelength| (wavelength, sensor.qe_at_wavelength(wavelength as u32)))
             .collect();
+
+        // Capture color for legend closure
+        let legend_color = **color;
 
         // Draw the curve
         chart
-            .draw_series(LineSeries::new(qe_points, &sensor_info.color))?
-            .label(sensor_info.name)
-            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], sensor_info.color));
+            .draw_series(LineSeries::new(qe_points, color))?
+            .label(&sensor.name)
+            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], legend_color));
     }
 
     // Draw the legend

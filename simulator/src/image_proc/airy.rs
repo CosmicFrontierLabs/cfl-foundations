@@ -14,6 +14,12 @@ pub struct AiryDisk {
     pub fwhm: f64,
 }
 
+impl Default for AiryDisk {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AiryDisk {
     /// Create a new AiryDisk with given wavelength and aperture diameter in microns
     pub fn new() -> Self {
@@ -203,7 +209,7 @@ impl AiryDisk {
     }
 }
 
-pub static AIRY_DISK: Lazy<AiryDisk> = Lazy::new(|| AiryDisk::new());
+pub static AIRY_DISK: Lazy<AiryDisk> = Lazy::new(AiryDisk::new);
 
 #[derive(Debug, Clone, Copy)]
 pub struct ScaledAiryDisk {
@@ -215,7 +221,7 @@ impl ScaledAiryDisk {
     /// Creates a new ScaledAiryDisk with a default AiryDisk and given radius scale
     fn new(radius_scale: f64) -> Self {
         ScaledAiryDisk {
-            disk: AIRY_DISK.clone(),
+            disk: *AIRY_DISK,
             radius_scale,
         }
     }

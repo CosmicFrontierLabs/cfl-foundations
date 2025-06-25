@@ -45,7 +45,7 @@ impl EquatorialRandomizer {
 /// Star projector that maps celestial coordinates to image pixels
 pub struct StarProjector {
     /// Center point of the projection in right ascension/declination (radians)
-    center: Equatorial,
+    pub center: Equatorial,
 
     /// Angular resolution in radians per pixel
     radians_per_pixel: f64,
@@ -459,6 +459,21 @@ mod tests {
         let center_star = Equatorial { ra: 0.0, dec: 0.0 };
         let (pixel_x, pixel_y) = projector.project(&center_star).unwrap();
 
+        assert!((pixel_x - 960.0).abs() < 0.1);
+        assert!((pixel_y - 540.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_center_field_access() {
+        let test_center = Equatorial::from_degrees(120.0, -15.0);
+        let projector = StarProjector::new(&test_center, 0.001, 1920, 1080);
+
+        // Test that we can access the center field
+        assert!((projector.center.ra_degrees() - 120.0).abs() < 1e-10);
+        assert!((projector.center.dec_degrees() - (-15.0)).abs() < 1e-10);
+
+        // Test that the center star maps to sensor center
+        let (pixel_x, pixel_y) = projector.project(&test_center).unwrap();
         assert!((pixel_x - 960.0).abs() < 0.1);
         assert!((pixel_y - 540.0).abs() < 0.1);
     }

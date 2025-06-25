@@ -25,12 +25,12 @@ use core::f64;
 use image::DynamicImage;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::{debug, info, warn};
-use ndarray::Array2;
 use rayon::prelude::*;
 use simulator::algo::icp::{icp_match_objects, Locatable2d};
 use simulator::hardware::sensor::models as sensor_models;
+use simulator::hardware::telescope::build_optics_for_sensor;
 use simulator::hardware::telescope::models::DEMO_50CM;
-use simulator::hardware::telescope::{build_optics_for_sensor, TelescopeConfig};
+use simulator::hardware::SatelliteConfig;
 use simulator::image_proc::histogram_stretch::sigma_stretch;
 use simulator::image_proc::image::array2_to_gray_image;
 use simulator::image_proc::io::write_hashmap_to_fits;
@@ -66,13 +66,12 @@ struct ExperimentCommonArgs {
     icp_convergence_threshold: f64,
 }
 
-/// Parameters for a single experiment (one sky pointing with all sensors)
+/// Parameters for a single experiment (one sky pointing with all satellites)
 #[derive(Debug, Clone)]
 struct ExperimentParams {
     experiment_num: u32,
     ra_dec: Equatorial,
-    all_sensors: Vec<SensorConfig>,
-    all_scopes: Vec<TelescopeConfig>,
+    satellites: Vec<SatelliteConfig>,
     common_args: ExperimentCommonArgs,
 }
 
@@ -102,10 +101,10 @@ fn parse_ra_dec_coordinates(s: &str) -> Result<Equatorial, String> {
         .parse::<f64>()
         .map_err(|_| "Invalid Dec value".to_string())?;
 
-    if ra < 0.0 || ra >= 360.0 {
+    if !(0.0..360.0).contains(&ra) {
         return Err("RA must be in range [0, 360) degrees".to_string());
     }
-    if dec < -90.0 || dec > 90.0 {
+    if !(-90.0..=90.0).contains(&dec) {
         return Err("Dec must be in range [-90, 90] degrees".to_string());
     }
 
@@ -235,25 +234,25 @@ fn run_experiment<T: StarCatalog>(
 
     let mut results = Vec::new();
 
-    // Run experiment for each sensor at this sky pointing
-    for (sensor, telescope) in zip(params.all_sensors.iter(), params.all_scopes.iter()) {
-        debug!("Running experiment for sensor: {}", sensor.name);
-        // Render the star field for this sensor/telescope combination
+    // Run experiment for each satellite at this sky pointing
+    for satellite in params.satellites.iter() {
+        debug!("Running experiment for satellite: {}", satellite.name);
+        // Render the star field for this satellite
         let render_result = render_star_field(
             &star_refs,
             &params.ra_dec,
-            telescope,
-            sensor,
+            &satellite.telescope,
+            &satellite.sensor,
             &params.common_args.exposure,
             params.common_args.wavelength,
-            params.common_args.temperature,
+            satellite.temperature_c,
             &params.common_args.coordinates,
         );
 
         let prefix = format!(
             "{}_{}_",
             params.experiment_num,
-            sensor.name.replace(" ", "_"),
+            satellite.name.replace(" ", "_"),
         );
 
         // Only pick stuff that is noise_multiple above the noise floor
@@ -262,7 +261,7 @@ fn run_experiment<T: StarCatalog>(
             .mean()
             .expect("Can't take image mean");
         let cutoff_value =
-            mean_noise_elec * sensor.dn_per_electron * params.common_args.noise_multiple;
+            mean_noise_elec * satellite.sensor.dn_per_electron * params.common_args.noise_multiple;
 
         // Do the star detection
         let detected_stars = do_detections(
@@ -275,7 +274,7 @@ fn run_experiment<T: StarCatalog>(
         if params.common_args.save_images {
             save_image_outputs(
                 &render_result,
-                sensor,
+                &satellite.sensor,
                 &detected_stars,
                 output_path,
                 &prefix,
@@ -305,18 +304,21 @@ fn run_experiment<T: StarCatalog>(
 
                 ExperimentResult {
                     experiment_num: params.experiment_num,
-                    sensor_name: sensor.name.clone(),
+                    sensor_name: satellite.name.clone(),
                     coordinates: params.ra_dec,
                     detected_magnitudes: magnitudes,
                     icp_rms_error: icp_result.mean_squared_error.sqrt(),
                 }
             }
             Err(e) => {
-                warn!("ICP matching failed for sensor {}: {}", sensor.name, e);
+                warn!(
+                    "ICP matching failed for satellite {}: {}",
+                    satellite.name, e
+                );
 
                 ExperimentResult {
                     experiment_num: params.experiment_num,
-                    sensor_name: sensor.name.clone(),
+                    sensor_name: satellite.name.clone(),
                     coordinates: params.ra_dec,
                     detected_magnitudes: Vec::new(),
                     icp_rms_error: f64::NAN,
@@ -334,8 +336,7 @@ fn run_experiment<T: StarCatalog>(
 /// # Arguments
 /// * `results` - Vector of experiment results to write
 /// * `args` - Command line arguments containing configuration
-/// * `all_sensors` - Vector of sensor configurations used
-/// * `all_scopes` - Vector of telescope configurations used  
+/// * `satellites` - Vector of satellite configurations used  
 /// * `all_experiments` - Vector of all experiment parameters (for count)
 ///
 /// # Returns
@@ -343,14 +344,13 @@ fn run_experiment<T: StarCatalog>(
 fn write_results_to_csv(
     results: &[ExperimentResult],
     args: &Args,
-    all_sensors: &[SensorConfig],
-    all_scopes: &[TelescopeConfig],
+    satellites: &[SatelliteConfig],
     all_experiments: &[ExperimentParams],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let log_file_path = Path::new(&args.output_csv);
 
     // Create CSV file and write header information
-    let mut csv_file = std::fs::File::create(&log_file_path)
+    let mut csv_file = std::fs::File::create(log_file_path)
         .unwrap_or_else(|_| panic!("Failed to create CSV file: {}", args.output_csv));
 
     info!("Writing results to CSV file: {}", args.output_csv);
@@ -383,8 +383,8 @@ fn write_results_to_csv(
     writeln!(csv_file, "Total Experiments: {}", args.experiments)?;
     writeln!(
         csv_file,
-        "Total Runs: {} (experiments × sensors)",
-        all_experiments.len() * all_sensors.len()
+        "Total Runs: {} (experiments × satellites)",
+        all_experiments.len() * satellites.len()
     )?;
     writeln!(
         csv_file,
@@ -424,18 +424,19 @@ fn write_results_to_csv(
     writeln!(csv_file, "Output Directory: {}", args.output_dir)?;
     writeln!(csv_file)?;
 
-    // Write sensor information
-    writeln!(csv_file, "Sensor Configurations:")?;
-    for (i, (sensor, scope)) in zip(all_sensors.iter(), all_scopes.iter()).enumerate() {
-        let fov_deg = field_diameter(scope, sensor);
+    // Write satellite information
+    writeln!(csv_file, "Satellite Configurations:")?;
+    for (i, satellite) in satellites.iter().enumerate() {
+        let fov_deg = field_diameter(&satellite.telescope, &satellite.sensor);
         writeln!(
             csv_file,
-            "Sensor {}: {} - FOV: {:.4}° - Focal Length: {:.2}m - Aperture: {:.2}m",
+            "Satellite {}: {} - FOV: {:.4}° - Focal Length: {:.2}m - Aperture: {:.2}m - Temp: {:.1}°C",
             i + 1,
-            sensor.name,
+            satellite.name,
             fov_deg,
-            scope.focal_length_m,
-            scope.aperture_m
+            satellite.telescope.focal_length_m,
+            satellite.telescope.aperture_m,
+            satellite.temperature_c
         )?;
     }
     writeln!(csv_file)?;
@@ -476,12 +477,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse command line arguments
     let args = Args::parse();
 
-    let all_sensors = vec![
-        sensor_models::GSENSE4040BSI.clone(),
-        sensor_models::GSENSE6510BSI.clone(),
-        sensor_models::HWK4123.clone(),
-        sensor_models::IMX455.clone(),
-    ];
+    let all_sensors = &*sensor_models::ALL_SENSORS;
 
     let all_scopes = if let Some(pixel_sampling) = args.match_pixel_sampling {
         // Use the current build_optics_for_sensor implementation with match-pixel-sampling value
@@ -496,11 +492,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .collect::<Vec<_>>()
     };
 
-    // Compute the maximal FOV of all sensors:
+    // Create satellite configurations by combining sensors and telescopes
+    let satellites: Vec<SatelliteConfig> = zip(all_sensors.iter(), all_scopes.iter())
+        .map(|(sensor, telescope)| {
+            SatelliteConfig::new(
+                format!("Satellite_{}", sensor.name.replace(" ", "_")),
+                telescope.clone(),
+                sensor.clone(),
+                args.shared.temperature,
+            )
+        })
+        .collect();
+
+    // Compute the maximal FOV of all satellites:
     let mut max_fov = 0.0;
-    for (sensor, scope) in zip(all_sensors.iter(), all_scopes.iter()) {
-        let fov_deg = field_diameter(scope, sensor);
-        info!("Sensor: {}, FOV: {:.4}°", sensor.name, fov_deg);
+    for satellite in satellites.iter() {
+        let fov_deg = field_diameter(&satellite.telescope, &satellite.sensor);
+        info!("Satellite: {}, FOV: {:.4}°", satellite.name, fov_deg);
         if fov_deg > max_fov {
             max_fov = fov_deg;
         }
@@ -550,8 +558,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let params = ExperimentParams {
             experiment_num: i,
             ra_dec,
-            all_sensors: all_sensors.clone(),
-            all_scopes: all_scopes.clone(),
+            satellites: satellites.clone(),
             common_args: common_args.clone(),
         };
         all_experiments.push(params);
@@ -589,18 +596,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         all_experiments
             .iter()
             .map(|params| run_experiment(params, &catalog, max_fov))
-            .map(|results| {
+            .inspect(|_| {
                 pb.inc(1);
-                results
             })
             .collect()
     } else {
         all_experiments
             .par_iter()
             .map(|params| run_experiment(params, &catalog, max_fov))
-            .map(|results| {
+            .inspect(|_| {
                 pb.inc(1);
-                results
             })
             .collect()
     };
@@ -615,13 +620,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Processing results...");
 
     // Write results to CSV file
-    write_results_to_csv(
-        &flattened_results,
-        &args,
-        &all_sensors,
-        &all_scopes,
-        &all_experiments,
-    )?;
+    write_results_to_csv(&flattened_results, &args, &satellites, &all_experiments)?;
 
     Ok(())
 }

@@ -1,17 +1,12 @@
-use simulator::shared_args::SensorModel;
+use simulator::hardware::sensor::models::ALL_SENSORS;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Sensor Comparison Table");
     println!("======================");
     println!();
 
-    // Define all 4 sensors
-    let sensors = vec![
-        (SensorModel::Gsense4040bsi, "GSENSE4040BSI"),
-        (SensorModel::Gsense6510bsi, "GSENSE6510BSI"),
-        (SensorModel::Hwk4123, "HWK4123"),
-        (SensorModel::Imx455, "IMX455"),
-    ];
+    // Use all available sensors
+    let sensors = &*ALL_SENSORS;
 
     // Temperature for dark current comparison
     let temp_c = 0.0;
@@ -32,9 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Calculate and display data for each sensor
-    for (sensor_type, name) in sensors {
-        let config = sensor_type.to_config();
-
+    for config in sensors {
         // Dark current at 0°C
         let dark_current = config
             .dark_current_estimator
@@ -65,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Print markdown table row
         println!(
             "| {} | {} | {:.3} | {:.4} | {:.2} | {:.3} |",
-            name, resolution, area_cm2, dark_current, read_noise, avg_qe
+            config.name, resolution, area_cm2, dark_current, read_noise, avg_qe
         );
     }
 
@@ -79,21 +72,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Additional detailed breakdown
     println!("## Detailed Sensor Specifications");
 
-    for (sensor_type, name) in vec![
-        (SensorModel::Gsense4040bsi, "GSENSE4040BSI"),
-        (SensorModel::Gsense6510bsi, "GSENSE6510BSI"),
-        (SensorModel::Hwk4123, "HWK4123"),
-        (SensorModel::Imx455, "IMX455"),
-    ] {
-        let config = sensor_type.to_config();
-
+    for config in sensors {
         println!();
         let sensor_width_cm = (config.width_px as f64 * config.pixel_size_um) / 10000.0;
         let sensor_height_cm = (config.height_px as f64 * config.pixel_size_um) / 10000.0;
         let area_cm2 = sensor_width_cm * sensor_height_cm;
 
         println!();
-        println!("### {}", name);
+        println!("### {}", config.name);
         println!(
             "- **Resolution:** {} × {} pixels",
             config.width_px, config.height_px

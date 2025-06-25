@@ -12,7 +12,7 @@
 use clap::Parser;
 use ndarray::{Array1, Array2};
 use plotters::prelude::*;
-use simulator::hardware::sensor::models as sensor_models;
+use simulator::hardware::sensor::models::ALL_SENSORS;
 use simulator::hardware::telescope::models::DEMO_50CM;
 use simulator::image_proc::render::quantize_image;
 use simulator::photometry::{spectrum::Spectrum, zodical::SolarAngularCoordinates, ZodicalLight};
@@ -170,12 +170,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let latitudes = parse_range(&args.latitude_range)?;
 
     // Define sensors to test
-    let sensors = vec![
-        sensor_models::GSENSE4040BSI.with_dimensions(args.domain, args.domain),
-        sensor_models::GSENSE6510BSI.with_dimensions(args.domain, args.domain),
-        sensor_models::HWK4123.with_dimensions(args.domain, args.domain),
-        sensor_models::IMX455.with_dimensions(args.domain, args.domain),
-    ];
+    let sensors: Vec<_> = ALL_SENSORS
+        .iter()
+        .map(|sensor| sensor.with_dimensions(args.domain, args.domain))
+        .collect();
 
     let telescope = DEMO_50CM.clone();
     let exposure = Duration::from_secs_f64(1000.0); // 1000 second exposure

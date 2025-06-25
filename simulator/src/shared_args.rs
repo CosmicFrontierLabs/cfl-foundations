@@ -86,16 +86,16 @@ fn parse_duration(s: &str) -> Result<Duration, String> {
     let s = s.trim();
 
     // Extract numeric part and unit
-    let (num_str, unit) = if s.ends_with("ms") {
-        (&s[..s.len() - 2], "ms")
-    } else if s.ends_with("us") {
-        (&s[..s.len() - 2], "us")
-    } else if s.ends_with('s') {
-        (&s[..s.len() - 1], "s")
-    } else if s.ends_with('h') {
-        (&s[..s.len() - 1], "h")
-    } else if s.ends_with('m') {
-        (&s[..s.len() - 1], "m")
+    let (num_str, unit) = if let Some(stripped) = s.strip_suffix("ms") {
+        (stripped, "ms")
+    } else if let Some(stripped) = s.strip_suffix("us") {
+        (stripped, "us")
+    } else if let Some(stripped) = s.strip_suffix('s') {
+        (stripped, "s")
+    } else if let Some(stripped) = s.strip_suffix('h') {
+        (stripped, "h")
+    } else if let Some(stripped) = s.strip_suffix('m') {
+        (stripped, "m")
     } else {
         // Default to seconds if no unit specified
         (s, "s")

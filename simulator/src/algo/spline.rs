@@ -96,8 +96,8 @@ impl CubicSpline {
         let mut alpha = vec![0.0; n - 1];
 
         // Calculate h and alpha
-        for i in 0..n - 1 {
-            h[i] = self.x[i + 1] - self.x[i];
+        for (i, h_val) in h.iter_mut().enumerate().take(n - 1) {
+            *h_val = self.x[i + 1] - self.x[i];
         }
 
         for i in 1..n - 1 {

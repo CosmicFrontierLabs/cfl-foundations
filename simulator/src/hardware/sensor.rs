@@ -422,6 +422,16 @@ pub mod models {
             21.33,
         )
     });
+
+    /// Collection of all available sensor models
+    pub static ALL_SENSORS: Lazy<Vec<SensorConfig>> = Lazy::new(|| {
+        vec![
+            GSENSE4040BSI.clone(),
+            GSENSE6510BSI.clone(),
+            HWK4123.clone(),
+            IMX455.clone(),
+        ]
+    });
 }
 
 #[cfg(test)]

@@ -26,14 +26,12 @@ use core::f64;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use ndarray::{Array1, Array2};
 use rayon::prelude::*;
-use simulator::hardware::sensor::models as sensor_models;
+use simulator::hardware::sensor::models::ALL_SENSORS;
 use simulator::hardware::telescope::models::DEMO_50CM;
 use simulator::hardware::telescope::TelescopeConfig;
 use simulator::image_proc::airy::ScaledAiryDisk;
 use simulator::image_proc::generate_sensor_noise;
-use simulator::image_proc::render::{
-    add_stars_to_image, approx_airy_pixels, quantize_image, StarInFrame,
-};
+use simulator::image_proc::render::{add_stars_to_image, quantize_image, StarInFrame};
 use simulator::image_proc::segment::do_detections;
 use simulator::photometry::{zodical::SolarAngularCoordinates, ZodicalLight};
 use simulator::shared_args::SharedSimulationArgs;
@@ -241,7 +239,9 @@ fn run_single_experiment(params: &ExperimentParams) -> ExperimentResults {
             }
         }
 
-        best.map(|(x_diff, y_diff)| xy_err.push((x_diff, y_diff)));
+        if let Some((x_diff, y_diff)) = best {
+            xy_err.push((x_diff, y_diff));
+        }
     }
 
     ExperimentResults {
@@ -266,12 +266,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let domain = 256_usize;
 
     // Define all sensors to test with same dimensions
-    let all_sensors = vec![
-        sensor_models::GSENSE4040BSI.with_dimensions(domain as u32, domain as u32),
-        sensor_models::GSENSE6510BSI.with_dimensions(domain as u32, domain as u32),
-        sensor_models::HWK4123.with_dimensions(domain as u32, domain as u32),
-        sensor_models::IMX455.with_dimensions(domain as u32, domain as u32),
-    ];
+    let all_sensors: Vec<_> = ALL_SENSORS
+        .iter()
+        .map(|sensor| sensor.with_dimensions(domain as u32, domain as u32))
+        .collect();
 
     let exposure = args.shared.exposure.0;
     let telescope = DEMO_50CM.clone();

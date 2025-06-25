@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use ndarray::Array2;
 use starfield::{catalogs::StarData, Equatorial};
-use viz::histogram::Scale;
 
 use crate::{
     algo::icp::Locatable2d,
