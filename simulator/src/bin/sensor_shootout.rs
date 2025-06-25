@@ -220,7 +220,8 @@ fn run_experiment(
         &render_result.rendered_stars,
         20,
         0.25,
-    );
+    )
+    .expect("ICP matching failed: detected stars and rendered stars should be valid for matching");
 
     for (dete, star) in matches.iter() {
         let distance = ((dete.x() - star.x()).powf(2.0) + (dete.y() - star.y()).powf(2.0)).sqrt();

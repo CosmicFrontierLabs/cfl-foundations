@@ -6,8 +6,16 @@
 
 use nalgebra::{Matrix2, Vector2, Vector3};
 use ndarray::Array2;
+use thiserror::Error;
 
 use crate::algo::quaternion::Quaternion;
+
+/// Errors that can occur during ICP object matching
+#[derive(Error, Debug)]
+pub enum ICPError {
+    #[error("Invalid argument: {0}")]
+    ArgumentError(String),
+}
 
 /// Result of ICP algorithm containing transformation parameters and matching points
 #[derive(Debug, Clone)]
@@ -328,42 +336,54 @@ impl Locatable2d for Vector2<f64> {
 /// * `R2`: The type of the target objects, must implement `Locatable2d` and `Clone`.
 ///
 /// # Arguments
-/// * `source` - A slice of source objects.
-/// * `target` - A slice of target objects.
+/// * `source` - A slice of source objects. Must not be empty.
+/// * `target` - A slice of target objects. Must not be empty.
 /// * `max_iterations` - Maximum number of iterations for the ICP algorithm.
-/// * `convergence_threshold` - Convergence threshold for the ICP algorithm.
+/// * `convergence_threshold` - Convergence threshold for the ICP algorithm. Must be positive.
 ///
 /// # Returns
-/// * `Vec<(R1, R2)>` - A vector of tuples containing the cloned matched pairs.
-///   Returns an empty vector if the input slices cannot be converted to valid point clouds
-///   (e.g., if they are empty or conversion to `Array2` fails).
+/// * `Result<Vec<(R1, R2)>, ICPError>` - A vector of tuples containing the cloned matched pairs,
+///   or an error if the operation fails.
+///
+/// # Errors
+/// * `ICPError::ArgumentError` - If either source or target slice is empty, or if convergence_threshold is not positive.
+///
+/// # Panics
+/// * Panics if Array2 conversion fails (programming error) or if ICP returns out-of-bounds indices (programming error).
 pub fn icp_match_objects<R1, R2>(
     source: &[R1],
     target: &[R2],
     max_iterations: usize,
     convergence_threshold: f64,
-) -> Vec<(R1, R2)>
+) -> Result<Vec<(R1, R2)>, ICPError>
 where
     R1: Locatable2d + Clone,
     R2: Locatable2d + Clone,
 {
-    if source.is_empty() || target.is_empty() {
-        return Vec::new();
+    if source.is_empty() {
+        return Err(ICPError::ArgumentError("source slice is empty".to_string()));
+    }
+
+    if target.is_empty() {
+        return Err(ICPError::ArgumentError("target slice is empty".to_string()));
+    }
+
+    if convergence_threshold <= 0.0 {
+        return Err(ICPError::ArgumentError(format!(
+            "convergence_threshold must be positive, got {}",
+            convergence_threshold
+        )));
     }
 
     // Convert source Locatable2d objects to ndarray::Array2<f64>
     let source_points_vec: Vec<f64> = source.iter().flat_map(|p| [p.x(), p.y()]).collect();
-    let source_points = match Array2::from_shape_vec((source.len(), 2), source_points_vec) {
-        Ok(arr) => arr,
-        Err(_) => return Vec::new(), // Return empty if conversion fails
-    };
+    let source_points = Array2::from_shape_vec((source.len(), 2), source_points_vec)
+        .expect("Source points vector should have correct length for Array2 conversion");
 
     // Convert target Locatable2d objects to ndarray::Array2<f64>
     let target_points_vec: Vec<f64> = target.iter().flat_map(|p| [p.x(), p.y()]).collect();
-    let target_points = match Array2::from_shape_vec((target.len(), 2), target_points_vec) {
-        Ok(arr) => arr,
-        Err(_) => return Vec::new(), // Return empty if conversion fails
-    };
+    let target_points = Array2::from_shape_vec((target.len(), 2), target_points_vec)
+        .expect("Target points vector should have correct length for Array2 conversion");
 
     // Run the ICP algorithm
     let result = iterative_closest_point(
@@ -377,23 +397,25 @@ where
     let matched_objects: Vec<(R1, R2)> = result
         .matches
         .iter()
-        .filter_map(|&(src_idx, tgt_idx)| {
+        .map(|&(src_idx, tgt_idx)| {
             // Ensure indices are within bounds before accessing
-            if src_idx < source.len() && tgt_idx < target.len() {
-                Some((source[src_idx].clone(), target[tgt_idx].clone()))
-            } else {
-                // Log error or handle defensively if indices are out of bounds
-                // This shouldn't happen with correct ICP implementation.
-                eprintln!(
-                    "Warning: ICP returned out-of-bounds index pair ({}, {})",
-                    src_idx, tgt_idx
-                );
-                None
-            }
+            assert!(
+                src_idx < source.len(),
+                "ICP returned out-of-bounds source index: {} >= {}",
+                src_idx,
+                source.len()
+            );
+            assert!(
+                tgt_idx < target.len(),
+                "ICP returned out-of-bounds target index: {} >= {}",
+                tgt_idx,
+                target.len()
+            );
+            (source[src_idx].clone(), target[tgt_idx].clone())
         })
         .collect();
 
-    matched_objects
+    Ok(matched_objects)
 }
 
 #[cfg(test)]
@@ -873,7 +895,7 @@ mod tests {
         ];
         let target_objs = source_objs.clone(); // Identical set
 
-        let matches = icp_match_objects(&source_objs, &target_objs, 10, 1e-6);
+        let matches = icp_match_objects(&source_objs, &target_objs, 10, 1e-6).unwrap();
 
         assert_eq!(matches.len(), 3);
         // Check if each source object is matched with its identical target object
@@ -913,7 +935,7 @@ mod tests {
             })
             .collect();
 
-        let matches = icp_match_objects(&source_objs, &target_objs, 20, 1e-6);
+        let matches = icp_match_objects(&source_objs, &target_objs, 20, 1e-6).unwrap();
 
         assert_eq!(matches.len(), 3);
         // Check if objects are matched correctly by ID, assuming ICP finds the correct correspondence
@@ -957,7 +979,7 @@ mod tests {
             })
             .collect();
 
-        let matches = icp_match_objects(&source_objs, &target_objs, 20, 1e-6);
+        let matches = icp_match_objects(&source_objs, &target_objs, 20, 1e-6).unwrap();
 
         assert_eq!(matches.len(), 3);
         let mut matched_ids: Vec<(usize, usize)> =
@@ -1001,7 +1023,7 @@ mod tests {
             })
             .collect();
 
-        let matches = icp_match_objects(&source_objs, &target_objs, 30, 1e-6);
+        let matches = icp_match_objects(&source_objs, &target_objs, 30, 1e-6).unwrap();
 
         assert_eq!(matches.len(), 3);
         let mut matched_ids: Vec<(usize, usize)> =
@@ -1027,7 +1049,10 @@ mod tests {
         ];
 
         let matches_empty_source = icp_match_objects(&source_objs, &target_objs, 10, 1e-6);
-        assert!(matches_empty_source.is_empty());
+        assert!(matches!(
+            matches_empty_source,
+            Err(ICPError::ArgumentError(_))
+        ));
 
         let source_objs_non_empty = vec![
             PointObject {
@@ -1044,10 +1069,16 @@ mod tests {
         let target_objs_empty: Vec<PointObject> = vec![];
         let matches_empty_target =
             icp_match_objects(&source_objs_non_empty, &target_objs_empty, 10, 1e-6);
-        assert!(matches_empty_target.is_empty());
+        assert!(matches!(
+            matches_empty_target,
+            Err(ICPError::ArgumentError(_))
+        ));
 
         let matches_both_empty = icp_match_objects(&source_objs, &target_objs_empty, 10, 1e-6);
-        assert!(matches_both_empty.is_empty());
+        assert!(matches!(
+            matches_both_empty,
+            Err(ICPError::ArgumentError(_))
+        ));
     }
 
     #[test]
@@ -1083,7 +1114,7 @@ mod tests {
             }, // Extra point
         ];
 
-        let matches = icp_match_objects(&source_objs, &target_objs, 10, 1e-6);
+        let matches = icp_match_objects(&source_objs, &target_objs, 10, 1e-6).unwrap();
 
         // ICP matches each source point to its closest target point
         assert_eq!(matches.len(), 2);
@@ -1092,5 +1123,37 @@ mod tests {
         matched_ids.sort();
         // Expect source 0 to match target 10, source 1 to match target 11
         assert_eq!(matched_ids, vec![(0, 10), (1, 11)]);
+    }
+
+    #[test]
+    fn test_icp_match_objects_argument_error() {
+        let empty_source: Vec<PointObject> = vec![];
+        let target_objs = vec![PointObject {
+            id: 0,
+            x_coord: 1.0,
+            y_coord: 1.0,
+        }];
+
+        // Test empty source
+        let result = icp_match_objects(&empty_source, &target_objs, 10, 1e-6);
+        assert!(matches!(result, Err(ICPError::ArgumentError(_))));
+
+        // Test empty target
+        let source_objs = vec![PointObject {
+            id: 0,
+            x_coord: 1.0,
+            y_coord: 1.0,
+        }];
+        let empty_target: Vec<PointObject> = vec![];
+        let result = icp_match_objects(&source_objs, &empty_target, 10, 1e-6);
+        assert!(matches!(result, Err(ICPError::ArgumentError(_))));
+
+        // Test negative convergence threshold
+        let result = icp_match_objects(&source_objs, &target_objs, 10, -1e-6);
+        assert!(matches!(result, Err(ICPError::ArgumentError(_))));
+
+        // Test zero convergence threshold
+        let result = icp_match_objects(&source_objs, &target_objs, 10, 0.0);
+        assert!(matches!(result, Err(ICPError::ArgumentError(_))));
     }
 }
