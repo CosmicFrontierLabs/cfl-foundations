@@ -50,11 +50,15 @@ impl TelescopeConfig {
     /// - f is the focal length
     /// - D is the aperture diameter
     pub fn airy_disk_radius_um(&self, wavelength_nm: f64) -> f64 {
+        self.fwhm_image_spot_um(wavelength_nm) * 1.22
+    }
+
+    pub fn fwhm_image_spot_um(&self, wavelength_nm: f64) -> f64 {
         // Convert wavelength from nm to m
         let wavelength_m = wavelength_nm * 1.0e-9;
 
         // Calculate radius in meters
-        let radius_m = 1.22 * wavelength_m * self.focal_length_m / self.aperture_m;
+        let radius_m = wavelength_m * self.focal_length_m / self.aperture_m;
 
         // Convert to microns
         radius_m * 1.0e6
@@ -98,6 +102,16 @@ impl TelescopeConfig {
     /// Calculate the effective collecting area considering light efficiency
     pub fn effective_collecting_area_m2(&self) -> f64 {
         self.collecting_area_m2() * self.light_efficiency
+    }
+
+    /// Create a new telescope configuration with modified focal length
+    pub fn with_focal_length(&self, focal_length_m: f64) -> TelescopeConfig {
+        TelescopeConfig {
+            name: self.name.clone(),
+            aperture_m: self.aperture_m,
+            focal_length_m,
+            light_efficiency: self.light_efficiency,
+        }
     }
 }
 

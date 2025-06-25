@@ -55,8 +55,6 @@ use viz::histogram::{Histogram, HistogramConfig, Scale};
 /// Common arguments for experiments
 #[derive(Debug, Clone)]
 struct ExperimentCommonArgs {
-    temperature: f64,
-    wavelength: f64,
     exposure: Duration,
     coordinates: SolarAngularCoordinates,
     noise_multiple: f64,
@@ -215,8 +213,7 @@ fn run_experiment<T: StarCatalog>(
         params.ra_dec.ra_degrees(),
         params.ra_dec.dec_degrees()
     );
-    debug!("  Temperature: {}", params.common_args.temperature);
-    debug!("  Wavelength: {}", params.common_args.wavelength);
+    debug!("  Temperature/Wavelength: per-satellite configuration");
     debug!("  Exposure: {:?}", params.common_args.exposure);
     debug!("  Noise Multiple: {}", params.common_args.noise_multiple);
     debug!("  Output Dir: {}", params.common_args.output_dir);
@@ -236,7 +233,10 @@ fn run_experiment<T: StarCatalog>(
 
     // Run experiment for each satellite at this sky pointing
     for satellite in params.satellites.iter() {
-        debug!("Running experiment for satellite: {}", satellite.name);
+        debug!(
+            "Running experiment for satellite: {} (T: {:.1}°C, λ: {:.0}nm)",
+            satellite.sensor.name, satellite.temperature_c, satellite.wavelength_nm
+        );
         // Render the star field for this satellite
         let render_result = render_star_field(
             &star_refs,
@@ -244,7 +244,7 @@ fn run_experiment<T: StarCatalog>(
             &satellite.telescope,
             &satellite.sensor,
             &params.common_args.exposure,
-            params.common_args.wavelength,
+            satellite.wavelength_nm,
             satellite.temperature_c,
             &params.common_args.coordinates,
         );
@@ -252,7 +252,7 @@ fn run_experiment<T: StarCatalog>(
         let prefix = format!(
             "{}_{}_",
             params.experiment_num,
-            satellite.name.replace(" ", "_"),
+            satellite.sensor.name.replace(" ", "_"),
         );
 
         // Only pick stuff that is noise_multiple above the noise floor
@@ -304,7 +304,7 @@ fn run_experiment<T: StarCatalog>(
 
                 ExperimentResult {
                     experiment_num: params.experiment_num,
-                    sensor_name: satellite.name.clone(),
+                    sensor_name: satellite.sensor.name.clone(),
                     coordinates: params.ra_dec,
                     detected_magnitudes: magnitudes,
                     icp_rms_error: icp_result.mean_squared_error.sqrt(),
@@ -313,12 +313,12 @@ fn run_experiment<T: StarCatalog>(
             Err(e) => {
                 warn!(
                     "ICP matching failed for satellite {}: {}",
-                    satellite.name, e
+                    satellite.sensor.name, e
                 );
 
                 ExperimentResult {
                     experiment_num: params.experiment_num,
-                    sensor_name: satellite.name.clone(),
+                    sensor_name: satellite.sensor.name.clone(),
                     coordinates: params.ra_dec,
                     detected_magnitudes: Vec::new(),
                     icp_rms_error: f64::NAN,
@@ -359,12 +359,8 @@ fn write_results_to_csv(
     writeln!(csv_file, "Sensor Shootout Experiment Results")?;
     writeln!(csv_file, "Configuration Parameters:")?;
     writeln!(csv_file, "Exposure: {} seconds", args.shared.exposure)?;
-    writeln!(csv_file, "Wavelength: {} nm", args.shared.wavelength)?;
-    writeln!(
-        csv_file,
-        "Sensor Temperature: {} °C",
-        args.shared.temperature
-    )?;
+    writeln!(csv_file, "Wavelength: per-satellite configuration")?;
+    writeln!(csv_file, "Sensor Temperature: per-satellite configuration")?;
     writeln!(
         csv_file,
         "Noise Floor Multiplier: {}",
@@ -430,13 +426,14 @@ fn write_results_to_csv(
         let fov_deg = field_diameter(&satellite.telescope, &satellite.sensor);
         writeln!(
             csv_file,
-            "Satellite {}: {} - FOV: {:.4}° - Focal Length: {:.2}m - Aperture: {:.2}m - Temp: {:.1}°C",
+            "Satellite {}: {} - FOV: {:.4}° - Focal Length: {:.2}m - Aperture: {:.2}m - Temp: {:.1}°C - Wavelength: {:.0}nm",
             i + 1,
-            satellite.name,
+            satellite.sensor.name,
             fov_deg,
             satellite.telescope.focal_length_m,
             satellite.telescope.aperture_m,
-            satellite.temperature_c
+            satellite.temperature_c,
+            satellite.wavelength_nm
         )?;
     }
     writeln!(csv_file)?;
@@ -496,10 +493,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let satellites: Vec<SatelliteConfig> = zip(all_sensors.iter(), all_scopes.iter())
         .map(|(sensor, telescope)| {
             SatelliteConfig::new(
-                format!("Satellite_{}", sensor.name.replace(" ", "_")),
                 telescope.clone(),
                 sensor.clone(),
                 args.shared.temperature,
+                args.shared.wavelength,
             )
         })
         .collect();
@@ -508,7 +505,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut max_fov = 0.0;
     for satellite in satellites.iter() {
         let fov_deg = field_diameter(&satellite.telescope, &satellite.sensor);
-        info!("Satellite: {}, FOV: {:.4}°", satellite.name, fov_deg);
+        info!("Satellite: {}, FOV: {:.4}°", satellite.sensor.name, fov_deg);
         if fov_deg > max_fov {
             max_fov = fov_deg;
         }
@@ -526,8 +523,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create common experiment arguments
     let common_args = ExperimentCommonArgs {
-        temperature: args.shared.temperature,
-        wavelength: args.shared.wavelength,
         exposure: args.shared.exposure.0,
         coordinates: args.shared.coordinates,
         noise_multiple: args.shared.noise_multiple,

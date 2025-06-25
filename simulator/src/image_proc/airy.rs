@@ -286,7 +286,6 @@ impl ScaledAiryDisk {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
-    use once_cell::sync::Lazy;
 
     #[test]
     fn test_airy_disk_creation() {
