@@ -130,6 +130,7 @@ pub fn calculate_star_centroid(
     // Stars should have aspect ratio close to 1.0 (circular PSF)
     // Use 2.5 as a threshold, which allows for some PSF distortion
     let is_valid = aspect_ratio < 2.5;
+    // let is_valid = true; // FIXME(meawoppl)
 
     StarDetection {
         x: x_centroid,

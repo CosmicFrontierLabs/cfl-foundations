@@ -58,10 +58,6 @@ struct Args {
     #[command(flatten)]
     shared: SharedSimulationArgs,
 
-    /// Detection threshold multiplier above noise floor
-    #[arg(long, default_value_t = 5.0)]
-    noise_floor: f64,
-
     /// Number of experiments to run per configuration
     #[arg(long, default_value_t = 1000)]
     experiments: u32,
@@ -320,7 +316,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     exposure,
                     mag: *mag,
                     airy_pix,
-                    noise_floor_multiplier: args.noise_floor,
+                    noise_floor_multiplier: args.shared.noise_multiple,
                     indices: (disk_idx, mag_idx),
                     experiment_count: args.experiments,
                     temperature: args.shared.temperature,
@@ -419,7 +415,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     writeln!(csv_file, "Sensor Floor Estimation Results").unwrap();
     writeln!(csv_file, "Parameters:").unwrap();
     writeln!(csv_file, "Exposure: {} seconds", args.shared.exposure).unwrap();
-    writeln!(csv_file, "Noise Floor Multiplier: {}", args.noise_floor).unwrap();
+    writeln!(
+        csv_file,
+        "Noise Floor Multiplier: {}",
+        args.shared.noise_multiple
+    )
+    .unwrap();
     writeln!(csv_file, "Wavelength: {} nm", args.shared.wavelength).unwrap();
     writeln!(csv_file, "Aperture diameter {} m", telescope.aperture_m).unwrap();
     writeln!(

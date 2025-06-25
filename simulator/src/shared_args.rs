@@ -213,6 +213,10 @@ pub struct SharedSimulationArgs {
     /// Path to binary star catalog
     #[arg(long, default_value = "gaia_mag16_multi.bin")]
     pub catalog: PathBuf,
+
+    /// Noise multiple for detection cutoff (detection threshold = mean_noise * noise_multiple)
+    #[arg(long, default_value_t = 5.0)]
+    pub noise_multiple: f64,
 }
 
 impl SharedSimulationArgs {
