@@ -215,7 +215,7 @@ fn run_experiment(
     );
 
     // Now we take our detected stars and match them against the sources
-    let matches = icp_match_objects::<StarDetection, StarInFrame>(
+    let (matches, _icp_result) = icp_match_objects::<StarDetection, StarInFrame>(
         &detected_stars,
         &render_result.rendered_stars,
         20,

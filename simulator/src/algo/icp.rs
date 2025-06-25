@@ -326,7 +326,7 @@ impl Locatable2d for Vector2<f64> {
     }
 }
 
-/// Performs ICP matching between two sets of Locatable2d objects and returns the matched pairs.
+/// Performs ICP matching between two sets of Locatable2d objects and returns the matched pairs and ICP result.
 ///
 /// This function converts the input objects into point clouds, runs the ICP algorithm,
 /// and then maps the resulting index pairs back to the original objects.
@@ -355,7 +355,7 @@ pub fn icp_match_objects<R1, R2>(
     target: &[R2],
     max_iterations: usize,
     convergence_threshold: f64,
-) -> Result<Vec<(R1, R2)>, ICPError>
+) -> Result<(Vec<(R1, R2)>, ICPResult), ICPError>
 where
     R1: Locatable2d + Clone,
     R2: Locatable2d + Clone,
@@ -415,7 +415,7 @@ where
         })
         .collect();
 
-    Ok(matched_objects)
+    Ok((matched_objects, result))
 }
 
 #[cfg(test)]
@@ -895,7 +895,8 @@ mod tests {
         ];
         let target_objs = source_objs.clone(); // Identical set
 
-        let matches = icp_match_objects(&source_objs, &target_objs, 10, 1e-6).unwrap();
+        let (matches, _icp_result) = icp_match_objects(&source_objs, &target_objs, 10, 1e-6)
+            .expect("ICP should succeed with identical objects");
 
         assert_eq!(matches.len(), 3);
         // Check if each source object is matched with its identical target object
@@ -935,7 +936,8 @@ mod tests {
             })
             .collect();
 
-        let matches = icp_match_objects(&source_objs, &target_objs, 20, 1e-6).unwrap();
+        let (matches, _icp_result) = icp_match_objects(&source_objs, &target_objs, 20, 1e-6)
+            .expect("ICP should succeed with translated objects");
 
         assert_eq!(matches.len(), 3);
         // Check if objects are matched correctly by ID, assuming ICP finds the correct correspondence
@@ -979,7 +981,8 @@ mod tests {
             })
             .collect();
 
-        let matches = icp_match_objects(&source_objs, &target_objs, 20, 1e-6).unwrap();
+        let (matches, _icp_result) = icp_match_objects(&source_objs, &target_objs, 20, 1e-6)
+            .expect("ICP should succeed with rotated objects");
 
         assert_eq!(matches.len(), 3);
         let mut matched_ids: Vec<(usize, usize)> =
@@ -1023,7 +1026,8 @@ mod tests {
             })
             .collect();
 
-        let matches = icp_match_objects(&source_objs, &target_objs, 30, 1e-6).unwrap();
+        let (matches, _icp_result) = icp_match_objects(&source_objs, &target_objs, 30, 1e-6)
+            .expect("ICP should succeed with rotated and translated objects");
 
         assert_eq!(matches.len(), 3);
         let mut matched_ids: Vec<(usize, usize)> =
@@ -1067,10 +1071,10 @@ mod tests {
             },
         ];
         let target_objs_empty: Vec<PointObject> = vec![];
-        let matches_empty_target =
+        let result_empty_target =
             icp_match_objects(&source_objs_non_empty, &target_objs_empty, 10, 1e-6);
         assert!(matches!(
-            matches_empty_target,
+            result_empty_target,
             Err(ICPError::ArgumentError(_))
         ));
 
@@ -1114,7 +1118,8 @@ mod tests {
             }, // Extra point
         ];
 
-        let matches = icp_match_objects(&source_objs, &target_objs, 10, 1e-6).unwrap();
+        let (matches, _icp_result) = icp_match_objects(&source_objs, &target_objs, 10, 1e-6)
+            .expect("ICP should succeed with different sized sets");
 
         // ICP matches each source point to its closest target point
         assert_eq!(matches.len(), 2);
