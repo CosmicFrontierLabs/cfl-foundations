@@ -1,4 +1,5 @@
 use crate::hardware::sensor::SensorConfig;
+use crate::hardware::telescope::TelescopeConfig;
 use crate::photometry::zodical::SolarAngularCoordinates;
 use clap::{Parser, ValueEnum};
 use starfield::catalogs::binary_catalog::{BinaryCatalog, MinimalStar};
@@ -167,13 +168,36 @@ pub enum SensorModel {
     Imx455,
 }
 
+/// Available telescope models for selection
+#[derive(Debug, Clone, ValueEnum)]
+pub enum TelescopeModel {
+    /// Small 50mm telescope (0.05m aperture, f/10)
+    Small50mm,
+    /// 50cm Demo telescope (0.5m aperture, f/20) - Default
+    Demo50cm,
+    /// 1m Final telescope (1.0m aperture, f/10) - Production system
+    Final1m,
+    /// Weasel telescope (0.47m aperture, f/7.3) - Multi-spectral
+    Weasel,
+}
+
 impl std::fmt::Display for SensorModel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.to_config()
+            .name
+            .to_lowercase()
+            .replace('_', "-")
+            .fmt(f)
+    }
+}
+
+impl std::fmt::Display for TelescopeModel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SensorModel::Gsense4040bsi => write!(f, "gsense4040bsi"),
-            SensorModel::Gsense6510bsi => write!(f, "gsense6510bsi"),
-            SensorModel::Hwk4123 => write!(f, "hwk4123"),
-            SensorModel::Imx455 => write!(f, "imx455"),
+            TelescopeModel::Small50mm => write!(f, "small50mm"),
+            TelescopeModel::Demo50cm => write!(f, "demo50cm"),
+            TelescopeModel::Final1m => write!(f, "final1m"),
+            TelescopeModel::Weasel => write!(f, "weasel"),
         }
     }
 }
@@ -181,11 +205,25 @@ impl std::fmt::Display for SensorModel {
 impl SensorModel {
     /// Get the corresponding SensorConfig for the selected model
     pub fn to_config(&self) -> &'static SensorConfig {
+        use crate::hardware::sensor::models::*;
         match self {
-            SensorModel::Gsense4040bsi => &crate::hardware::sensor::models::GSENSE4040BSI,
-            SensorModel::Gsense6510bsi => &crate::hardware::sensor::models::GSENSE6510BSI,
-            SensorModel::Hwk4123 => &crate::hardware::sensor::models::HWK4123,
-            SensorModel::Imx455 => &crate::hardware::sensor::models::IMX455,
+            SensorModel::Gsense4040bsi => &GSENSE4040BSI,
+            SensorModel::Gsense6510bsi => &GSENSE6510BSI,
+            SensorModel::Hwk4123 => &HWK4123,
+            SensorModel::Imx455 => &IMX455,
+        }
+    }
+}
+
+impl TelescopeModel {
+    /// Get the corresponding TelescopeConfig for the selected model
+    pub fn to_config(&self) -> &'static TelescopeConfig {
+        use crate::hardware::telescope::models::*;
+        match self {
+            TelescopeModel::Small50mm => &SMALL_50MM,
+            TelescopeModel::Demo50cm => &DEMO_50CM,
+            TelescopeModel::Final1m => &FINAL_1M,
+            TelescopeModel::Weasel => &WEASEL,
         }
     }
 }
@@ -204,6 +242,10 @@ pub struct SharedSimulationArgs {
     /// Sensor temperature in degrees Celsius for dark current calculation
     #[arg(long, default_value_t = 20.0)]
     pub temperature: f64,
+
+    /// Telescope model to use for simulations
+    #[arg(long, default_value_t = TelescopeModel::Demo50cm)]
+    pub telescope: TelescopeModel,
 
     /// Solar elongation and coordinates for zodiacal background (format: "elongation,latitude")
     /// Defaults to the point of minimum zodiacal light brightness

@@ -24,10 +24,9 @@
 use clap::Parser;
 use core::f64;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use ndarray::{Array1, Array2};
+use ndarray::{Array1, Array2, Array3};
 use rayon::prelude::*;
 use simulator::hardware::sensor::models::ALL_SENSORS;
-use simulator::hardware::telescope::models::DEMO_50CM;
 use simulator::hardware::SatelliteConfig;
 use simulator::image_proc::generate_sensor_noise;
 use simulator::image_proc::render::{add_stars_to_image, quantize_image, StarInFrame};
@@ -70,6 +69,10 @@ struct Args {
     /// Domain size for test images (width and height in pixels)
     #[arg(long, default_value_t = 256)]
     domain: u32,
+
+    /// Test multiple exposure durations instead of just the shared exposure setting
+    #[arg(long, default_value_t = true)]
+    test_exposures: bool,
 }
 
 /// Parameters for a single experiment
@@ -85,8 +88,8 @@ struct ExperimentParams {
     mag: f64,
     /// Noise floor multiplier for detection threshold
     noise_floor_multiplier: f64,
-    /// Indices for result matrix (disk_idx, mag_idx)
-    indices: (usize, usize),
+    /// Indices for result matrix (disk_idx, exposure_idx, mag_idx)
+    indices: (usize, usize, usize),
     /// Number of times to run the experiment
     experiment_count: u32,
     /// Solar coordinates for zodiacal background
@@ -264,12 +267,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let domain = args.domain as usize;
 
     // Create satellite configurations with sensors sized to domain
+    let telescope_config = args.shared.telescope.to_config().clone();
     let all_satellites: Vec<SatelliteConfig> = ALL_SENSORS
         .iter()
         .map(|sensor| {
             let sized_sensor = sensor.with_dimensions(args.domain, args.domain);
             SatelliteConfig::new(
-                DEMO_50CM.clone(),
+                telescope_config.clone(),
                 sized_sensor,
                 args.shared.temperature,
                 args.shared.wavelength,
@@ -277,30 +281,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
 
-    let exposure = args.shared.exposure.0;
-
-    // PSF disk sizes to test (in Airy disk units) - 2 to 8 in steps of 0.25
+    // PSF disk sizes to test (in Airy disk FWHM units) - 1 to 5 in steps of 0.25
     let disks = Array1::range(1.0, 5.0, 0.25);
 
-    // Star magnitudes to test - 15 to 20 in steps of 0.25
-    let mags = Array1::range(12.0, 16.5, 0.25);
+    // Star magnitudes to test - 12 to 18 in steps of 0.25
+    let mags = Array1::range(12.0, 18.0, 0.25);
+
+    // Exposure durations to test
+    let exposures = if args.test_exposures {
+        vec![
+            Duration::from_millis(100),
+            Duration::from_millis(250),
+            Duration::from_millis(500),
+            Duration::from_secs(1),
+        ]
+    } else {
+        vec![args.shared.exposure.0]
+    };
 
     println!("Setting up experiments...");
 
-    // Store results for each sensor
-    let mut sensor_results: HashMap<String, Array2<f64>> = HashMap::new();
-    let mut sensor_pixel_results: HashMap<String, Array2<f64>> = HashMap::new();
+    // Store results for each sensor (3D: disk, exposure, mag)
+    let mut sensor_results: HashMap<String, Array3<f64>> = HashMap::new();
+    let mut sensor_pixel_results: HashMap<String, Array3<f64>> = HashMap::new();
 
     // Build a vector of all experiments to run
     let mut all_experiments = Vec::new();
 
-    // For each satellite, initialize the results array
+    // For each satellite, initialize the results arrays (3D: disk, exposure, mag)
     for satellite in &all_satellites {
-        let sensor_results_array = Array2::<f64>::from_elem((disks.len(), mags.len()), f64::NAN);
+        let sensor_results_array =
+            Array3::<f64>::from_elem((disks.len(), exposures.len(), mags.len()), f64::NAN);
         sensor_results.insert(satellite.sensor.name.clone(), sensor_results_array);
 
         let sensor_pixel_results_array =
-            Array2::<f64>::from_elem((disks.len(), mags.len()), f64::NAN);
+            Array3::<f64>::from_elem((disks.len(), exposures.len(), mags.len()), f64::NAN);
         sensor_pixel_results.insert(satellite.sensor.name.clone(), sensor_pixel_results_array);
 
         println!(
@@ -310,23 +325,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Create a vector of experiment parameters for this satellite
         for (disk_idx, disk) in disks.iter().enumerate() {
-            for (mag_idx, mag) in mags.iter().enumerate() {
-                // Adjust satellite to have the desired FWHM sampling
-                let adjusted_satellite = satellite.with_fwhm_sampling(*disk);
+            for (exposure_idx, exposure) in exposures.iter().enumerate() {
+                for (mag_idx, mag) in mags.iter().enumerate() {
+                    // Adjust satellite to have the desired FWHM sampling
+                    let adjusted_satellite = satellite.with_fwhm_sampling(*disk);
 
-                // Create experiment parameters
-                let params = ExperimentParams {
-                    domain,
-                    satellite: adjusted_satellite,
-                    exposure,
-                    mag: *mag,
-                    noise_floor_multiplier: args.shared.noise_multiple,
-                    indices: (disk_idx, mag_idx),
-                    experiment_count: args.experiments,
-                    coordinates: args.shared.coordinates,
-                };
+                    // Create experiment parameters
+                    let params = ExperimentParams {
+                        domain,
+                        satellite: adjusted_satellite,
+                        exposure: *exposure,
+                        mag: *mag,
+                        noise_floor_multiplier: args.shared.noise_multiple,
+                        indices: (disk_idx, exposure_idx, mag_idx),
+                        experiment_count: args.experiments,
+                        coordinates: args.shared.coordinates,
+                    };
 
-                all_experiments.push(params);
+                    all_experiments.push(params);
+                }
             }
         }
     }
@@ -341,12 +358,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     );
 
-    // Create another hashmap to store detection rates
-    let mut detection_rates: HashMap<String, Array2<f64>> = HashMap::new();
+    // Create another hashmap to store detection rates (3D: disk, exposure, mag)
+    let mut detection_rates: HashMap<String, Array3<f64>> = HashMap::new();
 
     // Initialize detection rates arrays
     for satellite in &all_satellites {
-        let detection_rate_array = Array2::<f64>::from_elem((disks.len(), mags.len()), 0.0);
+        let detection_rate_array =
+            Array3::<f64>::from_elem((disks.len(), exposures.len(), mags.len()), 0.0);
         detection_rates.insert(satellite.sensor.name.clone(), detection_rate_array);
     }
 
@@ -388,18 +406,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for result in results {
         let sensor_name = result.params.satellite.sensor.name.clone();
         let detection_rate = result.detection_rate();
-        let (disk_idx, mag_idx) = result.params.indices;
+        let (disk_idx, exposure_idx, mag_idx) = result.params.indices;
 
         if let Some(sensor_array) = sensor_results.get_mut(&sensor_name) {
-            sensor_array[[disk_idx, mag_idx]] = result.rms_err_mas();
+            sensor_array[[disk_idx, exposure_idx, mag_idx]] = result.rms_err_mas();
         }
 
         if let Some(sensor_pixel_array) = sensor_pixel_results.get_mut(&sensor_name) {
-            sensor_pixel_array[[disk_idx, mag_idx]] = result.rms_error();
+            sensor_pixel_array[[disk_idx, exposure_idx, mag_idx]] = result.rms_error();
         }
 
         if let Some(detection_array) = detection_rates.get_mut(&sensor_name) {
-            detection_array[[disk_idx, mag_idx]] = detection_rate;
+            detection_array[[disk_idx, exposure_idx, mag_idx]] = detection_rate;
         }
     }
 
@@ -424,7 +442,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .unwrap();
     writeln!(csv_file, "Wavelength: {} nm", args.shared.wavelength).unwrap();
-    writeln!(csv_file, "Aperture diameter {} m", DEMO_50CM.aperture_m).unwrap();
+    writeln!(csv_file, "Telescope: {}", args.shared.telescope).unwrap();
+    writeln!(
+        csv_file,
+        "Aperture diameter: {} m",
+        telescope_config.aperture_m
+    )
+    .unwrap();
     writeln!(
         csv_file,
         "Experiments per configuration: {}",
@@ -452,17 +476,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         writeln!(csv_file, "SENSOR: {}", sensor_name).unwrap();
         writeln!(csv_file).unwrap();
 
-        println!("  Detection Rate Matrix (% of attempts that detected a star):");
-
-        // Write detection rate matrix title to CSV
-        writeln!(csv_file, "Detection Rate Matrix (%)").unwrap();
-
-        // CSV header row with magnitude values
-        write!(csv_file, "Q\\Mag,").unwrap();
-        for mag in &mags {
-            write!(csv_file, "{:.2},", mag).unwrap();
-        }
-        writeln!(csv_file).unwrap();
+        // Detection Rate Matrix - Console output (simplified, just show first exposure)
+        println!(
+            "  Detection Rate Matrix (% of attempts that detected a star, first exposure only):"
+        );
 
         // Print header row with magnitude values
         print!("  Q\\Mag |");
@@ -478,144 +495,91 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         println!();
 
-        // Print and write detection rate matrix
+        // Print first exposure only for console
         for (disk_idx, disk) in disks.iter().enumerate() {
-            // CSV row
-            write!(csv_file, "{:.2},", disk).unwrap();
-
-            // Console row
             print!("  {:.1}      |", disk);
-
             for mag_idx in 0..mags.len() {
-                let rate = detection_rate_array[[disk_idx, mag_idx]];
-
-                // CSV cell
-                write!(csv_file, "{:.1},", rate * 100.0).unwrap();
-
-                // Console cell
+                let rate = detection_rate_array[[disk_idx, 0, mag_idx]]; // First exposure only
                 print!(" {:3.0}% |", rate * 100.0);
             }
-            writeln!(csv_file).unwrap();
             println!();
         }
 
-        // Add blank line after matrix
-        writeln!(csv_file).unwrap();
+        // CSV Output - Detection Rate Matrix with disk and exposure unrolled
+        writeln!(csv_file, "Detection Rate Matrix (%)").unwrap();
 
-        println!("\n  Mean Position Error Matrix (mas, NaN = no detection):");
-
-        // Write error matrix title to CSV
-        writeln!(csv_file, "Mean Position Error Matrix (mas)").unwrap();
-
-        // CSV header row with magnitude values
-        write!(csv_file, "Q\\Mag,").unwrap();
+        // CSV header: Disk, Exposure, then magnitude columns
+        write!(csv_file, "Q_Value,Exposure_ms,").unwrap();
         for mag in &mags {
             write!(csv_file, "{:.2},", mag).unwrap();
         }
         writeln!(csv_file).unwrap();
 
-        // Print header row with magnitude values
-        print!("  Q\\Mag |");
-        for mag in &mags {
-            print!(" {:.2} |", mag);
-        }
-        println!();
-
-        // Print separator
-        print!("  ---------|");
-        for _ in &mags {
-            print!("------|");
-        }
-        println!();
-
-        // Print and write error matrix
-        for (disk_idx, disk) in disks.iter().enumerate() {
-            // CSV row
-            write!(csv_file, "{:.2},", disk).unwrap();
-
-            // Console row
-            print!("  {:.1}      |", disk);
-
-            for mag_idx in 0..mags.len() {
-                let err = results[[disk_idx, mag_idx]];
-
-                // CSV cell
-                if err.is_nan() {
-                    write!(csv_file, ",").unwrap(); // Empty cell for NaN
-                } else {
-                    write!(csv_file, "{:.2},", err).unwrap();
+        // Write all combinations of exposure and disk (exposure grouped together)
+        for (exposure_idx, exposure) in exposures.iter().enumerate() {
+            for (disk_idx, disk) in disks.iter().enumerate() {
+                write!(csv_file, "{:.2},{},", disk, exposure.as_millis()).unwrap();
+                for mag_idx in 0..mags.len() {
+                    let rate = detection_rate_array[[disk_idx, exposure_idx, mag_idx]];
+                    write!(csv_file, "{:.1},", rate * 100.0).unwrap();
                 }
-
-                // Console cell
-                if err.is_nan() {
-                    print!("  --- |");
-                } else {
-                    print!(" {:.2} |", err);
-                }
+                writeln!(csv_file).unwrap();
             }
-            writeln!(csv_file).unwrap();
-            println!();
         }
-
-        // Add blank line after matrix
         writeln!(csv_file).unwrap();
 
-        println!("\n  RMS Position Error Matrix (pixels, NaN = no detection):");
+        // Mean Position Error Matrix (mas)
+        writeln!(csv_file, "Mean Position Error Matrix (milliarcseconds)").unwrap();
 
-        // Write pixel error matrix title to CSV
+        // CSV header: Disk, Exposure, then magnitude columns
+        write!(csv_file, "Q_Value,Exposure_ms,").unwrap();
+        for mag in &mags {
+            write!(csv_file, "{:.2},", mag).unwrap();
+        }
+        writeln!(csv_file).unwrap();
+
+        // Write all combinations of exposure and disk (exposure grouped together)
+        for (exposure_idx, exposure) in exposures.iter().enumerate() {
+            for (disk_idx, disk) in disks.iter().enumerate() {
+                write!(csv_file, "{:.2},{},", disk, exposure.as_millis()).unwrap();
+                for mag_idx in 0..mags.len() {
+                    let err = results[[disk_idx, exposure_idx, mag_idx]];
+                    if err.is_nan() {
+                        write!(csv_file, ",").unwrap(); // Empty cell for NaN
+                    } else {
+                        write!(csv_file, "{:.2},", err).unwrap();
+                    }
+                }
+                writeln!(csv_file).unwrap();
+            }
+        }
+        writeln!(csv_file).unwrap();
+
+        // RMS Position Error Matrix (pixels)
         writeln!(csv_file, "RMS Position Error Matrix (pixels)").unwrap();
 
-        // CSV header row with magnitude values
-        write!(csv_file, "Q\\Mag,").unwrap();
+        // CSV header: Disk, Exposure, then magnitude columns
+        write!(csv_file, "Q_Value,Exposure_ms,").unwrap();
         for mag in &mags {
             write!(csv_file, "{:.2},", mag).unwrap();
         }
         writeln!(csv_file).unwrap();
 
-        // Print header row with magnitude values
-        print!("  Q\\Mag |");
-        for mag in &mags {
-            print!(" {:.2} |", mag);
-        }
-        println!();
-
-        // Print separator
-        print!("  ---------|");
-        for _ in &mags {
-            print!("------|");
-        }
-        println!();
-
-        // Print and write pixel error matrix
-        for (disk_idx, disk) in disks.iter().enumerate() {
-            // CSV row
-            write!(csv_file, "{:.2},", disk).unwrap();
-
-            // Console row
-            print!("  {:.1}      |", disk);
-
-            for mag_idx in 0..mags.len() {
-                let err = pixel_results[[disk_idx, mag_idx]];
-
-                // CSV cell
-                if err.is_nan() {
-                    write!(csv_file, ",").unwrap(); // Empty cell for NaN
-                } else {
-                    write!(csv_file, "{:.3},", err).unwrap();
+        // Write all combinations of exposure and disk (exposure grouped together)
+        for (exposure_idx, exposure) in exposures.iter().enumerate() {
+            for (disk_idx, disk) in disks.iter().enumerate() {
+                write!(csv_file, "{:.2},{},", disk, exposure.as_millis()).unwrap();
+                for mag_idx in 0..mags.len() {
+                    let err = pixel_results[[disk_idx, exposure_idx, mag_idx]];
+                    if err.is_nan() {
+                        write!(csv_file, ",").unwrap(); // Empty cell for NaN
+                    } else {
+                        write!(csv_file, "{:.3},", err).unwrap();
+                    }
                 }
-
-                // Console cell
-                if err.is_nan() {
-                    print!("  --- |");
-                } else {
-                    print!("{:.3} |", err);
-                }
+                writeln!(csv_file).unwrap();
             }
-            writeln!(csv_file).unwrap();
-            println!();
         }
-
-        // Add blank line after matrix
         writeln!(csv_file).unwrap();
 
         // Add separator between sensors
