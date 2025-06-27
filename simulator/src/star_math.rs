@@ -4,8 +4,8 @@
 //! transforming between coordinate systems (equatorial to pixel, etc.)
 
 use nalgebra::Matrix3;
+use starfield::framelib::inertial::InertialFrame;
 use starfield::Equatorial;
-use starfield::{catalogs::StarData, framelib::inertial::InertialFrame};
 
 use nalgebra::Vector3;
 use rand::rngs::StdRng;
@@ -162,10 +162,8 @@ mod tests {
     use approx::assert_relative_eq;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
+    use starfield::catalogs::StarData;
     use std::f64::consts::PI;
-    use std::fs::File;
-    use std::io::{BufRead, BufReader};
-    use tempfile::NamedTempFile;
 
     /// Create a test star with the given parameters
     fn create_test_star(id: u64, ra: f64, dec: f64, magnitude: f64) -> StarData {

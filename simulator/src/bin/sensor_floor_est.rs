@@ -535,7 +535,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // CSV header: Disk, Exposure, then magnitude columns
         write!(csv_file, "Q_Value,Exposure_ms,").unwrap();
         for mag in &mags {
-            write!(csv_file, "{:.2},", mag).unwrap();
+            write!(csv_file, "{:.3},", mag).unwrap();
         }
         writeln!(csv_file).unwrap();
 
@@ -558,7 +558,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // CSV header: Disk, Exposure, then magnitude columns
         write!(csv_file, "Q_Value,Exposure_ms,").unwrap();
         for mag in &mags {
-            write!(csv_file, "{:.2},", mag).unwrap();
+            write!(csv_file, "{:.3},", mag).unwrap();
         }
         writeln!(csv_file).unwrap();
 
@@ -592,7 +592,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Write all combinations of exposure and disk (exposure grouped together)
         for (exposure_idx, exposure) in exposures.iter().enumerate() {
             for (disk_idx, disk) in disks.iter().enumerate() {
-                write!(csv_file, "{:.2},{},", disk, exposure.as_millis()).unwrap();
+                write!(csv_file, "{:.3},{},", disk, exposure.as_millis()).unwrap();
                 for mag_idx in 0..mags.len() {
                     let err = pixel_results[[disk_idx, exposure_idx, mag_idx]];
                     if err.is_nan() {

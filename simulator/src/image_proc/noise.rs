@@ -6,7 +6,6 @@
 use std::time::Duration;
 
 use crate::algo::process_array_in_parallel_chunks;
-use crate::hardware::SatelliteConfig;
 use crate::SensorConfig;
 use ndarray::Array2;
 use rand::{thread_rng, RngCore};
@@ -195,7 +194,7 @@ mod tests {
     use approx::assert_relative_eq;
 
     use crate::{
-        hardware::dark_current::DarkCurrentEstimator,
+        hardware::{dark_current::DarkCurrentEstimator, SatelliteConfig},
         photometry::{zodical::SolarAngularCoordinates, Band, ZodicalLight},
         QuantumEfficiency, TelescopeConfig,
     };
