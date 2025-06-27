@@ -364,12 +364,12 @@ fn write_results_to_csv(
     writeln!(
         csv_file,
         "Solar Elongation: {:.2}°",
-        args.shared.coordinates.elongation().to_degrees()
+        args.shared.coordinates.elongation()
     )?;
     writeln!(
         csv_file,
         "Ecliptic Latitude: {:.2}°",
-        args.shared.coordinates.latitude().to_degrees()
+        args.shared.coordinates.latitude()
     )?;
     writeln!(csv_file, "Total Experiments: {}", args.experiments)?;
     writeln!(
@@ -421,7 +421,7 @@ fn write_results_to_csv(
         let fov_deg = field_diameter(&satellite.telescope, &satellite.sensor);
         writeln!(
             csv_file,
-            "Satellite {}: {} - FOV: {:.4}° - Focal Length: {:.2}m - Aperture: {:.2}m - Temp: {:.1}°C - Wavelength: {:.0}nm",
+            "Satellite {}: {} - Circumcircle FOV: {:.4}° - Focal Length: {:.8}m - Aperture: {:.2}m - Temp: {:.1}°C - Wavelength: {:.0}nm",
             i + 1,
             satellite.sensor.name,
             fov_deg,
