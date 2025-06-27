@@ -122,6 +122,82 @@ fn parse_duration(s: &str) -> Result<Duration, String> {
     Ok(duration)
 }
 
+/// Parse range string in format "start:stop:step" (e.g., "0.0:10.0:0.5")
+fn parse_range(s: &str) -> Result<(f64, f64, f64), String> {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() != 3 {
+        return Err("Range must be in format 'start:stop:step'".to_string());
+    }
+
+    let start = parts[0]
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| "Invalid start value".to_string())?;
+    let stop = parts[1]
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| "Invalid stop value".to_string())?;
+    let step = parts[2]
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| "Invalid step value".to_string())?;
+
+    if step == 0.0 {
+        return Err("Step cannot be zero".to_string());
+    }
+
+    if step > 0.0 && start >= stop {
+        return Err("For positive step, start must be less than stop".to_string());
+    }
+
+    if step < 0.0 && start <= stop {
+        return Err("For negative step, start must be greater than stop".to_string());
+    }
+
+    Ok((start, stop, step))
+}
+
+/// Wrapper for range tuple that implements Clone and has a nice Display and FromStr
+#[derive(Debug, Clone)]
+pub struct RangeArg(pub f64, pub f64, pub f64);
+
+impl std::str::FromStr for RangeArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (start, stop, step) = parse_range(s)?;
+        Ok(RangeArg(start, stop, step))
+    }
+}
+
+impl std::fmt::Display for RangeArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}:{}", self.0, self.1, self.2)
+    }
+}
+
+impl RangeArg {
+    /// Get the start value
+    pub fn start(&self) -> f64 {
+        self.0
+    }
+
+    /// Get the stop value
+    pub fn stop(&self) -> f64 {
+        self.1
+    }
+
+    /// Get the step value
+    pub fn step(&self) -> f64 {
+        self.2
+    }
+
+    /// Get the range tuple
+    pub fn as_tuple(&self) -> (f64, f64, f64) {
+        (self.0, self.1, self.2)
+    }
+}
+
 /// Wrapper for Duration that implements Clone and has a nice Display
 #[derive(Debug, Clone)]
 pub struct DurationArg(pub Duration);
@@ -350,6 +426,35 @@ mod tests {
         // Test error cases
         assert!(parse_duration("-1s").is_err());
         assert!(parse_duration("invalid").is_err());
+    }
+
+    #[test]
+    fn test_range_parsing() {
+        // Test valid range formats
+        assert_eq!(parse_range("0.0:10.0:1.0").unwrap(), (0.0, 10.0, 1.0));
+        assert_eq!(parse_range("1.5:5.5:0.5").unwrap(), (1.5, 5.5, 0.5));
+        assert_eq!(parse_range("-10.0:10.0:2.0").unwrap(), (-10.0, 10.0, 2.0));
+        assert_eq!(parse_range("10.0:0.0:-1.0").unwrap(), (10.0, 0.0, -1.0));
+
+        // Test error cases
+        assert!(parse_range("1.0:2.0").is_err()); // Missing step
+        assert!(parse_range("1.0:2.0:3.0:4.0").is_err()); // Too many parts
+        assert!(parse_range("invalid:2.0:1.0").is_err()); // Invalid start
+        assert!(parse_range("1.0:invalid:1.0").is_err()); // Invalid stop
+        assert!(parse_range("1.0:2.0:invalid").is_err()); // Invalid step
+        assert!(parse_range("1.0:2.0:0.0").is_err()); // Zero step
+        assert!(parse_range("5.0:1.0:1.0").is_err()); // Positive step with start >= stop
+        assert!(parse_range("1.0:5.0:-1.0").is_err()); // Negative step with start <= stop
+    }
+
+    #[test]
+    fn test_range_arg_methods() {
+        let range = RangeArg(1.5, 10.0, 0.5);
+        assert_eq!(range.start(), 1.5);
+        assert_eq!(range.stop(), 10.0);
+        assert_eq!(range.step(), 0.5);
+        assert_eq!(range.as_tuple(), (1.5, 10.0, 0.5));
+        assert_eq!(range.to_string(), "1.5:10:0.5");
     }
 
     #[test]

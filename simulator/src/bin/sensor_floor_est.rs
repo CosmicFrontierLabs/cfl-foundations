@@ -32,7 +32,7 @@ use simulator::image_proc::generate_sensor_noise;
 use simulator::image_proc::render::{add_stars_to_image, quantize_image, StarInFrame};
 use simulator::image_proc::segment::do_detections;
 use simulator::photometry::{zodical::SolarAngularCoordinates, ZodicalLight};
-use simulator::shared_args::SharedSimulationArgs;
+use simulator::shared_args::{RangeArg, SharedSimulationArgs};
 use simulator::star_data_to_electrons;
 use starfield::catalogs::StarData;
 use starfield::Equatorial;
@@ -67,12 +67,24 @@ struct Args {
     serial: bool,
 
     /// Domain size for test images (width and height in pixels)
-    #[arg(long, default_value_t = 256)]
+    #[arg(long, default_value_t = 128)]
     domain: u32,
 
     /// Test multiple exposure durations instead of just the shared exposure setting
     #[arg(long, default_value_t = true)]
     test_exposures: bool,
+
+    /// PSF disk size range in Airy disk FWHM units (format: start:stop:step)
+    #[arg(long, default_value = "1.0:2.125:0.125")]
+    disks: RangeArg,
+
+    /// Star magnitude range (format: start:stop:step)
+    #[arg(long, default_value = "12.0:17.625:0.25")]
+    mags: RangeArg,
+
+    /// Exposure duration range in milliseconds (format: start:stop:step)
+    #[arg(long, default_value = "100:1050:50")]
+    exposures: RangeArg,
 }
 
 /// Parameters for a single experiment
@@ -281,20 +293,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
 
-    // PSF disk sizes to test (in Airy disk FWHM units) - 1 to 5 in steps of 0.25
-    let disks = Array1::range(1.0, 5.0, 0.25);
+    // PSF disk sizes to test (in Airy disk FWHM units) - from CLI args
+    let (disk_start, disk_stop, disk_step) = args.disks.as_tuple();
+    let disks = Array1::range(disk_start, disk_stop, disk_step);
 
-    // Star magnitudes to test - 12 to 18 in steps of 0.25
-    let mags = Array1::range(12.0, 18.0, 0.25);
+    // Star magnitudes to test - from CLI args
+    let (mag_start, mag_stop, mag_step) = args.mags.as_tuple();
+    let mags = Array1::range(mag_start, mag_stop, mag_step);
 
     // Exposure durations to test
     let exposures = if args.test_exposures {
-        vec![
-            Duration::from_millis(100),
-            Duration::from_millis(250),
-            Duration::from_millis(500),
-            Duration::from_secs(1),
-        ]
+        // Generate exposure durations from CLI range (in milliseconds)
+        let (exp_start, exp_stop, exp_step) = args.exposures.as_tuple();
+        let exp_range = Array1::range(exp_start, exp_stop, exp_step);
+        exp_range
+            .iter()
+            .map(|&ms| Duration::from_millis(ms as u64))
+            .collect()
     } else {
         vec![args.shared.exposure.0]
     };
@@ -453,6 +468,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         csv_file,
         "Experiments per configuration: {}",
         args.experiments
+    )
+    .unwrap();
+    writeln!(csv_file, "PSF Disk Range (FWHM units): {}", args.disks).unwrap();
+    writeln!(csv_file, "Star Magnitude Range: {}", args.mags).unwrap();
+    writeln!(csv_file, "Exposure Range (ms): {}", args.exposures).unwrap();
+    writeln!(
+        csv_file,
+        "Domain Size: {}x{} pixels",
+        args.domain, args.domain
     )
     .unwrap();
     writeln!(csv_file).unwrap();
