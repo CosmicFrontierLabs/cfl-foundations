@@ -14,7 +14,7 @@ use crate::{
     SensorConfig,
 };
 
-use super::generate_sensor_noise;
+use super::{generate_sensor_noise, noise::apply_poisson_photon_noise};
 
 #[derive(Clone, Debug)]
 pub struct StarInFrame {
@@ -37,19 +37,298 @@ impl Locatable2d for StarInFrame {
 
 #[derive(Clone)]
 pub struct RenderingResult {
-    /// The final rendered image AU quantized etc (u16)
-    pub image: Array2<u16>,
+    /// The final quantized image (u16)
+    pub quantized_image: Array2<u16>,
 
-    /// The approximate number of electrons on the sensor including noise
-    /// and max well depth effects.
-    pub electron_image: Array2<f64>,
+    /// Star contribution to the image (in electron counts)
+    pub star_image: Array2<f64>,
 
-    /// The noise image (in electron counts)
-    /// This includes read noise, dark current
-    pub noise_image: Array2<f64>,
+    /// Zodiacal light background (in electron counts)
+    pub zodiacal_image: Array2<f64>,
+
+    /// Sensor noise including read noise and dark current (in electron counts)
+    pub sensor_noise_image: Array2<f64>,
 
     /// The stars that were rendered in the image (not clipped)
     pub rendered_stars: Vec<StarInFrame>,
+
+    /// Sensor configuration for lazy computation
+    sensor_config: SensorConfig,
+}
+
+impl RenderingResult {
+    /// Lazily compute the total electron image from all components
+    pub fn mean_electron_image(&self) -> Array2<f64> {
+        &self.star_image + &self.zodiacal_image + &self.sensor_noise_image
+    }
+
+    /// Lazily compute quantized image from total electron image  
+    pub fn compute_quantized_image(&self) -> Array2<u16> {
+        let electron_img = self.mean_electron_image();
+        quantize_image(&electron_img, &self.sensor_config)
+    }
+}
+
+/// Star field renderer that handles exposure scaling and noise generation
+///
+/// This struct maintains the configuration needed to render star fields at different
+/// exposure times, handling the scaling of flux and generation of random noise components.
+#[derive(Clone)]
+pub struct Renderer {
+    /// Satellite configuration (telescope + sensor + environment)
+    pub satellite_config: SatelliteConfig,
+
+    /// Base star image for 1 second exposure (in electrons)
+    pub base_star_image: Array2<f64>,
+
+    /// Stars that were rendered in the base image (not clipped)
+    pub rendered_stars: Vec<StarInFrame>,
+}
+
+/// Output from a rendering operation with cleanly separated components
+#[derive(Clone)]
+pub struct RenderedImage {
+    /// Star contribution scaled for exposure duration (in electrons)
+    pub star_image: Array2<f64>,
+
+    /// Zodiacal light background for exposure duration (in electrons)  
+    pub zodiacal_image: Array2<f64>,
+
+    /// Sensor noise for exposure duration (in electrons)
+    pub sensor_noise_image: Array2<f64>,
+
+    /// Final quantized image (u16)
+    pub quantized_image: Array2<u16>,
+
+    /// Stars that were rendered in the image (not clipped)
+    pub rendered_stars: Vec<StarInFrame>,
+
+    /// Satellite configuration for quantization
+    satellite_config: SatelliteConfig,
+}
+
+impl Renderer {
+    /// Create a new renderer from a star catalog and satellite configuration
+    ///
+    /// This method projects stars and creates a base 1-second exposure image
+    pub fn from_catalog(
+        stars: &Vec<&StarData>,
+        center: &Equatorial,
+        satellite_config: SatelliteConfig,
+    ) -> Self {
+        let image_width = satellite_config.sensor.width_px;
+        let image_height = satellite_config.sensor.height_px;
+
+        // Create base star image for 1 second exposure
+        let mut base_star_image = Array2::zeros((image_height, image_width));
+
+        let airy_pix = satellite_config.airy_disk_pixel_space();
+        let padding = airy_pix.first_zero() * 2.0;
+        let one_second = Duration::from_secs(1);
+
+        // Project stars to pixel coordinates with 1-second flux
+        let rendered_stars =
+            project_stars_to_pixels(stars, center, &satellite_config, &one_second, padding);
+
+        // Add stars to base image
+        add_stars_to_image(&mut base_star_image, &rendered_stars, airy_pix);
+
+        Self {
+            satellite_config,
+            base_star_image,
+            rendered_stars,
+        }
+    }
+
+    /// Render an image with specified exposure duration and zodiacal coordinates
+    ///
+    /// This method scales the base star image and generates fresh noise components
+    pub fn render(
+        &self,
+        exposure: &Duration,
+        zodiacal_coords: &SolarAngularCoordinates,
+    ) -> RenderedImage {
+        self.render_with_options(exposure, zodiacal_coords, true, None)
+    }
+
+    /// Render an image with options for Poisson noise and RNG seed
+    ///
+    /// # Arguments
+    /// * `exposure` - Exposure duration
+    /// * `zodiacal_coords` - Solar angular coordinates for zodiacal light
+    /// * `apply_poisson` - Whether to apply Poisson arrival statistics to star photons
+    /// * `rng_seed` - Optional seed for random number generation
+    pub fn render_with_options(
+        &self,
+        exposure: &Duration,
+        zodiacal_coords: &SolarAngularCoordinates,
+        apply_poisson: bool,
+        rng_seed: Option<u64>,
+    ) -> RenderedImage {
+        let exposure_factor = exposure.as_secs_f64();
+
+        // Scale star image by exposure duration
+        let scaled_star_image = &self.base_star_image * exposure_factor;
+
+        // Apply Poisson arrival time statistics to star photons if requested
+        let star_image = if apply_poisson {
+            apply_poisson_photon_noise(&scaled_star_image, rng_seed)
+        } else {
+            scaled_star_image
+        };
+
+        // Scale star flux in rendered_stars for metadata
+        let scaled_stars: Vec<StarInFrame> = self
+            .rendered_stars
+            .iter()
+            .map(|star| StarInFrame {
+                x: star.x,
+                y: star.y,
+                flux: star.flux * exposure_factor,
+                star: star.star,
+            })
+            .collect();
+
+        // Generate sensor noise
+        let sensor_noise_image = generate_sensor_noise(
+            &self.satellite_config.sensor,
+            exposure,
+            self.satellite_config.temperature_c,
+            None,
+        );
+
+        // Generate zodiacal background
+        let z_light = ZodicalLight::new();
+        let zodiacal_image =
+            z_light.generate_zodical_background(&self.satellite_config, exposure, zodiacal_coords);
+
+        // Compute final electron and quantized images
+        let total_electrons = &star_image + &zodiacal_image + &sensor_noise_image;
+        let quantized_image = quantize_image(&total_electrons, &self.satellite_config.sensor);
+
+        RenderedImage {
+            star_image,
+            zodiacal_image,
+            sensor_noise_image,
+            quantized_image,
+            rendered_stars: scaled_stars,
+            satellite_config: self.satellite_config.clone(),
+        }
+    }
+}
+
+impl RenderedImage {
+    /// Compute the total electron image from all components
+    pub fn mean_electron_image(&self) -> Array2<f64> {
+        &self.star_image + &self.zodiacal_image + &self.sensor_noise_image
+    }
+
+    /// Apply Poisson arrival time statistics to the star image
+    ///
+    /// This creates a new RenderedImage with Poisson-sampled star photons
+    /// while keeping other components unchanged.
+    ///
+    /// # Arguments
+    /// * `rng_seed` - Optional seed for random number generation
+    ///
+    /// # Returns
+    /// * New RenderedImage with Poisson noise applied to star photons
+    pub fn with_poisson_star_noise(&self, rng_seed: Option<u64>) -> RenderedImage {
+        let poisson_star_image = apply_poisson_photon_noise(&self.star_image, rng_seed);
+
+        // Recompute quantized image with new star noise
+        let total_electrons = &poisson_star_image + &self.zodiacal_image + &self.sensor_noise_image;
+        let quantized_image = quantize_image(&total_electrons, &self.satellite_config.sensor);
+
+        RenderedImage {
+            star_image: poisson_star_image,
+            zodiacal_image: self.zodiacal_image.clone(),
+            sensor_noise_image: self.sensor_noise_image.clone(),
+            quantized_image,
+            rendered_stars: self.rendered_stars.clone(),
+            satellite_config: self.satellite_config.clone(),
+        }
+    }
+}
+
+/// Projects stars from catalog coordinates to pixel coordinates with flux calculation
+///
+/// This function handles the complete star screening and projection pipeline:
+/// - Creates coordinate projector for celestial-to-pixel transformation
+/// - Projects each star and filters out-of-bounds stars
+/// - Calculates expected electron flux for each visible star
+/// - Returns list of StarInFrame objects ready for rendering
+///
+/// # Arguments
+///
+/// * `stars` - Vector of star catalog entries to project
+/// * `center` - Central pointing direction in equatorial coordinates
+/// * `satellite` - Satellite configuration for projection parameters
+/// * `exposure` - Exposure duration for flux calculation
+/// * `padding` - Padding around image edges for PSF bleeding
+///
+/// # Returns
+///
+/// Vector of `StarInFrame` objects with pixel coordinates and flux values
+pub fn project_stars_to_pixels(
+    stars: &Vec<&StarData>,
+    center: &Equatorial,
+    satellite: &SatelliteConfig,
+    exposure: &Duration,
+    padding: f64,
+) -> Vec<StarInFrame> {
+    let image_width = satellite.sensor.width_px as usize;
+    let image_height = satellite.sensor.height_px as usize;
+
+    // Calculate field of view from telescope and sensor
+    let fov_deg = field_diameter(&satellite.telescope, &satellite.sensor);
+
+    // Create star projector for coordinate transformation
+    let fov_rad = fov_deg.to_radians();
+    let radians_per_pixel = fov_rad / image_width.max(image_height) as f64;
+    let projector = StarProjector::new(
+        center,
+        radians_per_pixel,
+        satellite.sensor.width_px,
+        satellite.sensor.height_px,
+    );
+
+    let mut projected_stars = Vec::new();
+
+    // Project each star to pixel coordinates
+    for &star in stars {
+        // Convert position to pixel coordinates (sub-pixel precision)
+        let (x, y) = match projector.project_unbounded(&star.position) {
+            Some(coords) => coords,
+            None => continue, // Skip stars behind the camera
+        };
+
+        // Check if star is within the image bounds (with padding for PSF)
+        if x < -padding
+            || y < -padding
+            || x >= image_width as f64 + padding
+            || y >= image_height as f64 + padding
+        {
+            continue; // Skip stars outside the image
+        }
+
+        // Calculate photon flux using telescope model
+        let electrons =
+            star_data_to_electrons(star, exposure, &satellite.telescope, &satellite.sensor);
+
+        // Create StarInFrame with projected coordinates and flux
+        projected_stars.push(StarInFrame {
+            x,
+            y,
+            flux: electrons,
+            star: *star,
+        });
+    }
+
+    // Sort by flux for consistent rendering (float addition isn't associative)
+    projected_stars.sort_by(|a, b| a.flux.partial_cmp(&b.flux).unwrap());
+
+    projected_stars
 }
 
 /// Renders a simulated star field based on catalog data and optical system parameters.
@@ -79,94 +358,18 @@ pub fn render_star_field(
     exposure: &Duration,
     zodiacal_coords: &SolarAngularCoordinates,
 ) -> RenderingResult {
-    // Create image array dimensions
-    let image_width = satellite.sensor.width_px;
-    let image_height = satellite.sensor.height_px;
+    // Use the new Renderer for the actual work
+    let renderer = Renderer::from_catalog(stars, center, satellite.clone());
+    let rendered = renderer.render(exposure, zodiacal_coords);
 
-    // Create a star field image (in electron counts)
-    let mut image = Array2::zeros((image_height, image_width));
-    let mut to_render: Vec<StarInFrame> = Vec::new();
-
-    let mut xy_mag = Vec::with_capacity(stars.len());
-
-    let airy_pix = satellite.airy_disk_pixel_space();
-
-    // Calculate field of view from telescope and sensor
-    let fov_deg = field_diameter(&satellite.telescope, &satellite.sensor);
-
-    // Create star projector for coordinate transformation
-    let fov_rad = fov_deg.to_radians();
-    let radians_per_pixel = fov_rad / image_width.max(image_height) as f64;
-    let projector = StarProjector::new(
-        center,
-        radians_per_pixel,
-        satellite.sensor.width_px as u32,
-        satellite.sensor.height_px as u32,
-    );
-
-    // Padded bounds check
-    let padding = airy_pix.first_zero() * 2.0;
-
-    // Add stars with sub-pixel precision
-    for &star in stars {
-        // Convert position to pixel coordinates (sub-pixel precision)
-        let (x, y) = match projector.project_unbounded(&star.position) {
-            Some(coords) => coords,
-            None => continue, // Skip stars behind the camera
-        };
-
-        // Check if star is within the image bounds
-        if x < -padding
-            || y < -padding
-            || x >= image_width as f64 + padding
-            || y >= image_height as f64 + padding
-        {
-            continue; // Skip stars outside the image
-        }
-
-        // Post transfrom/selection
-        xy_mag.push((x, y, *star));
-
-        // Calculate photon flux using telescope model
-        let electrons =
-            star_data_to_electrons(star, exposure, &satellite.telescope, &satellite.sensor);
-
-        // Add star to image with PSF
-        to_render.push(StarInFrame {
-            x,
-            y,
-            flux: electrons,
-            star: *star,
-        });
-    }
-
-    to_render.sort_by(|a, b| a.flux.partial_cmp(&b.flux).unwrap());
-
-    // Create PSF kernel for the given wavelength
-    add_stars_to_image(&mut image, &to_render, airy_pix);
-
-    // Generate sensor noise (read noise and dark current)
-    let sensor_noise = generate_sensor_noise(
-        &satellite.sensor,
-        exposure,
-        satellite.temperature_c,
-        None, // Use specified temperature and random noise
-    );
-
-    let z_light = ZodicalLight::new();
-    let zodiacal_noise = z_light.generate_zodical_background(satellite, exposure, zodiacal_coords);
-
-    image += &sensor_noise;
-
-    let quantized = quantize_image(&image, &satellite.sensor);
-
-    let noise_image = &sensor_noise + &zodiacal_noise;
-
+    // Convert back to RenderingResult for backwards compatibility
     RenderingResult {
-        image: quantized,
-        electron_image: image,
-        noise_image,
-        rendered_stars: to_render,
+        quantized_image: rendered.quantized_image,
+        star_image: rendered.star_image,
+        zodiacal_image: rendered.zodiacal_image,
+        sensor_noise_image: rendered.sensor_noise_image,
+        rendered_stars: rendered.rendered_stars,
+        sensor_config: satellite.sensor.clone(),
     }
 }
 

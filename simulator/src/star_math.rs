@@ -50,8 +50,8 @@ pub struct StarProjector {
     /// Angular resolution in radians per pixel
     radians_per_pixel: f64,
     /// Sensor dimensions in pixels
-    sensor_width: u32,
-    sensor_height: u32,
+    sensor_width: usize,
+    sensor_height: usize,
     /// Rotation matrix from celestial to camera coordinates
     rotation_matrix: Matrix3<f64>,
 }
@@ -67,8 +67,8 @@ impl StarProjector {
     pub fn new(
         center: &Equatorial,
         radians_per_pixel: f64,
-        sensor_width: u32,
-        sensor_height: u32,
+        sensor_width: usize,
+        sensor_height: usize,
     ) -> Self {
         // Calculate rotation matrix to transform from celestial to camera coordinates
         // Camera Z-axis points to center_ra/center_dec

@@ -143,7 +143,6 @@ mod tests {
     use crate::hardware::sensor::models as sensor_models;
     use crate::hardware::telescope::models as telescope_models;
     use float_cmp::approx_eq;
-    use starfield::Equatorial;
 
     #[test]
     fn test_field_diameter() {
@@ -248,12 +247,7 @@ mod tests {
         let large_telescope = telescope_models::FINAL_1M.clone();
         let sensor = sensor_models::GSENSE4040BSI.clone();
 
-        let star_data = StarData {
-            id: 0,
-            position: Equatorial::from_degrees(0.0, 0.0),
-            magnitude: 2.0,
-            b_v: None,
-        };
+        let star_data = StarData::new(0, 0.0, 0.0, 2.0, None);
 
         let second = Duration::from_secs_f64(1.0);
         let elec_small = star_data_to_electrons(&star_data, &second, &small_telescope, &sensor);

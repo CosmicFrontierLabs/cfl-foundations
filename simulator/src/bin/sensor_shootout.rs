@@ -34,11 +34,12 @@ use simulator::image_proc::detection::{detect_stars_unified, StarFinder};
 use simulator::image_proc::histogram_stretch::sigma_stretch;
 use simulator::image_proc::image::array2_to_gray_image;
 use simulator::image_proc::io::write_hashmap_to_fits;
-use simulator::image_proc::render::{render_star_field, RenderingResult, StarInFrame};
+use simulator::image_proc::render::{RenderingResult, StarInFrame};
 use simulator::image_proc::{
     draw_stars_with_x_markers, save_u8_image, stretch_histogram, u16_to_u8_scaled, StarDetection,
 };
 use simulator::photometry::zodical::SolarAngularCoordinates;
+use simulator::scene::Scene;
 use simulator::shared_args::SharedSimulationArgs;
 use simulator::star_math::EquatorialRandomizer;
 use simulator::{field_diameter, SensorConfig};
@@ -230,8 +231,6 @@ fn run_experiment<T: StarCatalog>(
     );
     print_am_hist(&stars);
 
-    let star_refs: Vec<&StarData> = stars.iter().collect();
-
     let mut results = Vec::new();
 
     // Run experiment for each satellite at this sky pointing
@@ -240,14 +239,18 @@ fn run_experiment<T: StarCatalog>(
             "Running experiment for satellite: {} (T: {:.1}°C, λ: {:.0}nm)",
             satellite.sensor.name, satellite.temperature_c, satellite.wavelength_nm
         );
-        // Render the star field for this satellite
-        let render_result = render_star_field(
-            &star_refs,
-            &params.ra_dec,
-            satellite,
-            &params.common_args.exposure,
-            &params.common_args.coordinates,
+
+        // Create scene with star projection for this satellite
+        let exposure_time_s = params.common_args.exposure.as_secs_f64();
+        let scene = Scene::from_catalog(
+            satellite.clone(),
+            stars.clone(),
+            params.ra_dec,
+            exposure_time_s,
         );
+
+        // Render the scene
+        let render_result = scene.render(&params.common_args.coordinates);
 
         let prefix = format!(
             "{}_{}_",
@@ -257,7 +260,7 @@ fn run_experiment<T: StarCatalog>(
 
         // Only pick stuff that is noise_multiple above the noise floor
         let mean_noise_elec = render_result
-            .noise_image
+            .sensor_noise_image
             .mean()
             .expect("Can't take image mean");
         let background_rms = mean_noise_elec * satellite.sensor.dn_per_electron;
@@ -266,7 +269,7 @@ fn run_experiment<T: StarCatalog>(
 
         // Do the star detection
         let detected_stars = match detect_stars_unified(
-            render_result.image.view(),
+            render_result.quantized_image.view(),
             params.common_args.star_finder,
             airy_disk_pixels,
             background_rms,
@@ -311,9 +314,11 @@ fn run_experiment<T: StarCatalog>(
         }
 
         // Now we take our detected stars and match them against the sources
+        // Get projected stars from scene instead of render_result
+        let projected_stars: Vec<StarInFrame> = scene.stars.clone();
         let result = match icp_match_objects::<StarDetection, StarInFrame>(
             &detected_stars,
-            &render_result.rendered_stars,
+            &projected_stars,
             params.common_args.icp_max_iterations,
             params.common_args.icp_convergence_threshold,
         ) {
@@ -685,14 +690,14 @@ fn save_image_outputs(
 ) {
     // Convert u16 image to u8 for saving (normalize by max bit depth value)
     let max_bit_value = (1 << (sensor.bit_depth as u32)) - 1;
-    let u8_image = u16_to_u8_scaled(&render_result.image, max_bit_value);
+    let u8_image = u16_to_u8_scaled(&render_result.quantized_image, max_bit_value);
 
     // Save the raw image
     let regular_path = output_path.join(format!("{}_regular.png", prefix));
     save_u8_image(&u8_image, &regular_path).expect("Failed to save image");
 
     // Create and save histogram stretched version
-    let stretched_image = stretch_histogram(render_result.image.view(), 0.0, 50.0);
+    let stretched_image = stretch_histogram(render_result.quantized_image.view(), 0.0, 50.0);
 
     // Convert stretched u16 image to u8 using auto-scaling for best contrast
     let img_flt = stretched_image.mapv(|x| x as f64);
@@ -728,13 +733,13 @@ fn save_image_outputs(
     let mut fits_data = HashMap::new();
 
     // Convert regular u16 image to f64 for FITS export
-    let image_f64 = render_result.image.mapv(|x| x as f64);
+    let image_f64 = render_result.quantized_image.mapv(|x| x as f64);
     fits_data.insert("IMAGE".to_string(), image_f64);
 
     // Add electron image (already f64)
     fits_data.insert(
         "ELECTRON_IMAGE".to_string(),
-        render_result.electron_image.clone(),
+        render_result.mean_electron_image(),
     );
 
     // Save FITS file with both datasets
@@ -755,11 +760,11 @@ fn debug_stats(
     // Print some statistics about the rendered image
     debug!(
         "Total electrons in image: {:.2}e-",
-        render_result.electron_image.sum()
+        render_result.mean_electron_image().sum()
     );
     debug!(
         "Total noise in image: {:.2}e-",
-        render_result.noise_image.sum()
+        (&render_result.zodiacal_image + &render_result.sensor_noise_image).sum()
     );
 
     // Print ICP match distances
@@ -772,12 +777,9 @@ fn debug_stats(
     }
     // Get statistics for binning (gross)
     let num_bins = 25;
-    let min_val = render_result
-        .electron_image
-        .iter()
-        .fold(f64::INFINITY, |a, &b| a.min(b));
-    let max_val = render_result
-        .electron_image
+    let electron_image = render_result.mean_electron_image();
+    let min_val = electron_image.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+    let max_val = electron_image
         .iter()
         .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
@@ -788,10 +790,10 @@ fn debug_stats(
     }
 
     // Calculate some basic stats for display
-    let total_pixels = render_result.electron_image.len();
+    let total_pixels = electron_image.len();
 
     let mut full_hist = Histogram::new_equal_bins(min_val..max_val, num_bins)?;
-    full_hist.add_all(render_result.electron_image.iter().copied());
+    full_hist.add_all(electron_image.iter().copied());
 
     let full_config = HistogramConfig {
         title: Some(format!(

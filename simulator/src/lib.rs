@@ -8,6 +8,7 @@ pub mod algo;
 pub mod hardware;
 pub mod image_proc;
 pub mod photometry;
+pub mod scene;
 pub mod shared_args;
 pub mod star_math;
 
@@ -22,6 +23,7 @@ pub use image_proc::histogram_stretch::stretch_histogram;
 pub use photometry::quantum_efficiency::QuantumEfficiency;
 pub use photometry::spectrum::{Spectrum, CGS};
 pub use photometry::trapezoid::trap_integrate;
+pub use scene::Scene;
 pub use starfield::catalogs::StarPosition;
 
 #[cfg(test)]

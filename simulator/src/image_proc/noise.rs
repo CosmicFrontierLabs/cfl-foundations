@@ -148,6 +148,58 @@ pub fn generate_noise_with_precomputed_params(
     }
 }
 
+/// Apply Poisson arrival time statistics to star photon image in parallel
+///
+/// This function takes a mean electron image (star flux) and applies Poisson noise
+/// to simulate realistic photon arrival statistics. Each pixel's value is treated
+/// as the mean of a Poisson distribution.
+///
+/// # Arguments
+/// * `mean_electron_image` - 2D array containing mean electron counts per pixel
+/// * `rng_seed` - Optional seed for random number generator
+///
+/// # Returns
+/// * An ndarray::Array2<f64> with Poisson-sampled electron counts
+pub fn apply_poisson_photon_noise(
+    mean_electron_image: &Array2<f64>,
+    rng_seed: Option<u64>,
+) -> Array2<f64> {
+    let (_height, _width) = mean_electron_image.dim();
+    let seed = rng_seed.unwrap_or(thread_rng().next_u64());
+
+    // Clone the input array to get the same shape
+    let poisson_image = mean_electron_image.clone();
+
+    // Process the array in parallel chunks with our helper function
+    process_array_in_parallel_chunks(
+        poisson_image,
+        seed,
+        Some(64), // Process 64 rows at a time
+        |chunk_view, rng| {
+            // Apply Poisson sampling to each pixel
+            chunk_view.iter_mut().for_each(|pixel| {
+                let mean_electrons = *pixel;
+                if mean_electrons > 0.0 {
+                    // For very small means, use Gaussian approximation to avoid numerical issues
+                    let sampled_electrons = if mean_electrons < 20.0 {
+                        // Use Poisson distribution directly
+                        let poisson = Poisson::new(mean_electrons).unwrap();
+                        poisson.sample(rng)
+                    } else {
+                        // For large means, use normal approximation (faster and numerically stable)
+                        let normal = Normal::new(mean_electrons, mean_electrons.sqrt()).unwrap();
+                        normal.sample(rng).max(0.0)
+                    };
+                    *pixel = sampled_electrons;
+                } else {
+                    // Zero mean means zero photons
+                    *pixel = 0.0;
+                }
+            });
+        },
+    )
+}
+
 /// Estimates the noise floor for a given sensor and exposure time.
 ///
 /// Uses a smaller sensor size for faster estimation while maintaining accuracy.
@@ -432,6 +484,65 @@ mod tests {
         assert_eq!(
             noise1, noise2,
             "generate_poisson_noise should produce identical results for the same seed"
+        );
+    }
+
+    #[test]
+    fn test_apply_poisson_photon_noise() {
+        // Test that Poisson noise produces reasonable results
+        let mut mean_image = Array2::<f64>::zeros((10, 10));
+
+        // Set some pixels to different mean values
+        mean_image[[0, 0]] = 0.0; // Zero photons
+        mean_image[[1, 1]] = 1.0; // Low photon count
+        mean_image[[2, 2]] = 100.0; // High photon count
+        mean_image[[3, 3]] = 1000.0; // Very high photon count
+
+        let poisson_image = apply_poisson_photon_noise(&mean_image, Some(42));
+
+        // Check dimensions are preserved
+        assert_eq!(poisson_image.dim(), mean_image.dim());
+
+        // Zero mean should give zero result
+        assert_eq!(poisson_image[[0, 0]], 0.0);
+
+        // All values should be non-negative
+        for value in poisson_image.iter() {
+            assert!(*value >= 0.0, "Poisson samples should be non-negative");
+        }
+
+        // High count values should be close to their means (law of large numbers)
+        assert!(
+            (poisson_image[[3, 3]] - 1000.0).abs() < 100.0,
+            "High count Poisson sample should be close to mean"
+        );
+    }
+
+    #[test]
+    fn test_apply_poisson_photon_noise_deterministic() {
+        // Test that the same seed produces the same result
+        let mean_image = Array2::<f64>::from_elem((5, 5), 10.0);
+
+        let result1 = apply_poisson_photon_noise(&mean_image, Some(123));
+        let result2 = apply_poisson_photon_noise(&mean_image, Some(123));
+
+        // Should be identical with same seed
+        for (v1, v2) in result1.iter().zip(result2.iter()) {
+            assert_eq!(*v1, *v2, "Same seed should produce identical results");
+        }
+
+        // Different seed should produce different results (with high probability)
+        let result3 = apply_poisson_photon_noise(&mean_image, Some(456));
+        let mut any_different = false;
+        for (v1, v3) in result1.iter().zip(result3.iter()) {
+            if (*v1 - *v3).abs() > 1e-10 {
+                any_different = true;
+                break;
+            }
+        }
+        assert!(
+            any_different,
+            "Different seeds should produce different results"
         );
     }
 
