@@ -65,6 +65,7 @@ pub fn iraf_autoconfig(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_space_telescope_configs() {
@@ -73,12 +74,12 @@ mod tests {
         let detection_sigma = 5.0;
 
         let dao = dao_autoconfig(airy_disk, background_rms, detection_sigma);
-        assert_eq!(dao.threshold, 6.0);
+        assert_relative_eq!(dao.threshold, 7.2, epsilon = 1e-10); // detection_sigma * background_rms * 1.2 = 5.0 * 1.2 * 1.2
         assert_eq!(dao.fwhm, 1.25);
         assert_eq!(dao.min_separation, 2.0);
 
         let iraf = iraf_autoconfig(airy_disk, background_rms, detection_sigma);
-        assert_eq!(iraf.threshold, 6.0);
+        assert_eq!(iraf.threshold, 6.0); // detection_sigma * background_rms = 5.0 * 1.2
         assert_eq!(iraf.fwhm, 1.375);
         assert_eq!(iraf.minsep_fwhm, 1.5);
     }
