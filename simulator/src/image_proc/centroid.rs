@@ -6,10 +6,13 @@
 use ndarray::ArrayView2;
 
 use crate::algo::icp::Locatable2d;
+use starfield::image::starfinders::StellarSource;
 
 /// Star detection result containing position and shape information
 #[derive(Debug, Clone)]
 pub struct StarDetection {
+    /// Unique identifier for this detection
+    pub id: usize,
     /// Centroid x position (sub-pixel)
     pub x: f64,
     /// Centroid y position (sub-pixel)
@@ -40,6 +43,20 @@ impl Locatable2d for StarDetection {
     }
 }
 
+impl StellarSource for StarDetection {
+    fn id(&self) -> usize {
+        self.id
+    }
+
+    fn get_centroid(&self) -> (f64, f64) {
+        (self.x, self.y)
+    }
+
+    fn flux(&self) -> f64 {
+        self.flux
+    }
+}
+
 /// Calculate centroid and moments for a labeled object in the image
 ///
 /// # Arguments
@@ -55,6 +72,7 @@ pub fn calculate_star_centroid(
     labeled: &ArrayView2<usize>,
     label: usize,
     bbox: (usize, usize, usize, usize),
+    id: usize,
 ) -> StarDetection {
     let (min_row, min_col, max_row, max_col) = bbox;
 
@@ -86,6 +104,7 @@ pub fn calculate_star_centroid(
     // Avoid division by zero
     if m00 < f64::EPSILON {
         return StarDetection {
+            id,
             x: 0.0,
             y: 0.0,
             flux: 0.0,
@@ -133,6 +152,7 @@ pub fn calculate_star_centroid(
     // let is_valid = true; // FIXME(meawoppl)
 
     StarDetection {
+        id,
         x: x_centroid,
         y: y_centroid,
         flux: m00,
@@ -174,7 +194,8 @@ pub fn detect_stars(image: &ArrayView2<f64>, threshold: Option<f64>) -> Vec<Star
     for (i, bbox) in bboxes.iter().enumerate() {
         // Labels start at 1
         let label = i + 1;
-        let star = calculate_star_centroid(image, &labeled.view(), label, bbox.to_tuple());
+        let id = i; // Use index as ID
+        let star = calculate_star_centroid(image, &labeled.view(), label, bbox.to_tuple(), id);
         stars.push(star);
     }
 
@@ -218,7 +239,7 @@ mod tests {
 
         let bbox = (1, 1, 3, 3);
 
-        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox);
+        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox, 0);
 
         // Star centroid should be at (2.0, 2.0)
         assert!((star.x - 2.0).abs() < 1e-10);
@@ -294,6 +315,7 @@ mod tests {
                     &labeled.view(),
                     1,
                     bboxes[0].to_tuple(),
+                    0,
                 );
 
                 // Calculate errors
@@ -395,7 +417,7 @@ mod tests {
         let bbox = (1, 1, 3, 3);
 
         // Calculate centroid
-        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox);
+        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox, 0);
 
         // Verify exact centroid position - should be exactly (2,2)
         println!("5x5 cross centroid: ({}, {})", star.x, star.y);
@@ -440,7 +462,7 @@ mod tests {
         let bbox = (1, 1, 3, 3);
 
         // Calculate centroid
-        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox);
+        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox, 0);
 
         // Verify exact centroid position - should be exactly (2,2)
         println!("3x3 pattern centroid: ({}, {})", star.x, star.y);
@@ -474,7 +496,7 @@ mod tests {
         let bbox = (2, 1, 2, 3);
 
         // Calculate centroid
-        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox);
+        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox, 0);
 
         // With the east pixel brighter than west, centroid should be > 2.0
         println!("X-biased pattern centroid: ({}, {})", star.x, star.y);
@@ -506,7 +528,7 @@ mod tests {
         let bbox = (1, 2, 3, 2);
 
         // Calculate centroid
-        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox);
+        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox, 0);
 
         // With the south pixel brighter than north, centroid should be > 2.0
         println!("Y-biased pattern centroid: ({}, {})", star.x, star.y);
@@ -556,7 +578,7 @@ mod tests {
         let bbox = (1, 1, 4, 4);
 
         // Calculate centroid
-        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox);
+        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox, 0);
 
         // Verify exact centroid position - should be exactly (2.5, 2.5)
         println!("6x6 pattern centroid: ({}, {})", star.x, star.y);
@@ -595,7 +617,7 @@ mod tests {
         let bbox = (2, 2, 3, 3);
 
         // Calculate centroid
-        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox);
+        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox, 0);
 
         // Verify sub-pixel centroid position
         println!("Subpixel pattern centroid: ({}, {})", star.x, star.y);
@@ -628,7 +650,7 @@ mod tests {
         let bbox = (2, 1, 2, 3);
 
         // Calculate centroid normally
-        let star_normal = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox);
+        let star_normal = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox, 0);
 
         // Now create a transposed pattern
         let mut image_swapped = Array2::<f64>::zeros((5, 5));
@@ -649,6 +671,7 @@ mod tests {
             &labeled_swapped.view(),
             1,
             bbox_swapped,
+            0,
         );
 
         // Normal image should have X bias but no Y bias
@@ -756,7 +779,7 @@ mod tests {
 
             // Calculate centroid
             let star =
-                calculate_star_centroid(&image.view(), &labeled.view(), 1, bboxes[0].to_tuple());
+                calculate_star_centroid(&image.view(), &labeled.view(), 1, bboxes[0].to_tuple(), 0);
 
             // Calculate error
             let error = ((position_x - star.x).powi(2) + (position_y - star.y).powi(2)).sqrt();
@@ -837,7 +860,7 @@ mod tests {
 
             // Calculate centroid
             let star =
-                calculate_star_centroid(&image.view(), &labeled.view(), 1, bboxes[0].to_tuple());
+                calculate_star_centroid(&image.view(), &labeled.view(), 1, bboxes[0].to_tuple(), 0);
 
             // Calculate error
             let error = ((position_x - star.x).powi(2) + (position_y - star.y).powi(2)).sqrt();
@@ -857,6 +880,72 @@ mod tests {
                 "Star with sigma={} was marked invalid with aspect_ratio={}",
                 sigma, star.aspect_ratio
             );
+        }
+    }
+
+    #[test]
+    fn test_unique_ids() {
+        // Create an image with multiple detectable star patterns
+        let mut image = Array2::<f64>::zeros((15, 15));
+
+        // Add three separate star patterns with Gaussian-like profiles
+        // Star 1: centered at (3, 3)
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let x = 3 + dx;
+                let y = 3 + dy;
+                if x >= 0 && y >= 0 && x < 15 && y < 15 {
+                    let distance = ((dx * dx + dy * dy) as f64).sqrt();
+                    image[[y as usize, x as usize]] = 10.0 * (-distance / 0.5).exp();
+                }
+            }
+        }
+
+        // Star 2: centered at (3, 11)
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let x = 11 + dx;
+                let y = 3 + dy;
+                if x >= 0 && y >= 0 && x < 15 && y < 15 {
+                    let distance = ((dx * dx + dy * dy) as f64).sqrt();
+                    image[[y as usize, x as usize]] = 10.0 * (-distance / 0.5).exp();
+                }
+            }
+        }
+
+        // Star 3: centered at (11, 3)
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let x = 3 + dx;
+                let y = 11 + dy;
+                if x >= 0 && y >= 0 && x < 15 && y < 15 {
+                    let distance = ((dx * dx + dy * dy) as f64).sqrt();
+                    image[[y as usize, x as usize]] = 10.0 * (-distance / 0.5).exp();
+                }
+            }
+        }
+
+        // Detect stars using the main function with low threshold
+        let stars = detect_stars(&image.view(), Some(1.0));
+
+        // Verify that all IDs are unique
+        let mut ids = std::collections::HashSet::new();
+        for star in &stars {
+            assert!(ids.insert(star.id), "Duplicate ID found: {}", star.id);
+        }
+
+        // Verify we have at least the expected number of stars
+        assert!(
+            stars.len() >= 3,
+            "Expected at least 3 stars, found {}",
+            stars.len()
+        );
+
+        // Verify IDs are consecutive starting from 0 (for the first N stars)
+        let mut sorted_ids: Vec<usize> = stars.iter().map(|s| s.id).collect();
+        sorted_ids.sort();
+        for (i, &id) in sorted_ids.iter().enumerate() {
+            assert_eq!(id, i, "Expected ID {}, found {} at position {}", i, id, i);
         }
     }
 }

@@ -8,6 +8,7 @@ pub mod aabb;
 pub mod airy;
 pub mod centroid;
 pub mod convolve2d;
+pub mod detection;
 pub mod histogram_stretch;
 pub mod image;
 pub mod io;
@@ -23,6 +24,7 @@ pub use aabb::{aabbs_to_tuples, merge_overlapping_aabbs, tuples_to_aabbs, union_
 pub use airy::AiryDisk;
 pub use centroid::{detect_stars, get_centroids, StarDetection};
 pub use convolve2d::{convolve2d, gaussian_kernel, ConvolveMode, ConvolveOptions};
+pub use detection::{detect_stars as detect_stars_unified, StarFinder};
 pub use histogram_stretch::stretch_histogram;
 pub use io::{save_u8_image, u16_to_u8_auto_scale, u16_to_u8_scaled};
 pub use noise::{generate_noise_with_precomputed_params, generate_sensor_noise};

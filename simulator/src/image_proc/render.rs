@@ -11,7 +11,7 @@ use crate::{
     photometry::{zodical::SolarAngularCoordinates, ZodicalLight},
     star_data_to_electrons,
     star_math::StarProjector,
-    SensorConfig, TelescopeConfig,
+    SensorConfig,
 };
 
 use super::generate_sensor_noise;
@@ -52,21 +52,6 @@ pub struct RenderingResult {
     pub rendered_stars: Vec<StarInFrame>,
 }
 
-/// Create gaussian PSF kernel based on telescope properties
-pub fn approx_airy_pixels(
-    telescope: &TelescopeConfig,
-    sensor: &SensorConfig,
-    wavelength_nm: f64,
-) -> ScaledAiryDisk {
-    // Calculate PSF size based on Airy disk
-    let airy_radius_um = telescope.airy_disk_radius_um(wavelength_nm);
-    let airy_radius_px = airy_radius_um / sensor.pixel_size_um;
-
-    // Create a Gaussian approximation of the Airy disk
-    // Using sigma ≈ radius/1.22 to approximate Airy disk with Gaussian
-    ScaledAiryDisk::with_radius_scale(airy_radius_px / 1.22)
-}
-
 /// Renders a simulated star field based on catalog data and optical system parameters.
 ///
 /// This function simulates how stars would appear through a telescope onto a digital sensor.
@@ -104,11 +89,7 @@ pub fn render_star_field(
 
     let mut xy_mag = Vec::with_capacity(stars.len());
 
-    let airy_pix = approx_airy_pixels(
-        &satellite.telescope,
-        &satellite.sensor,
-        satellite.wavelength_nm,
-    );
+    let airy_pix = satellite.airy_disk_pixel_space(satellite.wavelength_nm);
 
     // Calculate field of view from telescope and sensor
     let fov_deg = field_diameter(&satellite.telescope, &satellite.sensor);

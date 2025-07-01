@@ -65,7 +65,7 @@ fn run_single_star_test(image_size: usize, position_x: f64, position_y: f64, sig
 
     // Calculate centroid
     let bbox = bboxes[0].to_tuple();
-    let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox);
+    let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox, 0);
 
     // Also calculate direct centroid for comparison
     // Calculate errors
@@ -144,7 +144,7 @@ fn run_subpixel_grid_test(image_size: usize, sigma: f64) {
 
             // Calculate centroid
             let bbox = bboxes[0].to_tuple();
-            let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox);
+            let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox, 0);
 
             // Calculate errors
             let error_x = position_x - star.x;
@@ -359,7 +359,7 @@ fn test_sigma_effect(image_size: usize) {
 
         // Calculate centroid
         let bbox = bboxes[0].to_tuple();
-        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox);
+        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox, 0);
 
         // Calculate errors
         let error_detected = ((position_x - star.x).powi(2) + (position_y - star.y).powi(2)).sqrt();

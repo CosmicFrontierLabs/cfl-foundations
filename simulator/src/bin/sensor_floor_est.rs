@@ -75,11 +75,11 @@ struct Args {
     test_exposures: bool,
 
     /// PSF disk size range in Airy disk FWHM units (format: start:stop:step)
-    #[arg(long, default_value = "1.0:2.125:0.125")]
+    #[arg(long, default_value = "1.5:2.1:0.1")]
     disks: RangeArg,
 
     /// Star magnitude range (format: start:stop:step)
-    #[arg(long, default_value = "12.0:17.625:0.25")]
+    #[arg(long, default_value = "12.0:17.1:0.1")]
     mags: RangeArg,
 
     /// Exposure duration range in milliseconds (format: start:stop:step)
