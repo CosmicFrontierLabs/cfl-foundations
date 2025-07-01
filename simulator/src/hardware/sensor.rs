@@ -14,10 +14,10 @@ pub struct SensorConfig {
     pub quantum_efficiency: QuantumEfficiency,
 
     /// Width of sensor in pixels
-    pub width_px: u32,
+    pub width_px: usize,
 
     /// Height of sensor in pixels
-    pub height_px: u32,
+    pub height_px: usize,
 
     /// Pixel size in microns
     pub pixel_size_um: f64,
@@ -50,8 +50,8 @@ impl SensorConfig {
     pub fn new(
         name: impl Into<String>,
         quantum_efficiency: QuantumEfficiency,
-        width_px: u32,
-        height_px: u32,
+        width_px: usize,
+        height_px: usize,
         pixel_size_um: f64,
         read_noise_e: f64,
         dark_current_estimator: DarkCurrentEstimator,
@@ -76,7 +76,7 @@ impl SensorConfig {
     }
 
     /// Create a duplicate sensor configuration with new dimensions
-    pub fn with_dimensions(&self, width_px: u32, height_px: u32) -> Self {
+    pub fn with_dimensions(&self, width_px: usize, height_px: usize) -> Self {
         let mut clone = self.clone();
         clone.width_px = width_px;
         clone.height_px = height_px;

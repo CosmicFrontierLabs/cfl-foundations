@@ -35,7 +35,7 @@ struct Args {
 
     /// Domain size for test images (width and height in pixels)
     #[arg(long, default_value_t = 64)]
-    domain: u32,
+    domain: usize,
 
     /// Star magnitude for testing
     #[arg(long, default_value_t = 14.0)]

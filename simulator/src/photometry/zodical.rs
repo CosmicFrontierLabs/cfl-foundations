@@ -424,10 +424,7 @@ impl ZodicalLight {
         ) * pixel_solid_angle_arcsec2
             * satellite.telescope.light_efficiency;
 
-        Array2::ones((
-            satellite.sensor.height_px as usize,
-            satellite.sensor.width_px as usize,
-        )) * mean_pe
+        Array2::ones((satellite.sensor.height_px, satellite.sensor.width_px)) * mean_pe
     }
 }
 

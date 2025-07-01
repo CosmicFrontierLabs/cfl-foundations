@@ -60,9 +60,9 @@ impl SatelliteConfig {
     ///
     /// # Returns
     /// A ScaledAiryDisk scaled to pixels for this telescope/sensor combination
-    pub fn airy_disk_pixel_space(&self, wavelength_nm: f64) -> ScaledAiryDisk {
+    pub fn airy_disk_pixel_space(&self) -> ScaledAiryDisk {
         // Get Airy disk radius in microns from telescope
-        let airy_radius_um = self.telescope.airy_disk_radius_um(wavelength_nm);
+        let airy_radius_um = self.telescope.airy_disk_radius_um(self.wavelength_nm);
 
         // Convert to pixels using sensor pixel size
         let airy_radius_pixels = airy_radius_um / self.sensor.pixel_size_um;
@@ -229,7 +229,7 @@ mod tests {
 
         let satellite = SatelliteConfig::new(telescope, sensor, -10.0, 550.0);
 
-        let airy_disk = satellite.airy_disk_pixel_space(550.0);
+        let airy_disk = satellite.airy_disk_pixel_space();
 
         // Airy disk should have a reasonable first zero radius in pixels
         assert!(airy_disk.first_zero() > 0.0);

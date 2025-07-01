@@ -41,8 +41,8 @@ pub fn generate_sensor_noise(
     let dark_electrons_mean = dark_current * exposure_time.as_secs_f64();
 
     // Create dimensions for output
-    let height = sensor.height_px as usize;
-    let width = sensor.width_px as usize;
+    let height = sensor.height_px;
+    let width = sensor.width_px;
 
     // Choose appropriate noise model based on dark current magnitude
     if dark_electrons_mean < 0.1 {
@@ -212,8 +212,8 @@ mod tests {
         SensorConfig::new(
             "Test Sensor",
             qe,
-            size.1 as u32,
-            size.0 as u32,
+            size.1,
+            size.0,
             5.0,
             read_noise,
             DarkCurrentEstimator::new(dark_current, 20.0),

@@ -1,32 +1,9 @@
 use ndarray::Array2;
 use simulator::image_proc::airy::ScaledAiryDisk;
 use simulator::image_proc::render::{add_stars_to_image, StarInFrame};
-use simulator::{
-    hardware::dark_current::DarkCurrentEstimator, photometry::Band, QuantumEfficiency, SensorConfig,
-};
 use starfield::catalogs::StarData;
 use starfield::Equatorial;
 use std::time::Instant;
-
-/// Creates a test sensor with specified dimensions and characteristics
-fn create_test_sensor(width: u32, height: u32, read_noise: f64, dark_current: f64) -> SensorConfig {
-    let band = Band::from_nm_bounds(300.0, 700.0);
-    let qe = QuantumEfficiency::from_notch(&band, 1.0).unwrap();
-
-    SensorConfig::new(
-        "Test Sensor",
-        qe,
-        width,
-        height,
-        5.0, // pixel size in um
-        read_noise,
-        DarkCurrentEstimator::new(dark_current, 20.0), // dark current at 20°C
-        16,                                            // bit depth
-        0.5,                                           // dn per electron
-        100000.0,                                      // max well depth
-        60.0,                                          // frame rate
-    )
-}
 
 /// Creates test stars for benchmarking
 fn create_test_stars(count: usize, flux: f64) -> Vec<StarInFrame> {

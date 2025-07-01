@@ -68,7 +68,7 @@ struct Args {
 
     /// Domain size for test images (width and height in pixels)
     #[arg(long, default_value_t = 128)]
-    domain: u32,
+    domain: usize,
 
     /// Test multiple exposure durations instead of just the shared exposure setting
     #[arg(long, default_value_t = true)]

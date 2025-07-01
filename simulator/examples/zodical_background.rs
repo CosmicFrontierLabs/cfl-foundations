@@ -30,7 +30,7 @@ use std::time::Duration;
 struct Args {
     /// Image domain size (pixels)
     #[arg(long, default_value_t = 256)]
-    domain: u32,
+    domain: usize,
 
     /// Elongation range: start,end,step (degrees)
     #[arg(long, default_value = "60.0,120.0,5.0")]

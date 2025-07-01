@@ -80,8 +80,8 @@ pub fn render_star_field(
     zodiacal_coords: &SolarAngularCoordinates,
 ) -> RenderingResult {
     // Create image array dimensions
-    let image_width = satellite.sensor.width_px as usize;
-    let image_height = satellite.sensor.height_px as usize;
+    let image_width = satellite.sensor.width_px;
+    let image_height = satellite.sensor.height_px;
 
     // Create a star field image (in electron counts)
     let mut image = Array2::zeros((image_height, image_width));
@@ -89,7 +89,7 @@ pub fn render_star_field(
 
     let mut xy_mag = Vec::with_capacity(stars.len());
 
-    let airy_pix = satellite.airy_disk_pixel_space(satellite.wavelength_nm);
+    let airy_pix = satellite.airy_disk_pixel_space();
 
     // Calculate field of view from telescope and sensor
     let fov_deg = field_diameter(&satellite.telescope, &satellite.sensor);
@@ -100,8 +100,8 @@ pub fn render_star_field(
     let projector = StarProjector::new(
         center,
         radians_per_pixel,
-        satellite.sensor.width_px,
-        satellite.sensor.height_px,
+        satellite.sensor.width_px as u32,
+        satellite.sensor.height_px as u32,
     );
 
     // Padded bounds check
@@ -110,8 +110,7 @@ pub fn render_star_field(
     // Add stars with sub-pixel precision
     for &star in stars {
         // Convert position to pixel coordinates (sub-pixel precision)
-        let star_radec = Equatorial::from_degrees(star.ra_deg(), star.dec_deg());
-        let (x, y) = match projector.project_unbounded(&star_radec) {
+        let (x, y) = match projector.project_unbounded(&star.position) {
             Some(coords) => coords,
             None => continue, // Skip stars behind the camera
         };
