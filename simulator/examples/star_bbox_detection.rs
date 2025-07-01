@@ -1,6 +1,6 @@
 use image::{DynamicImage, GrayImage, Luma};
 use ndarray::Array2;
-use simulator::image_proc::thresholding::{apply_threshold, connected_components, otsu_threshold};
+use simulator::image_proc::detection::{apply_threshold, connected_components, otsu_threshold};
 use simulator::image_proc::{
     aabbs_to_tuples, convolve2d, detect_stars, draw_bounding_boxes, draw_simple_boxes,
     draw_stars_with_x_markers, gaussian_kernel, get_bounding_boxes, merge_overlapping_aabbs,

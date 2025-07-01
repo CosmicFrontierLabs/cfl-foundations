@@ -342,7 +342,7 @@ mod tests {
     use super::*;
     use image::{ImageBuffer, Luma};
 
-    use crate::image_proc::thresholding::{
+    use crate::image_proc::detection::{
         apply_threshold, connected_components, get_bounding_boxes, otsu_threshold,
     };
 

@@ -23,9 +23,8 @@
 
 use ndarray::Array2;
 use simulator::image_proc::{
-    centroid::detect_stars,
     convolve2d::{convolve2d, gaussian_kernel, ConvolveMode, ConvolveOptions},
-    thresholding::otsu_threshold,
+    detection::{detect_stars, otsu_threshold},
 };
 
 fn main() {

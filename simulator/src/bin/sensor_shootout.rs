@@ -30,11 +30,11 @@ use simulator::algo::icp::{icp_match_objects, Locatable2d};
 use simulator::hardware::sensor::models as sensor_models;
 use simulator::hardware::telescope::models::DEMO_50CM;
 use simulator::hardware::SatelliteConfig;
+use simulator::image_proc::detection::do_detections;
 use simulator::image_proc::histogram_stretch::sigma_stretch;
 use simulator::image_proc::image::array2_to_gray_image;
 use simulator::image_proc::io::write_hashmap_to_fits;
 use simulator::image_proc::render::{render_star_field, RenderingResult, StarInFrame};
-use simulator::image_proc::segment::do_detections;
 use simulator::image_proc::{
     draw_stars_with_x_markers, save_u8_image, stretch_histogram, u16_to_u8_scaled, StarDetection,
 };

@@ -3,7 +3,7 @@
 //! This module provides functions for image segmentation using Otsu's method
 //! and connected components labeling.
 
-use crate::image_proc::aabb::AABB;
+use crate::image_proc::detection::AABB;
 use ndarray::{Array2, ArrayView2};
 
 /// Computes Otsu's threshold for a grayscale image
@@ -247,7 +247,9 @@ mod tests {
         let boxes = vec![(10, 10, 20, 20), (15, 15, 25, 25), (50, 50, 60, 60)];
 
         // Convert to AABBs
-        use crate::image_proc::aabb::{aabbs_to_tuples, merge_overlapping_aabbs, tuples_to_aabbs};
+        use crate::image_proc::detection::{
+            aabbs_to_tuples, merge_overlapping_aabbs, tuples_to_aabbs,
+        };
         let aabbs = tuples_to_aabbs(&boxes);
 
         // Merge overlapping boxes with no padding

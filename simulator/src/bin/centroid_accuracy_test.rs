@@ -14,9 +14,8 @@
 //! - Analysis of any systematic bias in X or Y directions
 
 use ndarray::Array2;
-use simulator::image_proc::centroid::calculate_star_centroid;
-use simulator::image_proc::thresholding::{
-    apply_threshold, connected_components, get_bounding_boxes,
+use simulator::image_proc::detection::{
+    apply_threshold, calculate_star_centroid, connected_components, get_bounding_boxes,
 };
 
 /// Generate a 2D Gaussian PSF with specified parameters

@@ -127,7 +127,7 @@ fn detect_naive(
     let image_view = image_f64.view();
 
     // Use the existing centroiding detection from the centroid module
-    let detections = crate::image_proc::centroid::detect_stars(&image_view, cutoff);
+    let detections = super::naive::detect_stars(&image_view, cutoff);
 
     // Convert StarDetection objects to boxed StellarSource
     let stars = detections
