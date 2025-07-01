@@ -116,12 +116,6 @@ impl Renderer {
         center: &Equatorial,
         satellite_config: SatelliteConfig,
     ) -> Self {
-        let image_width = satellite_config.sensor.width_px;
-        let image_height = satellite_config.sensor.height_px;
-
-        // Create base star image for 1 second exposure
-        let mut base_star_image = Array2::zeros((image_height, image_width));
-
         let airy_pix = satellite_config.airy_disk_pixel_space();
         let padding = airy_pix.first_zero() * 2.0;
         let one_second = Duration::from_secs(1);
@@ -130,8 +124,13 @@ impl Renderer {
         let rendered_stars =
             project_stars_to_pixels(stars, center, &satellite_config, &one_second, padding);
 
-        // Add stars to base image
-        add_stars_to_image(&mut base_star_image, &rendered_stars, airy_pix);
+        // Create base star image for 1 second exposure
+        let base_star_image = add_stars_to_image(
+            satellite_config.sensor.width_px,
+            satellite_config.sensor.height_px,
+            &rendered_stars,
+            airy_pix,
+        );
 
         Self {
             satellite_config,
@@ -391,15 +390,19 @@ pub fn quantize_image(electron_img: &Array2<f64>, sensor: &SensorConfig) -> Arra
     })
 }
 
-/// Adds stars to an image by approximating a Gaussian point spread function (PSF).
+/// Creates an image with stars by approximating a Gaussian point spread function (PSF).
 ///
-/// This function takes a mutable reference to an image and adds the flux contribution
+/// This function creates a new image and adds the flux contribution
 /// of each star to the appropriate pixels based on a Gaussian PSF with the specified sigma.
 ///
 /// # Arguments
-/// * `image` - A mutable reference to the 2D array representing the image
+/// * `width` - Width of the image in pixels
+/// * `height` - Height of the image in pixels
 /// * `stars` - A vector of StarInFrame objects containing position and flux information
-/// * `sigma_pix` - The standard deviation of the Gaussian PSF in pixels
+/// * `airy_pix` - The scaled Airy disk for PSF calculation
+///
+/// # Returns
+/// * `Array2<f64>` - A new 2D array representing the image with stars
 ///
 /// # Examples
 /// ```
@@ -414,19 +417,21 @@ pub fn quantize_image(electron_img: &Array2<f64>, sensor: &SensorConfig) -> Arra
 ///     position: Equatorial::from_degrees(0.0, 0.0),
 ///     b_v: None,
 /// };
-/// let mut image = Array2::zeros((100, 100));
 /// let stars = vec![StarInFrame { x: 50.0, y: 50.0, flux: 1000.0, star: star_data }];
 /// let airy_pix = ScaledAiryDisk::with_fwhm(2.0);
-/// add_stars_to_image(&mut image, &stars, airy_pix);
+/// let image = add_stars_to_image(100, 100, &stars, airy_pix);
 /// ```
 pub fn add_stars_to_image(
-    image: &mut Array2<f64>,
+    width: usize,
+    height: usize,
     stars: &Vec<StarInFrame>,
     airy_pix: ScaledAiryDisk,
-) {
+) -> Array2<f64> {
+    // Create new image array with specified dimensions
+    let mut image = Array2::zeros((height, width));
+
     // 2x the first 0 should cover 99.99999% of flux or so
     let max_pix_dist = (airy_pix.first_zero().max(1.0) * 2.0).ceil() as i32;
-    let (width, height) = image.dim();
 
     // Calculate the contribution of all stars to this pixel
     for star in stars {
@@ -451,6 +456,8 @@ pub fn add_stars_to_image(
             }
         }
     }
+
+    image
 }
 
 #[cfg(test)]
@@ -494,7 +501,6 @@ mod tests {
     #[test]
     fn test_add_star_total_flux() {
         for sigma_pix in vec![2.0, 4.0, 8.0] {
-            let mut image = Array2::zeros((50, 50));
             let total_flux = 1000.0;
 
             let stars = vec![StarInFrame {
@@ -505,7 +511,7 @@ mod tests {
             }];
 
             let airy_pix = ScaledAiryDisk::with_first_zero(sigma_pix);
-            add_stars_to_image(&mut image, &stars, airy_pix);
+            let image = add_stars_to_image(50, 50, &stars, airy_pix);
 
             let added_flux = image.sum();
             println!("Sigma: {}, Added Flux: {}", sigma_pix, added_flux);
@@ -515,7 +521,6 @@ mod tests {
 
     #[test]
     fn test_add_star_oob() {
-        let mut image = Array2::zeros((50, 50));
         let sigma_pix = 2.0;
         let total_flux = 1000.0;
 
@@ -527,7 +532,7 @@ mod tests {
         }];
         let airy_pix = ScaledAiryDisk::with_radius_scale(sigma_pix);
 
-        add_stars_to_image(&mut image, &stars, airy_pix);
+        let image = add_stars_to_image(50, 50, &stars, airy_pix);
 
         let added_flux = image.sum();
         assert_relative_eq!(added_flux, 0.0, epsilon = 0.1);
@@ -535,7 +540,6 @@ mod tests {
 
     #[test]
     fn test_add_star_edge() {
-        let mut image = Array2::zeros((50, 50));
         let sigma_pix = 2.0;
         let total_flux = 1000.0;
 
@@ -548,7 +552,7 @@ mod tests {
 
         let airy_pix = ScaledAiryDisk::with_radius_scale(sigma_pix);
 
-        add_stars_to_image(&mut image, &stars, airy_pix);
+        let image = add_stars_to_image(50, 50, &stars, airy_pix);
 
         let added_flux = image.sum();
 
@@ -563,7 +567,6 @@ mod tests {
 
     #[test]
     fn test_add_four_stars_corners() {
-        let mut image = Array2::zeros((50, 50));
         let sigma_pix = 2.0;
         let total_flux = 250.0;
 
@@ -595,7 +598,7 @@ mod tests {
         ];
         let airy_pix = ScaledAiryDisk::with_fwhm(sigma_pix);
 
-        add_stars_to_image(&mut image, &stars, airy_pix);
+        let image = add_stars_to_image(50, 50, &stars, airy_pix);
 
         let added_flux = image.sum();
 
@@ -605,7 +608,6 @@ mod tests {
 
     #[test]
     fn test_fuzz() {
-        let mut image = Array2::zeros((50, 50));
         let sigma_pix = 2.0;
         let total_flux = 100.0;
 
@@ -623,7 +625,7 @@ mod tests {
 
         let airy_pix = ScaledAiryDisk::with_radius_scale(sigma_pix);
 
-        add_stars_to_image(&mut image, &stars, airy_pix);
+        let image = add_stars_to_image(50, 50, &stars, airy_pix);
 
         let added_flux = image.sum();
 

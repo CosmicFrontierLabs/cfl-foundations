@@ -6,7 +6,6 @@
 //! - Detection accuracy for each algorithm
 
 use clap::Parser;
-use ndarray::Array2;
 use rayon::prelude::*;
 use simulator::hardware::sensor::models::ALL_SENSORS;
 use simulator::hardware::SatelliteConfig;
@@ -112,9 +111,13 @@ fn test_algorithm(
         };
 
         // Create electron image and add star
-        let mut e_image: Array2<f64> = Array2::zeros((args.domain as usize, args.domain as usize));
         let airy_disk = satellite.airy_disk_fwhm_sampled();
-        add_stars_to_image(&mut e_image, &vec![star], airy_disk);
+        let e_image = add_stars_to_image(
+            args.domain as usize,
+            args.domain as usize,
+            &vec![star],
+            airy_disk,
+        );
 
         // Generate and add noise
         let sensor_noise = generate_sensor_noise(

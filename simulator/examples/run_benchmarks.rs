@@ -50,15 +50,13 @@ fn bench_add_stars_to_image() {
     for &size in &image_sizes {
         for &star_count in &star_counts {
             for &sigma in &sigma_values {
-                // Create a new image
-                let mut image = Array2::zeros((size, size));
                 // Create test stars
                 let stars = create_test_stars(star_count, 1000.0);
 
                 // Run the benchmark
                 let start = Instant::now();
                 let airy_pix = ScaledAiryDisk::with_fwhm(sigma);
-                add_stars_to_image(&mut image, &stars, airy_pix);
+                let _image = add_stars_to_image(size, size, &stars, airy_pix);
                 let duration = start.elapsed();
 
                 println!(

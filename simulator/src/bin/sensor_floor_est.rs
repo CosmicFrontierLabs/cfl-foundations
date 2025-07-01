@@ -24,7 +24,7 @@
 use clap::Parser;
 use core::f64;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use ndarray::{Array1, Array2, Array3};
+use ndarray::{Array1, Array3};
 use rayon::prelude::*;
 use simulator::hardware::sensor::models::ALL_SENSORS;
 use simulator::hardware::SatelliteConfig;
@@ -213,9 +213,8 @@ fn run_single_experiment(params: &ExperimentParams) -> ExperimentResults {
         let star = params.star_at_pos(xpos, ypos);
 
         // Create electron image and add star
-        let mut e_image: Array2<f64> = Array2::zeros((params.domain, params.domain));
         let airy_disk = params.satellite.airy_disk_fwhm_sampled();
-        add_stars_to_image(&mut e_image, &vec![star], airy_disk);
+        let e_image = add_stars_to_image(params.domain, params.domain, &vec![star], airy_disk);
 
         // Generate and add noise to image
         let sensor_noise = generate_sensor_noise(
