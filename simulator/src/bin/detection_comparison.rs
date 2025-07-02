@@ -55,6 +55,7 @@ struct AlgorithmResults {
     false_positives: u32,
     spurious_detections: u32,
     multiple_detections: u32,
+    #[allow(dead_code)]
     no_detections: u32,
     avg_error_pixels: f64,
 }
@@ -66,6 +67,11 @@ impl AlgorithmResults {
 
     fn false_positive_rate(&self) -> f64 {
         self.false_positives as f64 / self.experiments as f64
+    }
+
+    #[allow(dead_code)]
+    fn no_detection_rate(&self) -> f64 {
+        self.no_detections as f64 / self.experiments as f64
     }
 }
 
@@ -112,12 +118,7 @@ fn test_algorithm(
 
         // Create electron image and add star
         let airy_disk = satellite.airy_disk_fwhm_sampled();
-        let e_image = add_stars_to_image(
-            args.domain as usize,
-            args.domain as usize,
-            &vec![star],
-            airy_disk,
-        );
+        let e_image = add_stars_to_image(args.domain, args.domain, &vec![star], airy_disk);
 
         // Generate and add noise
         let sensor_noise = generate_sensor_noise(
@@ -129,7 +130,7 @@ fn test_algorithm(
 
         let z_light = ZodicalLight::new();
         let zodical = z_light.generate_zodical_background(
-            &satellite,
+            satellite,
             &args.shared.exposure.0,
             &args.shared.coordinates,
         );

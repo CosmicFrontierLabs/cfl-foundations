@@ -276,8 +276,8 @@ pub fn project_stars_to_pixels(
     exposure: &Duration,
     padding: f64,
 ) -> Vec<StarInFrame> {
-    let image_width = satellite.sensor.width_px as usize;
-    let image_height = satellite.sensor.height_px as usize;
+    let image_width = satellite.sensor.width_px;
+    let image_height = satellite.sensor.height_px;
 
     // Calculate field of view from telescope and sensor
     let fov_deg = field_diameter(&satellite.telescope, &satellite.sensor);

@@ -1,7 +1,6 @@
 use crate::hardware::SatelliteConfig;
 use crate::image_proc::render::{
-    project_stars_to_pixels, render_star_field, RenderedImage, Renderer, RenderingResult,
-    StarInFrame,
+    project_stars_to_pixels, render_star_field, Renderer, RenderingResult, StarInFrame,
 };
 use crate::photometry::zodical::SolarAngularCoordinates;
 use starfield::catalogs::StarData;

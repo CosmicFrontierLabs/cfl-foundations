@@ -284,7 +284,7 @@ fn run_single_experiment(params: &ExperimentParams) -> ExperimentResults {
         let mut best: Option<(f64, f64)> = None;
         let mut best_err = f64::INFINITY;
 
-        if detected_stars.len() == 0 {
+        if detected_stars.is_empty() {
             // No stars detected
             no_detections += 1;
             continue;
@@ -340,7 +340,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     // Use domain size from CLI arguments
-    let domain = args.domain as usize;
+    let domain = args.domain;
 
     // Create satellite configurations with sensors sized to domain
     let telescope_config = args.shared.telescope.to_config().clone();
@@ -441,11 +441,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create another hashmap to store detection rates (3D: disk, exposure, mag)
     let mut detection_rates: HashMap<String, Array3<f64>> = HashMap::new();
 
+    // Create hashmap to store spurious detection rates
+    let mut spurious_rates: HashMap<String, Array3<f64>> = HashMap::new();
+
     // Initialize detection rates arrays
     for satellite in &all_satellites {
         let detection_rate_array =
             Array3::<f64>::from_elem((disks.len(), exposures.len(), mags.len()), 0.0);
         detection_rates.insert(satellite.sensor.name.clone(), detection_rate_array);
+
+        let spurious_rate_array =
+            Array3::<f64>::from_elem((disks.len(), exposures.len(), mags.len()), 0.0);
+        spurious_rates.insert(satellite.sensor.name.clone(), spurious_rate_array);
     }
 
     // Setup progress tracking
@@ -510,6 +517,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(detection_array) = detection_rates.get_mut(&sensor_name) {
             detection_array[[disk_idx, exposure_idx, mag_idx]] = detection_rate;
         }
+
+        if let Some(spurious_array) = spurious_rates.get_mut(&sensor_name) {
+            spurious_array[[disk_idx, exposure_idx, mag_idx]] = result.spurious_rate();
+        }
     }
 
     // Print summary of results
@@ -569,6 +580,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let results = sensor_results.get(&sensor_name).unwrap();
         let pixel_results = sensor_pixel_results.get(&sensor_name).unwrap();
         let detection_rate_array = detection_rates.get(&sensor_name).unwrap();
+        let spurious_rate_array = spurious_rates.get(&sensor_name).unwrap();
 
         println!("\n==== Sensor: {} ====", sensor_name);
 
@@ -676,6 +688,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         write!(csv_file, "{:.3},", err).unwrap();
                     }
+                }
+                writeln!(csv_file).unwrap();
+            }
+        }
+        writeln!(csv_file).unwrap();
+
+        // Spurious Detection Rate Matrix (%)
+        writeln!(csv_file, "Spurious Detection Rate Matrix (%)").unwrap();
+
+        // CSV header: Disk, Exposure, then magnitude columns
+        write!(csv_file, "Q_Value,Exposure_ms,").unwrap();
+        for mag in &mags {
+            write!(csv_file, "{:.2},", mag).unwrap();
+        }
+        writeln!(csv_file).unwrap();
+
+        // Write all combinations of exposure and disk (exposure grouped together)
+        for (exposure_idx, exposure) in exposures.iter().enumerate() {
+            for (disk_idx, disk) in disks.iter().enumerate() {
+                write!(csv_file, "{:.3},{},", disk, exposure.as_millis()).unwrap();
+                for mag_idx in 0..mags.len() {
+                    let rate = spurious_rate_array[[disk_idx, exposure_idx, mag_idx]];
+                    write!(csv_file, "{:.3},", rate * 100.0).unwrap();
                 }
                 writeln!(csv_file).unwrap();
             }
