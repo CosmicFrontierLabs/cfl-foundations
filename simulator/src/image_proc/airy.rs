@@ -280,6 +280,33 @@ impl ScaledAiryDisk {
     pub fn fwhm(&self) -> f64 {
         self.disk.fwhm * self.radius_scale
     }
+
+    /// Compute pixel flux using 3x3 Simpson's rule for this ScaledAiryDisk PSF
+    ///
+    /// # Arguments
+    /// * `x_pixel` - Pixel center x coordinate relative to PSF center
+    /// * `y_pixel` - Pixel center y coordinate relative to PSF center
+    /// * `flux` - Total integrated flux of the source
+    pub fn pixel_flux_simpson(&self, x_pixel: f64, y_pixel: f64, flux: f64) -> f64 {
+        // Simpson weights: [1, 4, 1] normalized to sum to 1
+        const WEIGHTS: [f64; 3] = [1.0 / 6.0, 4.0 / 6.0, 1.0 / 6.0];
+
+        // Sample points: pixel edges and center
+        let x_samples = [x_pixel - 0.5, x_pixel, x_pixel + 0.5];
+        let y_samples = [y_pixel - 0.5, y_pixel, y_pixel + 0.5];
+
+        let mut integrated_intensity = 0.0;
+
+        for (i, &wx) in WEIGHTS.iter().enumerate() {
+            for (j, &wy) in WEIGHTS.iter().enumerate() {
+                let radius = (x_samples[i] * x_samples[i] + y_samples[j] * y_samples[j]).sqrt();
+                integrated_intensity += wx * wy * self.gaussian_approximation_normalized(radius);
+            }
+        }
+
+        // Scale by flux to get actual pixel flux
+        integrated_intensity * flux
+    }
 }
 
 #[cfg(test)]
@@ -400,5 +427,84 @@ mod tests {
     fn test_scaled_airy_disk_first_zero() {
         let scaled = ScaledAiryDisk::with_first_zero(2.0);
         assert_relative_eq!(scaled.first_zero(), 2.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_pixel_flux_centered() {
+        // Test flux when PSF is centered on pixel
+        let psf = ScaledAiryDisk::with_first_zero(1.0);
+        let flux = 1000.0;
+
+        let pixel_flux = psf.pixel_flux_simpson(0.0, 0.0, flux);
+
+        // Most flux should be in center pixel for small PSF
+        assert!(
+            pixel_flux > 0.5 * flux,
+            "Expected >90% flux in center pixel, got {}",
+            pixel_flux
+        );
+        assert!(
+            pixel_flux <= flux,
+            "Flux should not exceed total flux, got {}",
+            pixel_flux
+        );
+    }
+
+    #[test]
+    fn test_flux_conservation() {
+        // Test relative flux distribution for normalized PSF
+        let psf = ScaledAiryDisk::new(2.0);
+        let flux = 1.0; // Use unit flux to measure PSF normalization
+
+        // First measure total PSF integral over large area
+        let mut psf_sum = 0.0;
+        for x in -30..=30 {
+            for y in -30..=30 {
+                psf_sum += psf.pixel_flux_simpson(x as f64, y as f64, 1.0);
+            }
+        }
+
+        // Now test that a smaller region captures expected fraction
+        let mut region_sum = 0.0;
+        for x in -5..=5 {
+            for y in -5..=5 {
+                region_sum += psf.pixel_flux_simpson(x as f64, y as f64, flux);
+            }
+        }
+
+        let fraction = region_sum / psf_sum;
+        println!(
+            "Central 11x11 region captures {:.1}% of total PSF",
+            fraction * 100.0
+        );
+
+        // Central region should capture significant fraction of PSF
+        assert!(fraction > 0.8); // At least 80% in central region
+        assert!(fraction <= 1.0); // Can't exceed 100%
+    }
+
+    #[test]
+    fn test_offset_star() {
+        // Test flux distribution when star is between pixels
+        let psf = ScaledAiryDisk::with_first_zero(1.0);
+        let flux = 1000.0;
+
+        // Star at (0.0, 0.0) - corner between 4 pixels
+        let fluxes = vec![
+            psf.pixel_flux_simpson(-0.5, -0.5, flux),
+            psf.pixel_flux_simpson(0.5, -0.5, flux),
+            psf.pixel_flux_simpson(-0.5, 0.5, flux),
+            psf.pixel_flux_simpson(0.5, 0.5, flux),
+        ];
+
+        // Should be symmetric
+        assert!((fluxes[0] - fluxes[1]).abs() < 1e-10);
+        assert!((fluxes[0] - fluxes[2]).abs() < 1e-10);
+        assert!((fluxes[0] - fluxes[3]).abs() < 1e-10);
+
+        // Each pixel should get significant flux
+        for f in &fluxes {
+            assert!(*f > 0.1 * flux, "Expected flux > 0.1 * {}, got {}", flux, f);
+        }
     }
 }

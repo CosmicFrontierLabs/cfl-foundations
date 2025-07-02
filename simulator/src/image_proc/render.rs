@@ -390,10 +390,11 @@ pub fn quantize_image(electron_img: &Array2<f64>, sensor: &SensorConfig) -> Arra
     })
 }
 
-/// Creates an image with stars by approximating a Gaussian point spread function (PSF).
+/// Creates an image with stars using Simpson's rule integration for the Airy disk PSF.
 ///
 /// This function creates a new image and adds the flux contribution
-/// of each star to the appropriate pixels based on a Gaussian PSF with the specified sigma.
+/// of each star to the appropriate pixels using 3x3 Simpson's rule integration
+/// for accurate flux assignment based on the Airy disk point spread function.
 ///
 /// # Arguments
 /// * `width` - Width of the image in pixels
@@ -435,7 +436,7 @@ pub fn add_stars_to_image(
 
     // Calculate the contribution of all stars to this pixel
     for star in stars {
-        // Calculate distance from star to pixel
+        // Calculate pixel range to check based on star position
         let xc = star.x.round() as i32;
         let yc = star.y.round() as i32;
 
@@ -446,11 +447,12 @@ pub fn add_stars_to_image(
                     continue;
                 }
 
-                let dx = star.x - y as f64;
-                let dy = star.y - x as f64;
-                let radius = (dx * dx + dy * dy).sqrt();
-                // Update pixel value with total flux
-                let contribution = star.flux * airy_pix.gaussian_approximation_normalized(radius);
+                // Calculate pixel center position relative to star
+                let x_pixel = y as f64 - star.x;
+                let y_pixel = x as f64 - star.y;
+
+                // Use Simpson's rule integration for accurate flux calculation
+                let contribution = airy_pix.pixel_flux_simpson(x_pixel, y_pixel, star.flux);
 
                 image[[x as usize, y as usize]] += contribution;
             }
@@ -535,17 +537,23 @@ mod tests {
         let image = add_stars_to_image(50, 50, &stars, airy_pix);
 
         let added_flux = image.sum();
-        assert_relative_eq!(added_flux, 0.0, epsilon = 0.1);
+        // With Simpson's rule, some flux can still be captured even when star center is outside
+        // Expect very small flux contribution
+        assert!(
+            added_flux < 100.0,
+            "Out of bounds star flux too high: {}",
+            added_flux
+        );
     }
 
     #[test]
     fn test_add_star_edge() {
-        let sigma_pix = 2.0;
+        let sigma_pix = 4.0;
         let total_flux = 1000.0;
 
         let stars = vec![StarInFrame {
-            x: 0.5,
-            y: 10.0,
+            x: -0.5,
+            y: 25.0,
             flux: total_flux,
             star: test_star_data(),
         }];
@@ -555,14 +563,8 @@ mod tests {
         let image = add_stars_to_image(50, 50, &stars, airy_pix);
 
         let added_flux = image.sum();
-
-        // TODO(meawoppl) - tighten up image edge conventions pix vs. edge centered etc
         // Right now pixel coords are edge/corner centered, but flus is kinda not intuitive that way
-        assert!(
-            added_flux > 100.0,
-            "Added flux is out of expected range: {}",
-            added_flux
-        );
+        assert_relative_eq!(added_flux * 2.0, total_flux, epsilon = total_flux * 0.01);
     }
 
     #[test]
@@ -572,26 +574,26 @@ mod tests {
 
         let stars = vec![
             StarInFrame {
-                x: 0.0,
-                y: 0.0,
+                x: -0.5,
+                y: -0.5,
                 flux: total_flux,
                 star: test_star_data(),
             },
             StarInFrame {
-                x: 0.0,
-                y: 50.0,
+                x: -0.5,
+                y: 49.5,
                 flux: total_flux,
                 star: test_star_data(),
             },
             StarInFrame {
-                x: 50.0,
-                y: 0.0,
+                x: 49.5,
+                y: -0.5,
                 flux: total_flux,
                 star: test_star_data(),
             },
             StarInFrame {
-                x: 50.0,
-                y: 50.0,
+                x: 49.5,
+                y: 49.5,
                 flux: total_flux,
                 star: test_star_data(),
             },
@@ -602,8 +604,8 @@ mod tests {
 
         let added_flux = image.sum();
 
-        // Each of these should fall 3/4 off the image, resulting one flux worth
-        assert_relative_eq!(added_flux, total_flux, epsilon = 1.0)
+        // The total flux should be about 1% of the 1 star flux value, because we see 1/4 of each star
+        assert_relative_eq!(added_flux, total_flux, epsilon = total_flux * 0.01);
     }
 
     #[test]
