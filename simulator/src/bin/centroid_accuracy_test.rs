@@ -14,9 +14,8 @@
 //! - Analysis of any systematic bias in X or Y directions
 
 use ndarray::Array2;
-use simulator::image_proc::detection::{
-    apply_threshold, calculate_star_centroid, connected_components, get_bounding_boxes,
-};
+use simulator::image_proc::detection::StarFinder;
+use starfield::image::starfinders::StellarSource;
 
 /// Generate a 2D Gaussian PSF with specified parameters
 fn create_gaussian(
@@ -44,60 +43,96 @@ fn create_gaussian(
     }
 }
 
-fn run_single_star_test(image_size: usize, position_x: f64, position_y: f64, sigma: f64) {
+fn run_single_star_test(
+    image_size: usize,
+    position_x: f64,
+    position_y: f64,
+    sigma: f64,
+    detector: &StarFinder,
+) {
     // Create an empty image
     let mut image = Array2::<f64>::zeros((image_size, image_size));
 
     // Generate a single star at the specified position
     create_gaussian(&mut image, position_x, position_y, 1.0, sigma);
 
-    // Detect the star using the detection pipeline
-    let threshold = 0.1;
-    let binary = apply_threshold(&image.view(), threshold);
-    let labeled = connected_components(&binary.view());
-    let bboxes = get_bounding_boxes(&labeled.view());
+    // Convert f64 image to u16 for detection (scale to use full u16 range)
+    let max_val = image.iter().cloned().fold(0.0, f64::max);
+    let scale = if max_val > 0.0 {
+        65535.0 / max_val
+    } else {
+        1.0
+    };
+    let u16_image = image.mapv(|v| (v * scale) as u16);
 
-    if bboxes.is_empty() {
+    // Detect the star using the unified detection interface
+    // Using reasonable defaults for airy disk size and detection parameters
+    let airy_disk_pixels = sigma * 2.0; // Approximate airy disk size
+    let background_rms = 0.1 * scale; // Scaled background noise
+    let detection_sigma = 3.0; // Detection threshold in sigmas
+
+    let stars = match detector {
+        StarFinder::Naive => {
+            // Use the naive detector directly with f64 image
+            use simulator::image_proc::detection::detect_stars as detect_stars_naive;
+            detect_stars_naive(&image.view(), Some(0.1))
+                .into_iter()
+                .map(|s| Box::new(s) as Box<dyn StellarSource>)
+                .collect::<Vec<_>>()
+        }
+        _ => {
+            // Use the unified interface for DAO and IRAF
+            use simulator::image_proc::detection::detect_stars_unified;
+            match detect_stars_unified(
+                u16_image.view(),
+                *detector,
+                airy_disk_pixels,
+                background_rms,
+                detection_sigma,
+            ) {
+                Ok(stars) => stars,
+                Err(e) => {
+                    println!("Detection failed: {}", e);
+                    return;
+                }
+            }
+        }
+    };
+
+    if stars.is_empty() {
         println!("No stars detected! Try adjusting the threshold or sigma value.");
         return;
     }
 
-    // Calculate centroid
-    let bbox = bboxes[0].to_tuple();
-    let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox, 0);
+    // Use the first detected star
+    let star = &stars[0];
 
-    // Also calculate direct centroid for comparison
     // Calculate errors
-    let detected_x = star.x;
-    let detected_y = star.y;
+    let (detected_x, detected_y) = star.get_centroid();
 
     let error_detected =
         ((position_x - detected_x).powi(2) + (position_y - detected_y).powi(2)).sqrt();
 
     println!(
-        "Single Star Test (Image Size: {}, Sigma: {})",
-        image_size, sigma
+        "Single Star Test [{:?}] (Image Size: {}, Sigma: {})",
+        detector, image_size, sigma
     );
     println!("True Position: ({:.3}, {:.3})", position_x, position_y);
     println!(
         "Detected Position: ({:.3}, {:.3}), Error: {:.6} pixels",
         detected_x, detected_y, error_detected
     );
-    println!(
-        "Star Properties: flux={:.2}, aspect_ratio={:.2}, valid={}",
-        star.flux, star.aspect_ratio, star.is_valid
-    );
+    println!("Star Properties: flux={:.2}", star.flux());
 }
 
 /// Run a large number of sub-pixel positions to evaluate centroid accuracy
-fn run_subpixel_grid_test(image_size: usize, sigma: f64) {
+fn run_subpixel_grid_test(image_size: usize, sigma: f64, detector: &StarFinder) {
     // Use a large grid size for benchmarking (50x50 = 2500 positions)
     let grid_size = 50;
-    let threshold = 0.1;
 
     println!(
-        "=== Testing sub-pixel accuracy on a {}x{} grid within a single pixel ===",
-        grid_size, grid_size
+        "=== Testing sub-pixel accuracy [{:?}] on a {}x{} grid within a single pixel ===",
+        detector, grid_size, grid_size
     );
     println!("Running {} test cases...", grid_size * grid_size);
 
@@ -130,24 +165,61 @@ fn run_subpixel_grid_test(image_size: usize, sigma: f64) {
             // Generate a Gaussian star at this sub-pixel position
             create_gaussian(&mut image, position_x, position_y, 1.0, sigma);
 
-            // Process the image
-            let binary = apply_threshold(&image.view(), threshold);
-            let labeled = connected_components(&binary.view());
-            let bboxes = get_bounding_boxes(&labeled.view());
+            // Convert f64 image to u16 for detection
+            let max_val = image.iter().cloned().fold(0.0, f64::max);
+            let scale = if max_val > 0.0 {
+                65535.0 / max_val
+            } else {
+                1.0
+            };
+            let u16_image = image.mapv(|v| (v * scale) as u16);
 
-            // Skip if no detection (shouldn't happen with these parameters)
-            if bboxes.is_empty() {
+            // Process the image using appropriate detection method
+            let airy_disk_pixels = sigma * 2.0;
+            let background_rms = 0.1 * scale;
+            let detection_sigma = 3.0;
+
+            let stars = match detector {
+                StarFinder::Naive => {
+                    // Use the naive detector directly with f64 image
+                    use simulator::image_proc::detection::detect_stars as detect_stars_naive;
+                    detect_stars_naive(&image.view(), Some(0.1))
+                        .into_iter()
+                        .map(|s| Box::new(s) as Box<dyn StellarSource>)
+                        .collect::<Vec<_>>()
+                }
+                _ => {
+                    // Use the unified interface for DAO and IRAF
+                    use simulator::image_proc::detection::detect_stars_unified;
+                    match detect_stars_unified(
+                        u16_image.view(),
+                        *detector,
+                        airy_disk_pixels,
+                        background_rms,
+                        detection_sigma,
+                    ) {
+                        Ok(stars) => stars,
+                        Err(_) => {
+                            failed_detections += 1;
+                            continue;
+                        }
+                    }
+                }
+            };
+
+            // Skip if no detection
+            if stars.is_empty() {
                 failed_detections += 1;
                 continue;
             }
 
-            // Calculate centroid
-            let bbox = bboxes[0].to_tuple();
-            let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox, 0);
+            // Use the first detected star
+            let star = &stars[0];
 
             // Calculate errors
-            let error_x = position_x - star.x;
-            let error_y = position_y - star.y;
+            let (star_x, star_y) = star.get_centroid();
+            let error_x = position_x - star_x;
+            let error_y = position_y - star_y;
             let error_detected = (error_x.powi(2) + error_y.powi(2)).sqrt();
 
             // Store errors for histogram
@@ -179,18 +251,50 @@ fn run_subpixel_grid_test(image_size: usize, sigma: f64) {
             println!("Failed Detections: {}", failed_detections);
         }
 
-        // Print detailed histograms
+        // Show histogram range info
+        println!("\nHistogram Range: 0.0 to {:.6} pixels", max_error * 1.1);
+
+        // Print detailed histograms with adaptive ranges
+        // For magnitude, use max error + 10% padding
+        let mag_max = max_error * 1.1;
         print_histogram(
             "Error Magnitude Distribution (pixels)",
             &errors_magnitude,
             40,
             0.0,
-            0.5,
+            mag_max,
         );
-        print_histogram("Error X Distribution (pixels)", &errors_x, 100, -0.5, 0.5);
-        print_histogram("Error Y Distribution (pixels)", &errors_y, 100, -0.5, 0.5);
 
-        // Additional analysis
+        // For X/Y errors, find the actual range
+        let x_min = errors_x.iter().cloned().fold(f64::INFINITY, f64::min);
+        let x_max = errors_x.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let y_min = errors_y.iter().cloned().fold(f64::INFINITY, f64::min);
+        let y_max = errors_y.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+        // Use symmetric range based on largest absolute value
+        let xy_range = x_min
+            .abs()
+            .max(x_max.abs())
+            .max(y_min.abs())
+            .max(y_max.abs())
+            * 1.1;
+
+        print_histogram(
+            "Error X Distribution (pixels)",
+            &errors_x,
+            40,
+            -xy_range,
+            xy_range,
+        );
+        print_histogram(
+            "Error Y Distribution (pixels)",
+            &errors_y,
+            40,
+            -xy_range,
+            xy_range,
+        );
+
+        // Additional analysis with more precision levels
         println!("\nPrecision Analysis:");
         let errors_below_01 = errors_magnitude.iter().filter(|&&e| e < 0.1).count();
         let errors_below_05 = errors_magnitude.iter().filter(|&&e| e < 0.05).count();
@@ -211,6 +315,31 @@ fn run_subpixel_grid_test(image_size: usize, sigma: f64) {
             "Errors < 0.025 pixels: {} ({:.2}%)",
             errors_below_025, errors_below_025_pct
         );
+
+        // Add finer precision levels if average error is very small
+        if avg_error < 0.01 {
+            let errors_below_01_pix = errors_magnitude.iter().filter(|&&e| e < 0.01).count();
+            let errors_below_005_pix = errors_magnitude.iter().filter(|&&e| e < 0.005).count();
+            let errors_below_0025_pix = errors_magnitude.iter().filter(|&&e| e < 0.0025).count();
+            let errors_below_01_pix_pct = (errors_below_01_pix as f64 / total_tests as f64) * 100.0;
+            let errors_below_005_pix_pct =
+                (errors_below_005_pix as f64 / total_tests as f64) * 100.0;
+            let errors_below_0025_pix_pct =
+                (errors_below_0025_pix as f64 / total_tests as f64) * 100.0;
+
+            println!(
+                "Errors < 0.01 pixels: {} ({:.2}%)",
+                errors_below_01_pix, errors_below_01_pix_pct
+            );
+            println!(
+                "Errors < 0.005 pixels: {} ({:.2}%)",
+                errors_below_005_pix, errors_below_005_pix_pct
+            );
+            println!(
+                "Errors < 0.0025 pixels: {} ({:.2}%)",
+                errors_below_0025_pix, errors_below_0025_pix_pct
+            );
+        }
 
         // X bias analysis
         let mean_x_error = errors_x.iter().sum::<f64>() / errors_x.len() as f64;
@@ -318,21 +447,33 @@ fn print_histogram(title: &str, data: &[f64], bins: usize, min_val: f64, max_val
 
 /// Format a floating-point value with a consistent +/- sign
 fn format_with_sign(value: f64) -> String {
-    if value >= 0.0 {
-        format!("+{:.3}", value)
+    // Use more decimal places for very small values
+    if value.abs() < 0.01 {
+        if value >= 0.0 {
+            format!("+{:.6}", value)
+        } else {
+            format!("{:.6}", value)
+        }
     } else {
-        format!("{:.3}", value)
+        if value >= 0.0 {
+            format!("+{:.3}", value)
+        } else {
+            format!("{:.3}", value)
+        }
     }
 }
 
 /// Test with different sigma values to see effect on centroid accuracy
-fn test_sigma_effect(image_size: usize) {
+fn test_sigma_effect(image_size: usize, detector: &StarFinder) {
     let center_x = image_size as f64 / 2.0;
     let center_y = image_size as f64 / 2.0;
     let position_x = center_x + 0.3; // Test at a fixed 0.3 subpixel offset
     let position_y = center_y + 0.7; // Test at a fixed 0.7 subpixel offset
 
-    println!("=== Testing effect of PSF width (sigma) on centroid accuracy ===");
+    println!(
+        "=== Testing effect of PSF width (sigma) on centroid accuracy [{:?}] ===",
+        detector
+    );
     println!("Fixed position: ({:.3}, {:.3})", position_x, position_y);
     println!("Sigma\tDetected Position\t\tError\t\tAspect Ratio");
     println!("----------------------------------------------------------------------");
@@ -345,28 +486,64 @@ fn test_sigma_effect(image_size: usize) {
         // Generate a single star
         create_gaussian(&mut image, position_x, position_y, 1.0, *sigma);
 
-        // Run detection
-        let threshold = 0.1;
-        let binary = apply_threshold(&image.view(), threshold);
-        let labeled = connected_components(&binary.view());
-        let bboxes = get_bounding_boxes(&labeled.view());
+        // Convert f64 image to u16 for detection
+        let max_val = image.iter().cloned().fold(0.0, f64::max);
+        let scale = if max_val > 0.0 {
+            65535.0 / max_val
+        } else {
+            1.0
+        };
+        let u16_image = image.mapv(|v| (v * scale) as u16);
 
-        if bboxes.is_empty() {
+        // Run detection using appropriate method
+        let airy_disk_pixels = *sigma * 2.0;
+        let background_rms = 0.1 * scale;
+        let detection_sigma = 3.0;
+
+        let stars = match detector {
+            StarFinder::Naive => {
+                // Use the naive detector directly with f64 image
+                use simulator::image_proc::detection::detect_stars as detect_stars_naive;
+                detect_stars_naive(&image.view(), Some(0.1))
+                    .into_iter()
+                    .map(|s| Box::new(s) as Box<dyn StellarSource>)
+                    .collect::<Vec<_>>()
+            }
+            _ => {
+                // Use the unified interface for DAO and IRAF
+                use simulator::image_proc::detection::detect_stars_unified;
+                match detect_stars_unified(
+                    u16_image.view(),
+                    *detector,
+                    airy_disk_pixels,
+                    background_rms,
+                    detection_sigma,
+                ) {
+                    Ok(stars) => stars,
+                    Err(_) => {
+                        println!("{:.2}\tNo detection\t\t-\t\t-", sigma);
+                        continue;
+                    }
+                }
+            }
+        };
+
+        if stars.is_empty() {
             println!("{:.2}\tNo detection\t\t-\t\t-", sigma);
             continue;
         }
 
-        // Calculate centroid
-        let bbox = bboxes[0].to_tuple();
-        let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox, 0);
+        // Use the first detected star
+        let star = &stars[0];
 
         // Calculate errors
-        let error_detected = ((position_x - star.x).powi(2) + (position_y - star.y).powi(2)).sqrt();
+        let (star_x, star_y) = star.get_centroid();
+        let error_detected = ((position_x - star_x).powi(2) + (position_y - star_y).powi(2)).sqrt();
 
         // Print results
         println!(
-            "{:.2}\t({:.3}, {:.3})\t{:.6}\t{:.4}",
-            sigma, star.x, star.y, error_detected, star.aspect_ratio
+            "{:.2}\t({:.3}, {:.3})\t{:.6}\t-",
+            sigma, star_x, star_y, error_detected
         );
     }
 }
@@ -379,23 +556,32 @@ fn main() {
     let image_size = 256;
     let sigma = 1.0; // Standard deviation of the Gaussian PSF
 
-    // Run basic tests at specific positions
-    println!("=== Basic position tests ===\n");
+    // Test all three detectors
+    let detectors = vec![StarFinder::Naive, StarFinder::Dao, StarFinder::Iraf];
 
-    println!("Integer position:");
-    run_single_star_test(image_size, 128.0, 128.0, sigma);
+    for detector in &detectors {
+        println!("\n{}", "=".repeat(80));
+        println!("Testing with {:?} detector", detector);
+        println!("{}\n", "=".repeat(80));
 
-    println!("\nHalf-pixel position:");
-    run_single_star_test(image_size, 128.5, 128.5, sigma);
+        // Run basic tests at specific positions
+        println!("=== Basic position tests ===\n");
 
-    println!("\nQuarter-pixel position:");
-    run_single_star_test(image_size, 128.25, 128.75, sigma);
+        println!("Integer position:");
+        run_single_star_test(image_size, 128.0, 128.0, sigma, detector);
 
-    // Run comprehensive grid test within a single pixel
-    println!("\n\n");
-    run_subpixel_grid_test(image_size, sigma);
+        println!("\nHalf-pixel position:");
+        run_single_star_test(image_size, 128.5, 128.5, sigma, detector);
 
-    // Test effect of PSF width on centroid accuracy
-    println!("\n\n");
-    test_sigma_effect(image_size);
+        println!("\nQuarter-pixel position:");
+        run_single_star_test(image_size, 128.25, 128.75, sigma, detector);
+
+        // Run comprehensive grid test within a single pixel
+        println!("\n\n");
+        run_subpixel_grid_test(image_size, sigma, detector);
+
+        // Test effect of PSF width on centroid accuracy
+        println!("\n\n");
+        test_sigma_effect(image_size, detector);
+    }
 }

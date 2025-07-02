@@ -21,7 +21,7 @@ pub fn dao_autoconfig(
 ) -> DAOStarFinderConfig {
     DAOStarFinderConfig {
         threshold: detection_sigma * background_rms * 1.2,
-        fwhm: 0.5 * airy_disk_pixels, // Airy disk FWHM
+        fwhm: 2.0 * airy_disk_pixels, // Larger FWHM for better centroid accuracy
         ratio: 1.0,
         theta: 0.0,
         sigma_radius: 1.5,
@@ -50,11 +50,11 @@ pub fn iraf_autoconfig(
 ) -> IRAFStarFinderConfig {
     IRAFStarFinderConfig {
         threshold: detection_sigma * background_rms,
-        fwhm: 0.55 * airy_disk_pixels, // Slightly larger for IRAF
+        fwhm: 1.25 * airy_disk_pixels, // Larger FWHM improves centroid accuracy
         sigma_radius: 1.5,
-        minsep_fwhm: 1.5,     // 1.5 × FWHM separation
-        sharpness: 0.5..=5.0, // IRAF scale is different
-        roundness: 0.5..=0.5, // Tight for space telescope
+        minsep_fwhm: 1.5,      // 1.5 × FWHM separation
+        sharpness: 0.2..=5.0,  // Broader range for better detection
+        roundness: -0.3..=0.3, // Tight range for space telescope PSFs
         exclude_border: false,
         brightest: None,
         peakmax: None,
@@ -75,12 +75,12 @@ mod tests {
 
         let dao = dao_autoconfig(airy_disk, background_rms, detection_sigma);
         assert_relative_eq!(dao.threshold, 7.2, epsilon = 1e-10); // detection_sigma * background_rms * 1.2 = 5.0 * 1.2 * 1.2
-        assert_eq!(dao.fwhm, 1.25);
+        assert_eq!(dao.fwhm, 5.0); // 2.0 * airy_disk = 2.0 * 2.5
         assert_eq!(dao.min_separation, 2.0);
 
         let iraf = iraf_autoconfig(airy_disk, background_rms, detection_sigma);
         assert_eq!(iraf.threshold, 6.0); // detection_sigma * background_rms = 5.0 * 1.2
-        assert_eq!(iraf.fwhm, 1.375);
+        assert_eq!(iraf.fwhm, 3.125); // 1.25 * airy_disk = 1.25 * 2.5
         assert_eq!(iraf.minsep_fwhm, 1.5);
     }
 }
