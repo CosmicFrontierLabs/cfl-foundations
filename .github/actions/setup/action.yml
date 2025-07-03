@@ -1,0 +1,47 @@
+name: 'Rust Setup'
+description: 'Setup Rust environment with dependencies and caching'
+inputs:
+  install-deps:
+    description: 'Install system dependencies'
+    required: false
+    default: 'true'
+  setup-cache:
+    description: 'Setup cargo cache'
+    required: false
+    default: 'true'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install system dependencies
+      if: inputs.install-deps == 'true'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libfontconfig1-dev libcfitsio-dev
+    
+    - name: Setup Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        components: rustfmt, clippy
+        override: true
+    
+    - name: Generate cache key
+      if: inputs.setup-cache == 'true'
+      id: cache-key
+      shell: bash
+      run: |
+        echo "key=$(find . -name "Cargo.toml" -type f -o -name "CACHE_VERSION" | sort | xargs sha256sum | sha256sum | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
+    
+    - name: Cache cargo registry
+      if: inputs.setup-cache == 'true'
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ steps.cache-key.outputs.key }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
