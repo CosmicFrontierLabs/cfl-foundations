@@ -1,4 +1,4 @@
-//! Example of star detection using image segmentation and centroid calculation
+//! Simple star detection example demonstrating centroid-based analysis.
 
 use ndarray::Array2;
 use simulator::image_proc::detection::detect_stars;

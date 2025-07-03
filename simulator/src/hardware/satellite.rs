@@ -1,20 +1,89 @@
 use super::{sensor::SensorConfig, telescope::TelescopeConfig};
 use crate::image_proc::airy::ScaledAiryDisk;
 
+/// Complete satellite configuration combining telescope optics and sensor.
+///
+/// Represents an integrated space telescope system with all parameters needed
+/// for realistic astronomical observation simulations. Combines optical and
+/// detector characteristics with environmental conditions.
+///
+/// # Key Capabilities
+///
+/// - **Optical calculations**: Field of view, plate scale, Airy disk sizing
+/// - **PSF modeling**: Diffraction-limited point spread functions
+/// - **Sampling optimization**: Adjustable focal length for optimal pixel sampling
+/// - **System integration**: Unified telescope-sensor parameter access
+///
+/// # Physics Models
+///
+/// The configuration enables realistic modeling of:
+/// - Diffraction-limited optics with wavelength-dependent PSF
+/// - Detector quantum efficiency and noise characteristics
+/// - Temperature-dependent dark current
+/// - Geometric field-of-view calculations
+///
+/// # Examples
+///
+/// ```rust
+/// use simulator::hardware::{SatelliteConfig, telescope::models::DEMO_50CM};
+/// use simulator::hardware::sensor::models::GSENSE6510BSI;
+///
+/// // Create space telescope configuration
+/// let satellite = SatelliteConfig::new(
+///     DEMO_50CM.clone(),
+///     GSENSE6510BSI.clone(),
+///     -15.0,  // Operating temperature (°C)
+///     650.0,  // Red observation wavelength (nm)
+/// );
+///
+/// // Get optical properties
+/// let (fov_x, fov_y) = satellite.field_of_view_arcmin();
+/// let plate_scale = satellite.plate_scale_arcsec_per_pixel();
+/// let airy_disk = satellite.airy_disk_fwhm_sampled();
+///
+/// println!("FOV: {:.1}' × {:.1}'", fov_x, fov_y);
+/// println!("Plate scale: {:.2} arcsec/pixel", plate_scale);
+/// println!("PSF FWHM: {:.2} pixels", airy_disk.fwhm());
+/// ```
 #[derive(Debug, Clone)]
 pub struct SatelliteConfig {
-    /// Telescope configuration for optical system
+    /// Telescope optical configuration (aperture, focal length, efficiency)
     pub telescope: TelescopeConfig,
-    /// Sensor configuration for image capture
+    /// Sensor detector configuration (QE, noise, geometry)
     pub sensor: SensorConfig,
-    /// Operating temperature in degrees Celsius
+    /// Operating temperature in degrees Celsius (affects dark current)
     pub temperature_c: f64,
-    /// Observing wavelength in nanometers
+    /// Primary observing wavelength in nanometers (affects PSF size)
     pub wavelength_nm: f64,
 }
 
 impl SatelliteConfig {
-    /// Create a new satellite configuration
+    /// Create a new satellite configuration.
+    ///
+    /// Combines telescope optics, sensor characteristics, and operating
+    /// conditions into a unified configuration for space telescope simulation.
+    ///
+    /// # Arguments
+    /// * `telescope` - Optical system configuration (aperture, focal length, etc.)
+    /// * `sensor` - Detector configuration (QE, noise, pixel size, etc.)  
+    /// * `temperature_c` - Operating temperature in °C (affects thermal noise)
+    /// * `wavelength_nm` - Primary observing wavelength in nm (affects PSF)
+    ///
+    /// # Returns
+    /// New SatelliteConfig ready for astronomical simulations
+    ///
+    /// # Examples
+    /// ```rust
+    /// use simulator::hardware::{SatelliteConfig, telescope::models::DEMO_50CM};
+    /// use simulator::hardware::sensor::models::GSENSE6510BSI;
+    ///
+    /// let satellite = SatelliteConfig::new(
+    ///     DEMO_50CM.clone(),
+    ///     GSENSE6510BSI.clone(),
+    ///     -20.0,  // Space-like operating temperature
+    ///     550.0,  // Green wavelength for optimal QE
+    /// );
+    /// ```
     pub fn new(
         telescope: TelescopeConfig,
         sensor: SensorConfig,
@@ -29,23 +98,71 @@ impl SatelliteConfig {
         }
     }
 
-    /// Get the effective collecting area accounting for telescope efficiency
+    /// Get the effective collecting area accounting for telescope efficiency.
+    ///
+    /// Returns the light-gathering power including optical losses from
+    /// obscuration, mirror reflectivity, and other efficiency factors.
+    ///
+    /// # Returns
+    /// Effective collecting area in square meters
     pub fn effective_collecting_area_m2(&self) -> f64 {
         self.telescope.effective_collecting_area_m2()
     }
 
-    /// Get the plate scale in arcseconds per millimeter
+    /// Get the plate scale in arcseconds per millimeter at the focal plane.
+    ///
+    /// Fundamental optical property relating angular sky coordinates
+    /// to linear focal plane dimensions.
+    ///
+    /// # Returns
+    /// Plate scale in arcseconds per millimeter
     pub fn plate_scale_arcsec_per_mm(&self) -> f64 {
         self.telescope.plate_scale_arcsec_per_mm()
     }
 
-    /// Get the plate scale in arcseconds per pixel
+    /// Get the plate scale in arcseconds per pixel.
+    ///
+    /// Critical parameter for astrometric accuracy and detection algorithms.
+    /// Determines the angular resolution of the imaging system.
+    ///
+    /// # Returns
+    /// Plate scale in arcseconds per pixel
+    ///
+    /// # Examples
+    /// ```rust
+    /// use simulator::hardware::{SatelliteConfig, telescope::models::DEMO_50CM};
+    /// use simulator::hardware::sensor::models::GSENSE6510BSI;
+    ///
+    /// let satellite = SatelliteConfig::new(
+    ///     DEMO_50CM.clone(), GSENSE6510BSI.clone(), -10.0, 550.0
+    /// );
+    /// let scale = satellite.plate_scale_arcsec_per_pixel();
+    /// println!("Angular resolution: {:.2} arcsec/pixel", scale);
+    /// ```
     pub fn plate_scale_arcsec_per_pixel(&self) -> f64 {
         let pixel_size_mm = self.sensor.pixel_size_um / 1000.0;
         self.plate_scale_arcsec_per_mm() * pixel_size_mm
     }
 
-    /// Get the field of view in arcminutes for the sensor
+    /// Get the field of view in arcminutes for the sensor.
+    ///
+    /// Calculates the total sky coverage of the detector array,
+    /// useful for survey planning and catalog queries.
+    ///
+    /// # Returns
+    /// Tuple of (width, height) field of view in arcminutes
+    ///
+    /// # Examples
+    /// ```rust
+    /// use simulator::hardware::{SatelliteConfig, telescope::models::DEMO_50CM};
+    /// use simulator::hardware::sensor::models::GSENSE6510BSI;
+    ///
+    /// let satellite = SatelliteConfig::new(
+    ///     DEMO_50CM.clone(), GSENSE6510BSI.clone(), -10.0, 550.0
+    /// );
+    /// let (fov_x, fov_y) = satellite.field_of_view_arcmin();
+    /// println!("Survey area: {:.1}' × {:.1}'", fov_x, fov_y);
+    /// ```
     pub fn field_of_view_arcmin(&self) -> (f64, f64) {
         let arcsec_per_pixel = self.plate_scale_arcsec_per_pixel();
         let width_arcmin = (self.sensor.width_px as f64 * arcsec_per_pixel) / 60.0;

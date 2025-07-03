@@ -1,23 +1,84 @@
-//! 2D convolution implementation for image processing
+//! 2D convolution implementation for astronomical image processing.
 //!
-//! This module provides functions for performing 2D convolution operations,
-//! which are essential for image filtering, blurring, and feature detection.
+//! This module provides efficient 2D convolution operations essential for
+//! astronomical image analysis, including point spread function (PSF) modeling,
+//! noise filtering, and feature detection. Supports both valid and same-size
+//! convolution modes with optimized Gaussian kernel generation.
+//!
+//! # Key Features
+//!
+//! - **Convolution modes**: Valid (no padding) and Same (zero-padded) modes
+//! - **Gaussian kernels**: Normalized Gaussian PSF generation for any size/sigma
+//! - **Performance**: Optimized inner loops for astronomical image sizes
+//! - **Flexibility**: Generic kernel support for custom filter operations
+//!
+//! # Common Applications
+//!
+//! - **PSF convolution**: Apply telescope point spread functions to star fields
+//! - **Image smoothing**: Reduce noise while preserving astronomical features
+//! - **Feature detection**: Edge detection and structure analysis filters
+//! - **Template matching**: Cross-correlation for object identification
+//!
+//! # Examples
+//!
+//! ```rust
+//! use simulator::image_proc::convolve2d::{convolve2d, gaussian_kernel, ConvolveOptions, ConvolveMode};
+//! use ndarray::Array2;
+//!
+//! // Create test image (100x100 pixels)
+//! let mut image = Array2::zeros((32, 32));
+//! image[[16, 16]] = 1000.0;  // Point source at center
+//!
+//! // Generate 2.5-pixel FWHM Gaussian PSF
+//! let sigma = 2.5 / 2.355;  // Convert FWHM to sigma
+//! let kernel = gaussian_kernel(15, sigma);
+//!
+//! // Apply PSF convolution
+//! let options = ConvolveOptions { mode: ConvolveMode::Same };
+//! let convolved = convolve2d(&image.view(), &kernel.view(), Some(options));
+//!
+//! println!("Peak after convolution: {:.2}", convolved[[16, 16]]);
+//! ```
 
 use ndarray::{Array2, ArrayView2};
 
-/// Options for controlling the convolution operation
+/// Configuration options for 2D convolution operations.
+///
+/// Controls how convolution handles image boundaries and edge effects.
+/// Different modes are optimized for different astronomical applications.
+///
+/// # Examples
+///
+/// ```rust
+/// use simulator::image_proc::convolve2d::{ConvolveOptions, ConvolveMode};
+///
+/// // For PSF modeling - preserve image size with zero padding
+/// let psf_options = ConvolveOptions { mode: ConvolveMode::Same };
+///
+/// // For feature detection - only valid overlapping regions
+/// let detect_options = ConvolveOptions { mode: ConvolveMode::Valid };
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct ConvolveOptions {
-    /// How to handle edges (currently only 'valid' is supported)
+    /// Boundary handling mode for convolution operation
     pub mode: ConvolveMode,
 }
 
-/// Mode for handling edges in convolution
+/// Boundary handling modes for convolution operations.
+///
+/// Defines how the convolution handles pixels near image edges where the
+/// kernel extends beyond the image boundary.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConvolveMode {
-    /// Only compute output where input and kernel fully overlap
+    /// Only compute output where input and kernel fully overlap.
+    ///
+    /// Output size: (input_rows - kernel_rows + 1, input_cols - kernel_cols + 1)
+    /// Use for: Feature detection, template matching where edge artifacts are unwanted
     Valid,
-    /// Use zero-padding to maintain input size
+    /// Use zero-padding to maintain input image size.
+    ///
+    /// Output size: same as input image
+    /// Use for: PSF convolution, image filtering where size preservation is needed
     Same,
 }
 
@@ -29,15 +90,53 @@ impl Default for ConvolveOptions {
     }
 }
 
-/// Perform 2D convolution of an image with a kernel
+/// Perform 2D convolution of an image with a kernel.
+///
+/// Implements standard 2D discrete convolution optimized for astronomical
+/// image processing. Supports both valid and same-size output modes with
+/// appropriate boundary handling.
+///
+/// # Mathematical Definition
+/// For each output pixel (i,j):
+/// ```text
+/// output[i,j] = Σ(m,n) image[i+m, j+n] * kernel[m, n]
+/// ```
+/// where the sum is over the valid kernel indices.
 ///
 /// # Arguments
-/// * `image` - Input image as a 2D array
-/// * `kernel` - Convolution kernel
-/// * `options` - Optional configuration for the convolution
+/// * `image` - Input image as a 2D array view (typically f64 for astronomical data)
+/// * `kernel` - Convolution kernel/filter as a 2D array view
+/// * `options` - Convolution configuration (None uses Valid mode)
 ///
 /// # Returns
-/// * Result of the convolution as a 2D array
+/// Convolved image as a new 2D Array. Size depends on the specified mode:
+/// - Valid: (img_rows - ker_rows + 1, img_cols - ker_cols + 1)
+/// - Same: (img_rows, img_cols)
+///
+/// # Performance Notes
+/// - Time complexity: O(img_rows × img_cols × ker_rows × ker_cols)
+/// - Memory: Allocates new array for output
+/// - For large kernels, consider separable filters when possible
+///
+/// # Examples
+///
+/// ```rust
+/// use simulator::image_proc::convolve2d::{convolve2d, gaussian_kernel, ConvolveOptions, ConvolveMode};
+/// use ndarray::array;
+///
+/// let image = array![[1.0, 2.0, 3.0],
+///                   [4.0, 5.0, 6.0],
+///                   [7.0, 8.0, 9.0]];
+///
+/// // 3x3 Gaussian blur kernel
+/// let kernel = gaussian_kernel(3, 1.0);
+///
+/// // Apply smoothing with same-size output
+/// let options = ConvolveOptions { mode: ConvolveMode::Same };
+/// let smoothed = convolve2d(&image.view(), &kernel.view(), Some(options));
+///
+/// assert_eq!(smoothed.dim(), image.dim());
+/// ```
 pub fn convolve2d(
     image: &ArrayView2<f64>,
     kernel: &ArrayView2<f64>,
@@ -119,14 +218,60 @@ pub fn convolve2d(
     output
 }
 
-/// Create a Gaussian kernel with specified size and sigma
+/// Create a normalized 2D Gaussian kernel for convolution.
+///
+/// Generates a discrete approximation to a 2D Gaussian function, commonly
+/// used for image smoothing and PSF modeling in astronomical applications.
+/// The kernel is automatically normalized so that all elements sum to 1.0.
+///
+/// # Mathematical Definition
+/// Each kernel element follows:
+/// ```text
+/// G(x,y) = exp(-(x² + y²) / (2σ²))
+/// ```
+/// where (x,y) are distances from the kernel center.
 ///
 /// # Arguments
-/// * `size` - Size of the kernel (must be odd)
-/// * `sigma` - Standard deviation of the Gaussian
+/// * `size` - Kernel dimensions (size × size). Must be odd for proper centering.
+/// * `sigma` - Standard deviation of the Gaussian distribution in pixels
 ///
 /// # Returns
-/// * Gaussian kernel as a 2D array
+/// Normalized 2D Gaussian kernel where all elements sum to 1.0
+///
+/// # Panics
+/// Panics if `size` is even (kernel must have a well-defined center)
+///
+/// # Relationship to FWHM
+/// For astronomical PSF modeling:
+/// ```text
+/// FWHM = 2.355 × σ
+/// σ = FWHM / 2.355
+/// ```
+///
+/// # Kernel Size Guidelines
+/// - Use size ≥ 6σ to capture 99.7% of the Gaussian
+/// - Minimum recommended size: 2×ceil(3σ) + 1
+/// - For computational efficiency, don't make size unnecessarily large
+///
+/// # Examples
+///
+/// ```rust
+/// use simulator::image_proc::convolve2d::gaussian_kernel;
+///
+/// // Create 2.5 pixel FWHM PSF (typical for good seeing)
+/// let fwhm = 2.5_f64;
+/// let sigma = fwhm / 2.355;
+/// let kernel_size = (6.0 * sigma).ceil() as usize | 1;  // Force odd
+/// let psf = gaussian_kernel(kernel_size, sigma);
+///
+/// // Verify normalization
+/// let sum: f64 = psf.iter().sum();
+/// assert!((sum - 1.0).abs() < 1e-10);
+///
+/// // Check center is maximum
+/// let center = kernel_size / 2;
+/// assert!(psf[[center, center]] > psf[[0, 0]]);
+/// ```
 pub fn gaussian_kernel(size: usize, sigma: f64) -> Array2<f64> {
     assert!(size % 2 == 1, "Kernel size must be odd");
 

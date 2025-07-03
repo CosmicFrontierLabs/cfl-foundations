@@ -1,5 +1,20 @@
+//! Miscellaneous mathematical and utility algorithms.
+//!
+//! This module provides general-purpose mathematical functions and utilities
+//! that don't fit into more specific algorithm categories. Currently includes:
+//!
+//! - **Linear interpolation**: Fast 1D interpolation with error handling
+//! - **Numerical utilities**: Common mathematical operations for scientific computing
+//!
+//! These functions are designed for performance and robustness in scientific
+//! applications, with comprehensive error handling and input validation.
+
 use thiserror::Error;
 
+/// Errors that can occur during interpolation operations.
+///
+/// This enum provides detailed error information for interpolation failures,
+/// allowing callers to handle different error conditions appropriately.
 #[derive(Error, Debug)]
 pub enum InterpError {
     #[error("Value {0} is out of bounds for interpolation range [{1}, {2}]")]
@@ -12,6 +27,58 @@ pub enum InterpError {
     UnsortedData,
 }
 
+/// Performs linear interpolation on 1D data using binary search for efficiency.
+///
+/// This function implements fast linear interpolation by:
+/// 1. Validating input data (lengths, sorting, sufficient points)
+/// 2. Using binary search to find the correct interval (O(log n))
+/// 3. Applying linear interpolation formula: y = y₁ + t(y₂ - y₁)
+///
+/// where t = (x - x₁)/(x₂ - x₁) is the interpolation parameter.
+///
+/// # Arguments
+///
+/// * `x` - The x-coordinate at which to interpolate
+/// * `xs` - Array of x-coordinates (must be sorted in ascending order)
+/// * `ys` - Array of corresponding y-values (must match length of xs)
+///
+/// # Returns
+///
+/// * `Ok(f64)` - The interpolated y-value at position x
+/// * `Err(InterpError)` - Detailed error if interpolation fails
+///
+/// # Performance
+///
+/// - Time complexity: O(log n) due to binary search
+/// - Space complexity: O(1)
+/// - Suitable for repeated queries on the same dataset
+///
+/// # Examples
+///
+/// ```rust
+/// use simulator::algo::misc::interp;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let x_coords = vec![0.0, 1.0, 2.0, 3.0];
+/// let y_values = vec![0.0, 1.0, 4.0, 9.0];
+///
+/// // Interpolate at x = 1.5
+/// let result = interp(1.5, &x_coords, &y_values)?;
+/// assert_eq!(result, 2.5);  // Linear interpolation between (1,1) and (2,4)
+///
+/// // Exact match
+/// let exact = interp(2.0, &x_coords, &y_values)?;
+/// assert_eq!(exact, 4.0);   // Exact value at x = 2
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Errors
+///
+/// * `InterpError::OutOfBounds` - x is outside the range \\[xs\\[0\\], xs\\[n-1\\]\\]
+/// * `InterpError::InsufficientData` - Less than 2 data points provided
+/// * `InterpError::MismatchedLengths` - xs and ys have different lengths
+/// * `InterpError::UnsortedData` - xs array is not sorted in ascending order
 pub fn interp(x: f64, xs: &[f64], ys: &[f64]) -> Result<f64, InterpError> {
     if xs.len() != ys.len() {
         return Err(InterpError::MismatchedLengths);

@@ -21,12 +21,41 @@ pub struct Quaternion {
 }
 
 impl Quaternion {
-    /// Create a new quaternion
+    /// Creates a new quaternion with the specified components.
+    ///
+    /// # Arguments
+    ///
+    /// * `w` - Real (scalar) component
+    /// * `x` - First complex component (i)
+    /// * `y` - Second complex component (j)
+    /// * `z` - Third complex component (k)
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use simulator::algo::quaternion::Quaternion;
+    /// let q = Quaternion::new(1.0, 0.0, 0.0, 0.0); // Identity quaternion
+    /// ```
     pub fn new(w: f64, x: f64, y: f64, z: f64) -> Self {
         Self { w, x, y, z }
     }
 
-    /// Create an identity quaternion (no rotation)
+    /// Creates an identity quaternion representing no rotation.
+    ///
+    /// The identity quaternion has w=1 and x=y=z=0, representing zero rotation.
+    /// When applied to any vector, it returns the vector unchanged.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use simulator::algo::quaternion::Quaternion;
+    /// use nalgebra::Vector3;
+    ///
+    /// let q = Quaternion::identity();
+    /// let v = Vector3::new(1.0, 2.0, 3.0);
+    /// let rotated = q.rotate_vector(&v);
+    /// assert_eq!(rotated, v); // No rotation applied
+    /// ```
     pub fn identity() -> Self {
         Self {
             w: 1.0,
@@ -36,7 +65,26 @@ impl Quaternion {
         }
     }
 
-    /// Create a quaternion from axis-angle representation
+    /// Creates a quaternion from axis-angle representation.
+    ///
+    /// This is often the most intuitive way to create rotations, specifying
+    /// a rotation axis and the angle to rotate around that axis.
+    ///
+    /// # Arguments
+    ///
+    /// * `axis` - The rotation axis (does not need to be unit length)
+    /// * `angle` - Rotation angle in radians (positive = right-hand rule)
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use simulator::algo::quaternion::Quaternion;
+    /// use nalgebra::Vector3;
+    /// use std::f64::consts::PI;
+    ///
+    /// // 90-degree rotation around Z-axis
+    /// let q = Quaternion::from_axis_angle(&Vector3::z(), PI / 2.0);
+    /// ```
     pub fn from_axis_angle(axis: &Vector3<f64>, angle: f64) -> Self {
         let half_angle = angle / 2.0;
         let sin_half_angle = half_angle.sin();
@@ -49,7 +97,25 @@ impl Quaternion {
         }
     }
 
-    /// Create a quaternion from Euler angles (ZYX convention)
+    /// Creates a quaternion from Euler angles using ZYX rotation order.
+    ///
+    /// Applies rotations in the order: Yaw (Z) → Pitch (Y) → Roll (X).
+    /// This is a common convention in aerospace applications.
+    ///
+    /// # Arguments
+    ///
+    /// * `roll` - Rotation around X-axis in degrees
+    /// * `pitch` - Rotation around Y-axis in degrees  
+    /// * `yaw` - Rotation around Z-axis in degrees
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use simulator::algo::quaternion::Quaternion;
+    ///
+    /// // 45-degree rotations around each axis
+    /// let q = Quaternion::from_euler_angles(45.0, 30.0, 60.0);
+    /// ```
     pub fn from_euler_angles(roll: f64, pitch: f64, yaw: f64) -> Self {
         // Convert to radians
         let roll_rad = roll.to_radians();
@@ -72,12 +138,36 @@ impl Quaternion {
         }
     }
 
-    /// Calculate the norm (magnitude) of the quaternion
+    /// Calculates the Euclidean norm (magnitude) of the quaternion.
+    ///
+    /// For unit quaternions representing rotations, this should be 1.0.
+    /// Non-unit quaternions may result from arithmetic operations.
+    ///
+    /// # Returns
+    ///
+    /// The norm: √(w² + x² + y² + z²)
     pub fn norm(&self) -> f64 {
         (self.w * self.w + self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
     }
 
-    /// Normalize the quaternion to unit length
+    /// Normalizes the quaternion to unit length.
+    ///
+    /// Unit quaternions are required for representing rotations.
+    /// If the quaternion has near-zero norm, returns the identity quaternion.
+    ///
+    /// # Returns
+    ///
+    /// A new quaternion with norm = 1.0
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use simulator::algo::quaternion::Quaternion;
+    ///
+    /// let q = Quaternion::new(2.0, 0.0, 0.0, 0.0);
+    /// let unit_q = q.normalize();
+    /// assert!((unit_q.norm() - 1.0).abs() < 1e-10);
+    /// ```
     pub fn normalize(&self) -> Self {
         let norm = self.norm();
         if norm.abs() < 1e-10 {
@@ -92,7 +182,15 @@ impl Quaternion {
         }
     }
 
-    /// Calculate the conjugate of the quaternion
+    /// Calculates the conjugate of the quaternion.
+    ///
+    /// The conjugate negates the vector part (x, y, z) while keeping
+    /// the scalar part (w) unchanged. For unit quaternions, the conjugate
+    /// represents the inverse rotation.
+    ///
+    /// # Returns
+    ///
+    /// Quaternion with components (w, -x, -y, -z)
     pub fn conjugate(&self) -> Self {
         Self {
             w: self.w,
@@ -102,7 +200,25 @@ impl Quaternion {
         }
     }
 
-    /// Calculate the inverse of the quaternion
+    /// Calculates the multiplicative inverse of the quaternion.
+    ///
+    /// For unit quaternions, the inverse equals the conjugate.
+    /// For non-unit quaternions, uses the formula: q⁻¹ = q* / |q|²
+    ///
+    /// # Returns
+    ///
+    /// The inverse quaternion such that q × q⁻¹ = identity
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use simulator::algo::quaternion::Quaternion;
+    ///
+    /// let q = Quaternion::new(1.0, 2.0, 3.0, 4.0).normalize();
+    /// let q_inv = q.inverse();
+    /// let identity = q * q_inv;
+    /// // identity should be approximately (1, 0, 0, 0)
+    /// ```
     pub fn inverse(&self) -> Self {
         let norm_squared = self.w * self.w + self.x * self.x + self.y * self.y + self.z * self.z;
         if norm_squared < 1e-10 {

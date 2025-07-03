@@ -1,25 +1,114 @@
-//! Overlay drawing utilities for visualizing image processing results
+//! Visualization overlay utilities for astronomical image analysis results.
 //!
-//! This module provides functions for drawing overlays on images,
-//! such as bounding boxes for star detection visualization.
+//! This module provides comprehensive overlay drawing capabilities for visualizing
+//! detection results, measurements, and analysis outputs on astronomical images.
+//! Supports bounding boxes, circles, labels, and custom markers with professional
+//! rendering quality using SVG-based graphics.
+//!
+//! # Key Features
+//!
+//! - **Bounding boxes**: Rectangle overlays for object detection results
+//! - **Circular markers**: Precise circular overlays for stellar sources
+//! - **Text labels**: Informative labels with automatic positioning
+//! - **Custom markers**: X-marks and cross-hairs for centroid visualization
+//! - **Color customization**: Full RGB color control for different object types
+//! - **High quality**: SVG-based rendering for publication-quality outputs
+//!
+//! # Common Applications
+//!
+//! - Star detection result visualization
+//! - Object classification and labeling
+//! - Measurement annotation and documentation
+//! - Quality assurance for detection algorithms
+//! - Publication figures and presentations
+//!
+//! # Examples
+//!
+//! ```rust
+//! use simulator::image_proc::overlay::{draw_bounding_boxes, draw_stars_with_x_markers};
+//! use image::DynamicImage;
+//!
+//! # fn get_sample_image() -> DynamicImage {
+//! #     DynamicImage::new_rgb8(100, 100)
+//! # }
+//! let image = get_sample_image();
+//!
+//! // Draw detection bounding boxes
+//! let bboxes = vec![(20, 30, 25, 35), (60, 70, 65, 75)];
+//! let labels = vec!["Star 1".to_string(), "Star 2".to_string()];
+//! let with_boxes = draw_bounding_boxes(
+//!     &image,
+//!     &bboxes,
+//!     (255, 0, 0),  // Red boxes
+//!     Some(&labels),
+//!     None,
+//!     None
+//! );
+//!
+//! // Draw star positions with X markers
+//! let mut star_positions = std::collections::HashMap::new();
+//! star_positions.insert("Star 1".to_string(), (32.5, 22.5, 10.0));  // (y, x, diameter)
+//! star_positions.insert("Star 2".to_string(), (72.5, 62.5, 10.0));
+//! let with_markers = draw_stars_with_x_markers(&image, &star_positions, (0, 255, 0), 5.0);
+//! ```
 
 use image::{DynamicImage, Rgb, RgbImage};
 use std::collections::HashMap;
 use tiny_skia::{Pixmap, Transform};
 use usvg::{self, fontdb, Options, Tree};
 
-/// Draw bounding boxes on an image
+/// Draw bounding boxes and optional circles on astronomical images.
+///
+/// Renders professional-quality rectangular bounding boxes and circular markers
+/// with optional text labels. Uses SVG-based rendering for crisp, scalable
+/// graphics suitable for scientific publications and analysis documentation.
+///
+/// # Coordinate System
+/// Input coordinates use image array indexing (row, col) and are automatically
+/// converted to image graphics coordinates (x, y) for proper rendering.
 ///
 /// # Arguments
-/// * `image` - Original image to draw on
-/// * `bboxes` - Vector of bounding boxes as (min_row, min_col, max_row, max_col)
-/// * `color` - RGB color tuple for the bounding boxes
-/// * `labels` - Optional vector of labels to draw next to each box
-/// * `circles` - Optional vector of (center_row, center_col, diameter) to draw circles
-/// * `circle_color` - Optional color for the circles (uses color if None)
+/// * `image` - Base image to overlay graphics onto
+/// * `bboxes` - Bounding boxes as (min_row, min_col, max_row, max_col) tuples
+/// * `color` - RGB color for bounding box outlines (0-255 each channel)
+/// * `labels` - Optional text labels for each bounding box
+/// * `circles` - Optional circles as (center_row, center_col, diameter) tuples
+/// * `circle_color` - Optional RGB color for circles (uses box color if None)
 ///
 /// # Returns
-/// * Image with bounding boxes drawn
+/// New image with rendered overlays preserving original image quality
+///
+/// # Examples
+/// ```rust
+/// use simulator::image_proc::overlay::draw_bounding_boxes;
+/// use image::DynamicImage;
+///
+/// # fn get_image() -> DynamicImage { DynamicImage::new_rgb8(200, 200) }
+/// let image = get_image();
+///
+/// // Detection results: bounding boxes around stars
+/// let detections = vec![
+///     (45, 67, 55, 77),   // 10x10 pixel region
+///     (120, 89, 125, 94), // 5x5 pixel region
+/// ];
+///
+/// let labels = vec!["Bright Star".to_string(), "Faint Star".to_string()];
+///
+/// // Add circular markers at star centers  
+/// let circles = vec![
+///     (50.0, 72.0, 8.0),   // Center of first detection, 8px diameter
+///     (122.5, 91.5, 4.0), // Center of second detection, 4px diameter
+/// ];
+///
+/// let annotated = draw_bounding_boxes(
+///     &image,
+///     &detections,
+///     (255, 0, 0),      // Red boxes
+///     Some(&labels),
+///     Some(&circles),
+///     Some((0, 255, 0)) // Green circles
+/// );
+/// ```
 pub fn draw_bounding_boxes(
     image: &DynamicImage,
     bboxes: &[(usize, usize, usize, usize)],
@@ -342,45 +431,19 @@ mod tests {
     use super::*;
     use image::{ImageBuffer, Luma};
 
-    use crate::image_proc::detection::{
-        apply_threshold, connected_components, get_bounding_boxes, otsu_threshold,
-    };
-
     #[test]
     fn test_draw_bounding_boxes() {
-        // Create a test image with some bright spots
+        // Create a simple test image
         let width = 100;
         let height = 100;
-        let mut test_image = ImageBuffer::new(width, height);
-
-        // Create a few bright spots to simulate stars
-        for x in 20..30 {
-            for y in 20..25 {
-                test_image.put_pixel(x, y, Luma([200]));
-            }
-        }
-
-        for x in 60..65 {
-            for y in 60..70 {
-                test_image.put_pixel(x, y, Luma([200]));
-            }
-        }
-
-        // Convert to dynamic image
+        let test_image = ImageBuffer::from_pixel(width, height, Luma([50]));
         let dynamic_image = DynamicImage::ImageLuma8(test_image);
 
-        // Run image processing pipeline
-        use image::GenericImageView; // Import trait for test
-
-        let view = ndarray::Array2::from_shape_fn((height as usize, width as usize), |(y, x)| {
-            dynamic_image.get_pixel(x as u32, y as u32).0[0] as f64 / 255.0
-        });
-
-        let threshold = otsu_threshold(&view.view());
-        let binary = apply_threshold(&view.view(), threshold);
-        let labels = connected_components(&binary.view());
-        let aabbs = get_bounding_boxes(&labels.view());
-        let bboxes = crate::image_proc::aabbs_to_tuples(&aabbs);
+        // Define some test bounding boxes manually
+        let bboxes = vec![
+            (20, 20, 30, 30), // 10x10 box
+            (60, 60, 70, 75), // 10x15 box
+        ];
 
         // Draw bounding boxes with simple interface
         let result = draw_simple_boxes(&dynamic_image, &bboxes, (255, 0, 0));
@@ -390,7 +453,7 @@ mod tests {
         assert_eq!(result.height(), height);
 
         // Test with labels
-        let labels = vec!["Star 1".to_string(), "Star 2".to_string()];
+        let labels = vec!["Box 1".to_string(), "Box 2".to_string()];
         let result_with_labels = draw_bounding_boxes(
             &dynamic_image,
             &bboxes,
@@ -402,5 +465,22 @@ mod tests {
 
         assert_eq!(result_with_labels.width(), width);
         assert_eq!(result_with_labels.height(), height);
+
+        // Test with circles
+        let circles = vec![
+            (25.0, 25.0, 8.0),  // Center of first box
+            (65.0, 67.5, 10.0), // Center of second box
+        ];
+        let result_with_circles = draw_bounding_boxes(
+            &dynamic_image,
+            &bboxes,
+            (255, 0, 0),
+            None,
+            Some(&circles),
+            Some((0, 0, 255)),
+        );
+
+        assert_eq!(result_with_circles.width(), width);
+        assert_eq!(result_with_circles.height(), height);
     }
 }

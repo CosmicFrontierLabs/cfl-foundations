@@ -45,7 +45,41 @@ struct Args {
     exposure: DurationArg,
 }
 
-/// Parse range string in format "start,end,step"
+/// Parses a range specification string into an array of evenly spaced values.
+///
+/// This function takes a comma-separated string specification and generates
+/// a 1D array of floating-point values with the specified start, end, and step.
+///
+/// # Format
+///
+/// The input string must follow the exact format: `"start,end,step"`
+/// where all three components are valid floating-point numbers.
+///
+/// # Arguments
+///
+/// * `range_str` - Range specification in format "start,end,step" (e.g., "0.0,10.0,0.5")
+///
+/// # Returns
+///
+/// Returns `Ok(Array1<f64>)` containing the generated range values, or an error if:
+/// - The format is invalid (not exactly 3 comma-separated values)
+/// - Any value cannot be parsed as f64
+/// - The step is zero or negative
+///
+/// # Examples
+///
+/// ```rust
+/// let angles = parse_range("0.0,90.0,15.0")?; // [0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 90.0]
+/// let coords = parse_range("-10.0,10.0,5.0")?; // [-10.0, -5.0, 0.0, 5.0, 10.0]
+/// ```
+///
+/// # Error Cases
+///
+/// ```rust
+/// parse_range("1,2");        // Error: wrong number of components
+/// parse_range("1,2,0");      // Error: step must be positive
+/// parse_range("a,b,c");      // Error: invalid number format
+/// ```
 fn parse_range(range_str: &str) -> Result<Array1<f64>, Box<dyn std::error::Error>> {
     let parts: Vec<&str> = range_str.split(',').collect();
     if parts.len() != 3 {
@@ -70,7 +104,47 @@ fn parse_range(range_str: &str) -> Result<Array1<f64>, Box<dyn std::error::Error
     Ok(range)
 }
 
-/// Create PNG plot of zodiacal light spectrum using plotters
+/// Creates a detailed PNG plot of the zodiacal light spectrum at specified coordinates.
+///
+/// This function generates a publication-quality plot showing the spectral irradiance
+/// of zodiacal light as a function of wavelength. The plot includes proper axis labels,
+/// title with coordinate information, and scientific notation for irradiance values.
+///
+/// # Spectrum Coverage
+///
+/// The plot covers wavelengths from 100nm to 1100nm with 5nm sampling, spanning:
+/// - UV range: 100-400nm (important for young stars)
+/// - Visible range: 400-700nm (human-visible spectrum)
+/// - Near-IR range: 700-1100nm (stellar photosphere peaks)
+///
+/// # Arguments
+///
+/// * `z_light` - ZodicalLight instance for spectrum calculation
+/// * `coords` - Solar angular coordinates (elongation and ecliptic latitude)
+/// * `output_path` - File path for the output PNG image
+///
+/// # Returns
+///
+/// Returns `Ok(())` on successful plot creation, or an error if:
+/// - Spectrum calculation fails for the given coordinates
+/// - File I/O fails during image saving
+/// - Plotting library encounters rendering errors
+///
+/// # Plot Features
+///
+/// - **Title**: Shows elongation and latitude coordinates
+/// - **X-axis**: Wavelength in nanometers (100-1100nm)
+/// - **Y-axis**: Spectral irradiance in erg/(cm²·arcsec²·Hz) with scientific notation
+/// - **Legend**: Identifies the zodiacal light spectrum curve
+/// - **Resolution**: 1024×768 pixels for clear display
+///
+/// # Example Usage
+///
+/// ```rust
+/// let coords = SolarAngularCoordinates::new(120.0, 15.0)?;
+/// let z_light = ZodicalLight::new();
+/// create_spectrum_plot(&z_light, &coords, "spectrum.png")?;
+/// ```
 fn create_spectrum_plot(
     z_light: &ZodicalLight,
     coords: &SolarAngularCoordinates,

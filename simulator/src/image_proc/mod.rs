@@ -1,8 +1,88 @@
-//! Image processing module for telescope simulation
+//! Comprehensive image processing pipeline for astronomical telescope simulation.
 //!
-//! This module provides image processing utilities for the telescope simulator,
-//! including convolution, filtering, thresholding, centroid calculation, and
-//! other operations needed for realistic image generation and analysis.
+//! This module provides a complete suite of image processing algorithms specifically
+//! designed for astronomical applications. From raw sensor simulation to sophisticated
+//! object detection, it handles the entire pipeline of space telescope image analysis.
+//!
+//! # Module Organization
+//!
+//! ## Core Algorithms
+//! - **airy**: Point spread function modeling for diffraction-limited optics
+//! - **convolve2d**: 2D convolution with Gaussian kernels for PSF application
+//! - **noise**: Realistic sensor noise models (read noise, dark current, shot noise)
+//!
+//! ## Object Detection
+//! - **detection**: Multi-algorithm star detection (DAO, IRAF, naive centroiding)
+//! - **detection::thresholding**: Otsu thresholding and connected component analysis
+//! - **detection::aabb**: Bounding box management for detected objects
+//!
+//! ## Image Enhancement
+//! - **histogram_stretch**: Contrast enhancement for faint object visibility
+//! - **render**: High-quality rendering of astronomical scenes
+//! - **overlay**: Visualization overlays for detection results
+//!
+//! ## Data I/O
+//! - **io**: FITS and standard image format support with bit depth conversion
+//! - **image**: Format conversions between ndarray and image crate types
+//!
+//! ## Specialized Effects
+//! - **smear**: Pixel smear simulation for realistic sensor effects
+//!
+//! # Processing Pipeline Example
+//!
+//! ```rust
+//! use simulator::image_proc::{
+//!     gaussian_kernel, convolve2d, ConvolveMode, ConvolveOptions,
+//!     generate_sensor_noise, detect_stars_unified, StarFinder,
+//!     stretch_histogram, save_u8_image, u16_to_u8_auto_scale
+//! };
+//! use simulator::hardware::sensor::models::GSENSE6510BSI;
+//! use ndarray::Array2;
+//! use std::time::Duration;
+//!
+//! // 1. Start with clean astronomical image
+//! let mut image = Array2::from_elem((64, 64), 1000u16);  // Sky background
+//! image[[32, 32]] = 45000;  // Bright star
+//! image[[16, 16]] = 8000;   // Faint star
+//!
+//! // 2. Add realistic telescope PSF
+//! let image_f64 = image.mapv(|x| x as f64);
+//! let psf_kernel = gaussian_kernel(5, 1.2);  // 2.5 pixel FWHM
+//! let psf_convolved = convolve2d(
+//!     &image_f64.view(),
+//!     &psf_kernel.view(),
+//!     Some(ConvolveOptions { mode: ConvolveMode::Same })
+//! );
+//!
+//! // 3. Add sensor noise
+//! let sensor = GSENSE6510BSI.clone().with_dimensions(64, 64);
+//! let exposure = Duration::from_secs(10);
+//! let noise = generate_sensor_noise(&sensor, &exposure, -20.0, Some(42));
+//! let with_noise = psf_convolved.mapv(|x| x as u16) + noise.mapv(|x| x as u16);
+//!
+//! // 4. Detect astronomical sources
+//! let stars = detect_stars_unified(
+//!     with_noise.view(),
+//!     StarFinder::Dao,
+//!     2.5,   // Airy disk size
+//!     20.0,  // Background RMS
+//!     5.0    // 5-sigma detection
+//! ).unwrap();
+//!
+//! // 5. Enhance for visualization
+//! let enhanced = stretch_histogram(with_noise.view(), 2.0, 98.0);
+//! let display = u16_to_u8_auto_scale(&enhanced);
+//!
+//! println!("Processed image: detected {} stars", stars.len());
+//! // save_u8_image(&display, "processed_starfield.png").unwrap();
+//! ```
+//!
+//! # Performance Considerations
+//!
+//! - **Memory efficiency**: Operates on array views to minimize copying
+//! - **Vectorized operations**: Uses ndarray for optimized numerical computing
+//! - **Algorithm selection**: Multiple detection algorithms for different use cases
+//! - **Bit depth optimization**: Efficient conversions between u16 (sensor) and u8 (display)
 
 pub mod airy;
 pub mod convolve2d;

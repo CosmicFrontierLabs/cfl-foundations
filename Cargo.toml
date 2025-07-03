@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "simulator",
-    "track",
     "test_helpers",
     "viz",
 ]

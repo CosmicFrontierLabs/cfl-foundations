@@ -1,3 +1,58 @@
+//! Power Spectral Density (PSD) simulation for telescope vibration modeling.
+//!
+//! This module provides tools for simulating realistic telescope mount vibrations
+//! using Power Spectral Density curves. PSD characterizes how vibrational energy
+//! is distributed across different frequencies, which is essential for modeling
+//! mechanical disturbances in precision astronomical instruments.
+//!
+//! # Physical Background
+//!
+//! Power Spectral Density describes the frequency content of random vibrations:
+//! - **PSD units**: rad²/Hz (angular power per unit frequency)
+//! - **Integration**: ∫PSD(f)df gives total angular variance
+//! - **RMS**: √(∫PSD(f)df) gives RMS angular displacement
+//!
+//! # Applications
+//!
+//! - **Telescope mount vibrations**: Model structural resonances and wind buffeting
+//! - **Star tracker jitter**: Simulate pointing instabilities from spacecraft dynamics
+//! - **Atmospheric turbulence**: Model high-frequency angular fluctuations
+//! - **Tracking error budgets**: Predict pointing performance from measured PSDs
+//!
+//! # Simulation Method
+//!
+//! The module uses inverse FFT methods to convert frequency-domain PSD curves
+//! into realistic time-domain angular displacements:
+//!
+//! 1. **Frequency domain**: Define PSD curves along orthogonal axes
+//! 2. **Spectral synthesis**: Generate complex spectrum with random phases
+//! 3. **Inverse FFT**: Convert to time-domain angular displacements
+//! 4. **Quaternion composition**: Combine multiple axes into 3D orientations
+//!
+//! # Examples
+//!
+//! ```rust
+//! use simulator::algo::psd::*;
+//! use nalgebra::Vector3;
+//! use std::time::Duration;
+//!
+//! // Define telescope mount resonance at 10 Hz
+//! let mount_psd = PsdCurve::new(
+//!     vec![
+//!         PsdPoint { frequency: 1.0, amplitude_squared: 1e-6 },
+//!         PsdPoint { frequency: 10.0, amplitude_squared: 1e-4 },  // Resonance
+//!         PsdPoint { frequency: 100.0, amplitude_squared: 1e-7 },
+//!     ],
+//!     Vector3::new(1.0, 0.0, 0.0), // X-axis vibrations
+//! );
+//!
+//! // Create vibration simulator
+//! let simulator = VibrationSimulator::new(vec![mount_psd], 1000.0); // 1 kHz sample rate
+//!
+//! // Generate 1 second of vibration data
+//! let orientations = simulator.generate_orientations(Duration::from_secs(1), Some(42));
+//! ```
+
 use nalgebra::{Unit, UnitQuaternion, Vector3};
 use rand::prelude::*;
 use rustfft::{num_complex::Complex64, FftPlanner};

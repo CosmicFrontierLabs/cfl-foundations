@@ -59,29 +59,53 @@ struct Args {
     sample_points: usize,
 }
 
-/// Information about a stellar spectrum and its properties
+/// Information about a stellar spectrum and its visual properties.
+///
+/// Contains both the physical blackbody spectrum model and the calculated
+/// human-perceived color for visualization purposes. Used to correlate
+/// stellar temperature with observable color in plots.
+///
+/// # Examples
+///
+/// ```
+/// let info = StellarInfo {
+///     temperature: 5778.0,    // Sun-like star
+///     spectral_class: SpectralClass::G,
+///     spectrum: BlackbodyStellarSpectrum::new(5778.0, 1.0),
+///     color: RGBColor(255, 255, 192),  // Yellowish-white
+/// };
+/// ```
 struct StellarInfo {
-    /// Temperature in Kelvin
+    /// Effective temperature in Kelvin (determines spectrum shape)
     temperature: f64,
-    /// Spectral class (O, B, A, F, G, K, M)
+    /// Morgan-Keenan spectral class (O, B, A, F, G, K, M)
     spectral_class: SpectralClass,
-    /// Blackbody stellar spectrum model
+    /// Blackbody stellar spectrum model for computing irradiance
     spectrum: BlackbodyStellarSpectrum,
-    /// RGB color based on human vision
+    /// Human-perceived RGB color derived from spectrum
     color: RGBColor,
 }
 
-/// Convert RGB floating point values to RGBColor for plotting
+/// Convert RGB floating point values to RGBColor for plotting.
+///
+/// Transforms normalized RGB values (0.0-1.0) into the discrete 8-bit
+/// RGB format required by the plotters library. Values are clamped
+/// to prevent overflow during conversion.
 ///
 /// # Arguments
-///
-/// * `r` - Red value (0.0-1.0)
-/// * `g` - Green value (0.0-1.0)
-/// * `b` - Blue value (0.0-1.0)
+/// * `r` - Red component (0.0-1.0)
+/// * `g` - Green component (0.0-1.0)
+/// * `b` - Blue component (0.0-1.0)
 ///
 /// # Returns
+/// RGBColor value for plotters with components scaled to 0-255
 ///
-/// RGBColor value for plotters
+/// # Examples
+/// ```
+/// let white = rgb_values_to_color(1.0, 1.0, 1.0);
+/// let red = rgb_values_to_color(1.0, 0.0, 0.0);
+/// let dim_blue = rgb_values_to_color(0.0, 0.0, 0.5);
+/// ```
 fn rgb_values_to_color(r: f64, g: f64, b: f64) -> RGBColor {
     RGBColor(
         (r * 255.0).min(255.0) as u8,
@@ -90,15 +114,30 @@ fn rgb_values_to_color(r: f64, g: f64, b: f64) -> RGBColor {
     )
 }
 
-/// Create stellar spectra for plotting
+/// Create stellar spectra for plotting across a temperature range.
+///
+/// Generates a logarithmically-spaced sequence of stellar temperatures
+/// and computes the corresponding blackbody spectra and human-perceived
+/// colors. Uses parallel processing for efficient computation.
 ///
 /// # Arguments
-///
 /// * `args` - Command-line arguments including temperature range and count
 ///
 /// # Returns
+/// Vector of StellarInfo containing spectrum and color information,
+/// sorted by increasing temperature
 ///
-/// Vector of StellarInfo containing spectrum and color information
+/// # Examples
+/// ```
+/// let args = Args {
+///     min_temp: 3000.0,  // Cool M dwarf
+///     max_temp: 40000.0, // Hot O star
+///     n_spectra: 7,      // One per spectral class
+///     // ... other fields
+/// };
+/// let spectra = create_stellar_spectra(&args);
+/// assert_eq!(spectra.len(), 7);
+/// ```
 fn create_stellar_spectra(args: &Args) -> Vec<StellarInfo> {
     // Generate logarithmically spaced temperatures
     let temperatures = generate_temperature_sequence(args.min_temp, args.max_temp, args.n_spectra);
@@ -127,7 +166,17 @@ fn create_stellar_spectra(args: &Args) -> Vec<StellarInfo> {
         .collect()
 }
 
-/// Main function to generate the plot
+/// Main function to generate stellar spectrum plot.
+///
+/// Orchestrates the complete workflow:
+/// 1. Parse command line arguments
+/// 2. Generate stellar spectra with temperature-dependent colors
+/// 3. Create professional visualization with proper scaling and legends
+/// 4. Save plot to specified output file
+///
+/// The generated plot shows normalized spectral irradiance vs wavelength
+/// for multiple stellar temperatures, with each curve colored according
+/// to human visual perception of that star's color.
 fn main() -> Result<(), Box<dyn Error>> {
     // Initialize logging from environment variables
     env_logger::init();
@@ -150,7 +199,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Generate the stellar spectra plot
+/// Generate the stellar spectra plot with temperature-based coloring.
+///
+/// Creates a professional scientific visualization showing multiple stellar
+/// blackbody spectra plotted with their human-perceived colors. The plot
+/// includes proper normalization, grid lines, axis labels, and a legend
+/// showing temperature and spectral class for each curve.
+///
+/// # Arguments
+/// * `args` - Configuration parameters including output path, wavelength range,
+///           temperature range, and sampling parameters
+///
+/// # Returns
+/// * `Result<(), Box<dyn Error>>` - Success or plotting error
+///
+/// # Plot Features
+/// - Black background for astronomical visualization aesthetics
+/// - Normalized spectral irradiance on Y-axis (0.0-1.0)
+/// - Wavelength in nanometers on X-axis
+/// - Each spectrum colored according to human visual perception
+/// - Legend showing temperature and spectral class
+/// - Grid lines for easy value reading
 fn generate_stellar_plot(args: &Args) -> Result<(), Box<dyn Error>> {
     // Generate spectral info including human-perceived colors
     let stellar_info = create_stellar_spectra(args);

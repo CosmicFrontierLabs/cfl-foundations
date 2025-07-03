@@ -1,7 +1,41 @@
-//! Image I/O utilities for saving and loading image data
+//! Astronomical image I/O utilities for data exchange and visualization.
 //!
-//! This module provides functions for converting ndarray data to image formats
-//! and saving/loading them to the filesystem.
+//! This module provides comprehensive I/O functionality for astronomical data,
+//! supporting both standard image formats (PNG, JPEG) for visualization and
+//! scientific FITS format for data preservation. Handles bit depth conversion,
+//! coordinate system transformations, and multi-HDU FITS file operations.
+//!
+//! # Supported Formats
+//!
+//! - **Standard Images**: PNG, JPEG, TIFF for visualization and presentation
+//! - **FITS Files**: Full support for multi-HDU scientific data with metadata
+//! - **Bit Depth Conversion**: Automatic scaling between u16 (sensor) and u8 (display)
+//!
+//! # Key Features
+//!
+//! - Automatic dynamic range scaling for visualization
+//! - FITS multi-HDU read/write with proper coordinate handling
+//! - Type-safe error handling with detailed error messages
+//! - Memory-efficient large image processing
+//! - Coordinate system preservation between formats
+//!
+//! # Examples
+//!
+//! ```rust
+//! use simulator::image_proc::io::{save_u8_image, u16_to_u8_auto_scale};
+//! use ndarray::Array2;
+//!
+//! // Convert high-dynamic-range sensor data to 8-bit for visualization
+//! let sensor_data = Array2::from_elem((512, 512), 40000u16);  // 16-bit ADU
+//! let display_image = u16_to_u8_auto_scale(&sensor_data);
+//!
+//! // Save for presentation
+//! # #[cfg(feature = "io_test")]
+//! save_u8_image(&display_image, "starfield.png").unwrap();
+//!
+//! println!("Converted {}x{} sensor data to display format",
+//!          sensor_data.nrows(), sensor_data.ncols());
+//! ```
 
 use crate::algo::MinMaxScan;
 use ndarray::Array2;
@@ -10,30 +44,38 @@ use std::error::Error;
 use std::path::Path;
 use thiserror::Error;
 
-/// Save an 8-bit image to a file
+/// Save 8-bit grayscale image to standard image format (PNG, JPEG, etc.).
+///
+/// Converts ndarray data to image crate format and saves to specified path.
+/// File format is automatically determined from the file extension.
+/// Handles coordinate system conversion between ndarray and image formats.
 ///
 /// # Arguments
-/// * `image` - 2D array of u8 pixel values
-/// * `path` - Output path for the image file
+/// * `image` - 2D array of u8 pixel values (0-255 grayscale)
+/// * `path` - Output file path with appropriate extension (.png, .jpg, .tiff)
 ///
 /// # Returns
-/// * `Result<(), Box<dyn Error>>` - Success or error
+/// Result indicating success or I/O error
+///
+/// # Format Support
+/// - PNG: Lossless, good for scientific data visualization
+/// - JPEG: Lossy compression, good for presentations
+/// - TIFF: Lossless, good for archival display images
 ///
 /// # Examples
-/// ```
-/// use ndarray::Array2;
+/// ```rust
 /// use simulator::image_proc::io::save_u8_image;
+/// use ndarray::Array2;
 /// use std::path::Path;
 ///
-/// // Create a simple gradient image
-/// let mut image = Array2::zeros((100, 100));
-/// for (i, j) in (0..100).flat_map(|i| (0..100).map(move |j| (i, j))) {
-///     image[[i, j]] = ((i + j) / 2) as u8;
-/// }
+/// // Create synthetic star field
+/// let mut image = Array2::from_elem((256, 256), 30u8);  // Dark sky
+/// image[[128, 128]] = 255;  // Bright star
+/// image[[100, 200]] = 180;  // Dimmer star
 ///
-/// // Save the image (note: this will create a file on disk)
+/// // Save as PNG for lossless visualization
 /// # #[cfg(feature = "io_test")]
-/// save_u8_image(&image, Path::new("gradient.png")).unwrap();
+/// save_u8_image(&image, "starfield.png").unwrap();
 /// ```
 pub fn save_u8_image<P: AsRef<Path>>(image: &Array2<u8>, path: P) -> Result<(), Box<dyn Error>> {
     use image::{ImageBuffer, Luma};
@@ -52,16 +94,38 @@ pub fn save_u8_image<P: AsRef<Path>>(image: &Array2<u8>, path: P) -> Result<(), 
     Ok(())
 }
 
-/// Convert a u16 image to u8 by scaling based on the maximum value
+/// Convert 16-bit sensor data to 8-bit display format with automatic scaling.
+///
+/// Automatically determines optimal scaling by finding the maximum value in the
+/// image and mapping [0, max_value] to [0, 255]. Preserves relative intensities
+/// while maximizing contrast for visualization.
 ///
 /// # Arguments
-/// * `image` - 2D array of u16 pixel values
+/// * `image` - 2D array of u16 pixel values (typical astronomical sensor data)
 ///
 /// # Returns
-/// * `Array2<u8>` - Scaled 8-bit image
+/// Scaled 8-bit image optimized for display and visualization
 ///
-/// This function automatically scales the image based on the maximum value
-/// present in the image to utilize the full 8-bit range (0-255).
+/// # Scaling Method
+/// `output_pixel = (input_pixel × 255) / max_value_in_image`
+///
+/// # Use Cases
+/// - Converting raw sensor data for quick visualization
+/// - Creating display images from high dynamic range data
+/// - Preprocessing for image analysis algorithms requiring 8-bit input
+///
+/// # Examples
+/// ```rust
+/// use simulator::image_proc::io::u16_to_u8_auto_scale;
+/// use ndarray::Array2;
+///
+/// // Typical 16-bit astronomical data
+/// let mut sensor_data = Array2::from_elem((10, 10), 1000u16);  // Background
+/// sensor_data[[5, 5]] = 45000;  // Bright star near saturation
+/// sensor_data[[2, 7]] = 8000;   // Moderate star
+///
+/// u16_to_u8_auto_scale(&sensor_data);
+/// ```
 pub fn u16_to_u8_auto_scale(image: &Array2<u16>) -> Array2<u8> {
     // Find max value for proper scaling
     let values: Vec<f64> = image.iter().map(|&x| x as f64).collect();
@@ -77,17 +141,40 @@ pub fn u16_to_u8_auto_scale(image: &Array2<u16>) -> Array2<u8> {
     image.mapv(|x| ((x as f32 * 255.0) / max_value as f32) as u8)
 }
 
-/// Convert a u16 image to u8 by scaling based on a specific maximum value
+/// Convert 16-bit data to 8-bit with fixed scaling reference.
+///
+/// Maps input range [0, max_value] to output range [0, 255] using the specified
+/// maximum value as reference. Useful for consistent scaling across multiple images
+/// or when working with known sensor bit depths.
 ///
 /// # Arguments
 /// * `image` - 2D array of u16 pixel values
-/// * `max_value` - The reference maximum value for scaling
+/// * `max_value` - Reference maximum for scaling (e.g., 4095 for 12-bit, 65535 for 16-bit)
 ///
 /// # Returns
-/// * `Array2<u8>` - Scaled 8-bit image
+/// Scaled 8-bit image with consistent brightness mapping
 ///
-/// This function scales the image based on the specified maximum value,
-/// useful when converting data with a known bit depth or range.
+/// # Scaling Method
+/// `output_pixel = round((input_pixel × 255) / max_value)`
+/// Values above max_value are clipped to 255.
+///
+/// # Examples
+/// ```rust
+/// use simulator::image_proc::io::u16_to_u8_scaled;
+/// use ndarray::Array2;
+///
+/// // 12-bit sensor data (0-4095 range)
+/// let mut data = Array2::from_elem((50, 50), 2048u16);  // Mid-level
+/// data[[25, 25]] = 4095;  // Maximum 12-bit value
+/// data[[10, 10]] = 0;     // Minimum value
+///
+/// // Scale using 12-bit maximum for consistent mapping
+/// let display = u16_to_u8_scaled(&data, 4095);
+///
+/// assert_eq!(display[[25, 25]], 255);  // Max 12-bit → 255
+/// assert_eq!(display[[10, 10]], 0);    // Min → 0
+/// assert_eq!(display[[30, 30]], 128);  // Mid-level → ~128
+/// ```
 pub fn u16_to_u8_scaled(image: &Array2<u16>, max_value: u32) -> Array2<u8> {
     if max_value == 0 {
         // Return black image if maximum value is 0
@@ -109,7 +196,7 @@ pub enum FitsError {
     InvalidDataType(String),
 }
 
-/// Read FITS file and return HashMap of HDU names to Array2<f64> data
+/// Read FITS file and return HashMap of HDU names to `Array2<f64>` data
 ///
 /// # Arguments
 /// * `path` - Path to the FITS file
@@ -173,7 +260,7 @@ pub fn read_fits_to_hashmap<P: AsRef<Path>>(
     Ok(data_map)
 }
 
-/// Write HashMap of Array2<f64> data to FITS file
+/// Write HashMap of `Array2<f64>` data to FITS file
 ///
 /// # Arguments
 /// * `data` - HashMap mapping HDU names to 2D arrays

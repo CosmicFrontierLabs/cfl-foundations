@@ -1,8 +1,57 @@
-//! Star projection utilities for telescope simulation
+//! Star projection utilities for astronomical telescope simulation.
 //!
-//! This module provides functions to calculate the field of view, projected area,
-//! and other parameters needed to simulate how stars will appear through a telescope
-//! on a specific sensor.
+//! This module provides essential functions for projecting celestial coordinates
+//! onto detector planes and calculating observational parameters. It handles the
+//! geometric and photometric aspects of how stars appear through telescope systems.
+//!
+//! # Key Functions
+//!
+//! - **Field of view calculations**: Determine sky coverage for telescope-sensor combinations
+//! - **Plate scale computation**: Convert between angular and linear measurements
+//! - **Photometric conversion**: Transform stellar magnitudes to detected electron counts
+//! - **Spatial filtering**: Select stars visible within instrument field of view
+//!
+//! # Physical Models
+//!
+//! ## Projection Geometry
+//! Uses standard astronomical coordinate transformations accounting for:
+//! - Focal plane geometry and sensor dimensions
+//! - Angular plate scale from telescope focal length
+//! - Diagonal field calculation for circular coverage
+//!
+//! ## Photometric Modeling
+//! Realistic stellar flux calculations incorporating:
+//! - Blackbody spectral energy distributions
+//! - B-V color index for temperature estimation
+//! - Telescope collecting area and efficiency
+//! - Sensor quantum efficiency curves
+//! - Exposure time integration
+//!
+//! # Examples
+//!
+//! ```rust
+//! use simulator::hardware::{telescope::models::DEMO_50CM, sensor::models::GSENSE6510BSI};
+//! use simulator::hardware::star_projection::{field_diameter, pixel_scale, star_data_to_electrons};
+//! use starfield::catalogs::StarData;
+//! use std::time::Duration;
+//!
+//! let telescope = DEMO_50CM.clone();
+//! let sensor = GSENSE6510BSI.clone();
+//!
+//! // Calculate observation parameters
+//! let fov_degrees = field_diameter(&telescope, &sensor);
+//! let scale_arcsec = pixel_scale(&telescope, &sensor);
+//!
+//! println!("Field of view: {:.2}°", fov_degrees);
+//! println!("Pixel scale: {:.2} arcsec/pixel", scale_arcsec);
+//!
+//! // Predict detection for a star
+//! let star = StarData::new(1, 45.0, 30.0, 12.5, Some(0.8)); // G-type star
+//! let exposure = Duration::from_secs(30);
+//! let electrons = star_data_to_electrons(&star, &exposure, &telescope, &sensor);
+//!
+//! println!("Expected signal: {:.0} e⁻", electrons);
+//! ```
 
 use std::time::Duration;
 
@@ -17,17 +66,36 @@ use starfield::catalogs::{StarData, StarPosition};
 // reasonable guess for stuff on the main sequence
 const DEFAULT_BV: f64 = 1.4;
 
-/// Calculate the diameter of the field of view in degrees
+/// Calculate the circular field of view diameter for a telescope-sensor combination.
 ///
-/// This function calculates the circular diameter that would fully
-/// encompass a sensor's field of view when mounted on a telescope.
+/// Computes the angular diameter of the smallest circle that completely
+/// encompasses the rectangular sensor field of view. This is the standard
+/// metric for telescope survey capabilities and catalog queries.
+///
+/// # Mathematical Background
+/// Uses the sensor diagonal and telescope focal length:
+/// ```text
+/// FOV_diameter = 2 * atan(sensor_diagonal / (2 * focal_length))
+/// ```
+/// For small angles (typical case): `FOV ≈ sensor_diagonal / focal_length`
 ///
 /// # Arguments
-/// * `telescope` - The telescope configuration
-/// * `sensor` - The sensor configuration
+/// * `telescope` - Telescope optical configuration with focal length
+/// * `sensor` - Sensor geometry (width, height, pixel size)
 ///
 /// # Returns
-/// Field diameter in degrees
+/// Field of view diameter in degrees
+///
+/// # Examples
+/// ```rust
+/// use simulator::hardware::{telescope::models::DEMO_50CM, sensor::models::GSENSE6510BSI};
+/// use simulator::hardware::star_projection::field_diameter;
+///
+/// let telescope = DEMO_50CM.clone();
+/// let sensor = GSENSE6510BSI.clone();
+/// let fov = field_diameter(&telescope, &sensor);
+/// println!("Survey coverage: {:.2}° diameter", fov);
+/// ```
 pub fn field_diameter(telescope: &TelescopeConfig, sensor: &SensorConfig) -> f64 {
     // Get sensor dimensions in microns
     let (width_um, height_um) = sensor.dimensions_um();
@@ -62,17 +130,42 @@ pub fn pixel_scale(telescope: &TelescopeConfig, sensor: &SensorConfig) -> f64 {
     plate_scale_arcsec_per_mm * (sensor.pixel_size_um / 1000.0)
 }
 
-/// Convert star magnitude to flux in photons
+/// Convert stellar magnitude and color to detected electron count.
+///
+/// Performs complete photometric calculation from stellar parameters to
+/// expected detector signal. Uses realistic blackbody spectra, telescope
+/// characteristics, and sensor quantum efficiency for accurate predictions.
+///
+/// # Physics Model
+/// 1. **Stellar spectrum**: Blackbody model from B-V color and magnitude
+/// 2. **Light collection**: Telescope aperture and optical efficiency
+/// 3. **Spectral response**: Sensor QE curve integration over spectrum  
+/// 4. **Time integration**: Exposure duration scaling
 ///
 /// # Arguments
-/// * `magnitude` - The star's apparent magnitude
-/// * `exposure_time` - Exposure time in seconds
-/// * `telescope` - The telescope configuration
-/// * `sensor` - The sensor configuration
-/// * `wavelength_nm` - The wavelength in nanometers
+/// * `star_data` - Stellar catalog entry (position, magnitude, B-V color)
+/// * `exposure` - Integration time duration
+/// * `telescope` - Optical system configuration (aperture, efficiency)
+/// * `sensor` - Detector characteristics (QE curve, etc.)
 ///
 /// # Returns
-/// Expected photo electrons captured by the sensor for the given star
+/// Expected photoelectron count in sensor pixels
+///
+/// # Examples
+/// ```rust
+/// use simulator::hardware::{telescope::models::DEMO_50CM, sensor::models::GSENSE6510BSI};
+/// use simulator::hardware::star_projection::star_data_to_electrons;
+/// use starfield::catalogs::StarData;
+/// use std::time::Duration;
+///
+/// let telescope = DEMO_50CM.clone();
+/// let sensor = GSENSE6510BSI.clone();
+/// let star = StarData::new(1, 0.0, 0.0, 10.0, Some(0.6)); // F-type star
+/// let exposure = Duration::from_secs(60);
+///
+/// let signal = star_data_to_electrons(&star, &exposure, &telescope, &sensor);
+/// println!("SNR estimate: {:.1}", signal.sqrt()); // Poisson noise limit
+/// ```
 pub fn star_data_to_electrons(
     star_data: &StarData,
     exposure: &Duration,

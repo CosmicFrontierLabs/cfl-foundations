@@ -1,20 +1,117 @@
-//! Telescope configuration for simulating optical characteristics
+//! Telescope optical system configuration and models for astronomical simulation.
+//!
+//! This module provides comprehensive telescope models with realistic optical
+//! characteristics for space-based and ground-based observations. It handles
+//! diffraction-limited optics, plate scale calculations, and light-gathering
+//! performance modeling.
+//!
+//! # Key Features
+//!
+//! - **Optical calculations**: Airy disk sizing, PSF modeling, diffraction limits
+//! - **Geometric properties**: Plate scale, field of view, f-number calculations  
+//! - **Light collection**: Aperture area, throughput efficiency, signal prediction
+//! - **Adaptive optics**: Focal length optimization for detector sampling
+//! - **Predefined models**: Real-world telescope configurations
+//!
+//! # Physics Models
+//!
+//! ## Diffraction-Limited Optics
+//! Implements standard astronomical optics formulas:
+//! - **Airy disk radius**: θ = 1.22λ/D (angular), r = 1.22λf/D (linear)
+//! - **Resolution limit**: FWHM ≈ λ/D for circular apertures
+//! - **Plate scale**: arcsec/mm = 206265/f (f in mm)
+//!
+//! ## Light Collection
+//! - **Collecting area**: A = π(D/2)²
+//! - **Effective area**: Considers optical losses, obscuration
+//! - **Throughput efficiency**: Mirror reflectivity, filter transmission
+//!
+//! # Telescope Models
+//!
+//! The module includes several representative configurations:
+//! - **SMALL_50MM**: Compact finder scope or guide telescope
+//! - **DEMO_50CM**: Medium aperture space telescope prototype  
+//! - **FINAL_1M**: Large aperture survey telescope
+//! - **WEASEL**: Multi-spectral Earth observation system
+//!
+//! # Examples
+//!
+//! ```rust
+//! use simulator::hardware::telescope::{TelescopeConfig, models::DEMO_50CM};
+//! use simulator::hardware::sensor::models::GSENSE6510BSI;
+//!
+//! // Use predefined telescope model
+//! let telescope = DEMO_50CM.clone();
+//! let sensor = GSENSE6510BSI.clone();
+//!
+//! // Calculate optical performance
+//! let f_number = telescope.f_number();
+//! let resolution_mas = telescope.diffraction_limited_resolution_mas(550.0);
+//! let plate_scale = telescope.plate_scale_arcsec_per_mm();
+//! let collecting_area = telescope.effective_collecting_area_m2();
+//!
+//! println!("f/{:.1} telescope", f_number);
+//! println!("Resolution: {:.0} mas @ 550nm", resolution_mas);
+//! println!("Plate scale: {:.1} arcsec/mm", plate_scale);
+//! println!("Light gathering: {:.2} m²", collecting_area);
+//!
+//! // Optimize focal length for sensor sampling
+//! let optimized = telescope.with_focal_length(8.5);
+//! let airy_radius_um = optimized.airy_disk_radius_um(550.0);
+//! let pixels_per_airy = airy_radius_um / sensor.pixel_size_um;
+//! println!("Sampling: {:.1} pixels per Airy disk", pixels_per_airy);
+//! ```
 
 use once_cell::sync::Lazy;
 use std::f64::consts::PI;
 
 use super::SensorConfig;
 
-/// Configuration for a telescope optical system
+/// Complete telescope optical system configuration.
+///
+/// Represents a telescope with all optical characteristics needed for
+/// realistic astronomical simulations. Provides methods for calculating
+/// resolution, light-gathering power, and geometric properties.
+///
+/// # Key Capabilities
+///
+/// - **Diffraction modeling**: Airy disk calculations at any wavelength
+/// - **Angular resolution**: Theoretical and practical resolution limits
+/// - **Photometric scaling**: Light collection and throughput efficiency
+/// - **Geometric optics**: Plate scale, field of view, f-number calculations
+/// - **Sampling optimization**: Focal length adjustment for optimal detector sampling
+///
+/// # Examples
+///
+/// ```rust
+/// use simulator::hardware::telescope::TelescopeConfig;
+///
+/// // Create custom telescope configuration
+/// let telescope = TelescopeConfig::new(
+///     "Custom 0.8m",
+///     0.8,   // 80cm aperture
+///     6.4,   // 6.4m focal length (f/8)
+///     0.75,  // 75% throughput efficiency
+/// );
+///
+/// // Calculate optical properties
+/// let f_ratio = telescope.f_number();
+/// let resolution = telescope.diffraction_limited_resolution_mas(650.0);
+/// let light_power = telescope.effective_collecting_area_m2();
+///
+/// println!("f/{:.1} system", f_ratio);
+/// println!("Resolution: {:.0} mas", resolution);
+/// println!("Effective area: {:.2} m²", light_power);
+/// ```
 #[derive(Debug, Clone)]
 pub struct TelescopeConfig {
-    /// Aperture diameter in meters
+    /// Primary mirror or lens diameter in meters (clear aperture)
     pub aperture_m: f64,
-    /// Focal length in meters
+    /// Effective focal length in meters (including optical train)
     pub focal_length_m: f64,
-    /// Optical efficiency (0.0-1.0) representing light throughput
+    /// Total optical efficiency (0.0-1.0, includes all losses)
     pub light_efficiency: f64,
-    /// Name/model of the telescope
+    /// Telescope model name or identifier
     pub name: String,
 }
 

@@ -2662,25 +2662,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "track"
-version = "0.1.0"
-dependencies = [
- "approx",
- "criterion",
- "image",
- "itertools 0.11.0",
- "log",
- "nalgebra",
- "ndarray 0.15.6",
- "rand",
- "rand_chacha",
- "simulator",
- "starfield",
- "test_helpers",
- "thiserror",
-]
-
-[[package]]
 name = "transpose"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

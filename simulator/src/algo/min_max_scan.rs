@@ -49,9 +49,8 @@ impl<T: Float + fmt::Debug> MinMaxScan<T> {
             if value.is_nan() {
                 if nan_index.is_none() {
                     nan_index = Some(index);
+                    break; // Stop processing further if we find NaN
                 }
-                // Continue processing to find valid min/max if they exist
-                continue;
             }
 
             match (min_value, max_value) {

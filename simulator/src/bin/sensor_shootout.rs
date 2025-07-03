@@ -206,7 +206,7 @@ fn print_am_hist(stars: &[StarData]) {
 /// * `max_fov` - Maximum field of view to use for star selection
 ///
 /// # Returns
-/// * Vec<ExperimentResult> containing detection results for each sensor
+/// * `Vec<ExperimentResult>` containing detection results for each sensor
 fn run_experiment<T: StarCatalog>(
     params: &ExperimentParams,
     catalog: &T,

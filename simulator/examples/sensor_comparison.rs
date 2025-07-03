@@ -1,3 +1,40 @@
+//! Sensor comparison tool for evaluating imaging sensor specifications.
+//!
+//! This example generates comprehensive comparison tables and detailed specifications
+//! for all available sensor models in the simulator. It provides both a quick
+//! comparison table and detailed breakdowns for sensor selection and analysis.
+//!
+//! # Output Format
+//!
+//! The tool generates two main sections:
+//!
+//! ## 1. Comparison Table (Markdown format)
+//! A tabular comparison showing key metrics for all sensors:
+//! - Resolution (width × height pixels)
+//! - Physical area (cm²)
+//! - Dark current at 0°C (e⁻/pixel/s)
+//! - Read noise (e⁻)
+//! - Average quantum efficiency (150-1100nm range)
+//!
+//! ## 2. Detailed Specifications
+//! Individual sensor breakdowns including:
+//! - Physical dimensions and pixel size
+//! - Maximum well depth and frame rate
+//! - Bit depth and peak QE performance
+//! - Temperature-dependent characteristics
+//!
+//! # Usage
+//!
+//! ```bash
+//! cargo run --example sensor_comparison
+//! ```
+//!
+//! The output is designed to be suitable for:
+//! - Pasting into documentation (Markdown format)
+//! - Sensor selection for specific applications
+//! - Performance comparison across different sensor types
+//! - Understanding trade-offs between resolution, noise, and sensitivity
+
 use simulator::hardware::sensor::models::ALL_SENSORS;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

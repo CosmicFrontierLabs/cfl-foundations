@@ -1,35 +1,109 @@
-//! Star centroid calculation using center of mass and image moments
+//! Naive star detection using center-of-mass centroiding and image moments.
 //!
-//! This module provides functionality for calculating star centroids with
-//! sub-pixel accuracy and filtering non-star objects based on moment analysis.
+//! This module implements a simple but effective star detection algorithm based on
+//! threshold segmentation followed by precise centroiding using image moments.
+//! Provides sub-pixel accuracy and basic shape filtering to reject artifacts.
+//!
+//! # Algorithm Overview
+//!
+//! 1. **Threshold segmentation**: Binary threshold to identify bright regions
+//! 2. **Connected components**: Group adjacent pixels into objects
+//! 3. **Moment calculation**: Compute 0th, 1st, and 2nd order moments
+//! 4. **Centroiding**: Calculate weighted center-of-mass positions
+//! 5. **Shape analysis**: Use eigenvalues for aspect ratio and validity checking
+//!
+//! # Key Features
+//!
+//! - **Sub-pixel precision**: Moment-based centroids accurate to ~0.05 pixels
+//! - **Shape filtering**: Aspect ratio analysis to reject elongated artifacts
+//! - **Fast processing**: Simple operations suitable for real-time analysis
+//! - **Robust moments**: Handles various PSF sizes and brightness levels
+//! - **Otsu thresholding**: Automatic threshold selection when not specified
+//!
+//! # Examples
+//!
+//! ```rust
+//! use simulator::image_proc::detection::naive::{detect_stars, do_detections};
+//! use ndarray::Array2;
+//!
+//! // Method 1: Direct detection on f64 image
+//! let image_f64 = Array2::from_elem((100, 100), 10.0);
+//! let stars = detect_stars(&image_f64.view(), Some(50.0));
+//! println!("Found {} stars", stars.len());
+//!
+//! // Method 2: Full pipeline with optional smoothing
+//! let image_u16 = Array2::from_elem((100, 100), 100u16);
+//! let stars = do_detections(&image_u16, Some(1.5), None); // 1.5px Gaussian smooth
+//! for star in &stars {
+//!     println!("Star at ({:.2}, {:.2}) flux={:.1}", star.x, star.y, star.flux);
+//! }
+//! ```
 
 use ndarray::{Array2, ArrayView2};
 
 use crate::algo::icp::Locatable2d;
 use starfield::image::starfinders::StellarSource;
 
-/// Star detection result containing position and shape information
+/// Star detection result with sub-pixel position and shape characterization.
+///
+/// Contains all information needed to characterize a detected stellar object,
+/// including precise centroid position, flux measurement, and shape parameters
+/// for quality assessment.
+///
+/// # Shape Analysis
+///
+/// The aspect ratio and diameter are computed from the eigenvalues of the
+/// second moment matrix (covariance matrix), providing robust estimates of
+/// object size and elongation.
+///
+/// # Validity Filtering
+///
+/// Objects are marked as valid stars if their aspect ratio is less than 2.5,
+/// which helps reject cosmic rays, hot pixels, and other elongated artifacts.
+///
+/// # Examples
+///
+/// ```rust
+/// use simulator::image_proc::detection::naive::StarDetection;
+///
+/// // Typical stellar detection
+/// let star = StarDetection {
+///     id: 0,
+///     x: 123.45,      // Sub-pixel precision
+///     y: 67.89,
+///     flux: 1500.0,   // Total brightness
+///     m_xx: 2.1,      // X-axis moment
+///     m_yy: 2.0,      // Y-axis moment  
+///     m_xy: 0.1,      // Cross-moment
+///     aspect_ratio: 1.05, // Nearly circular
+///     diameter: 3.2,   // ~3 pixel PSF
+///     is_valid: true,  // Passes shape filter
+/// };
+///
+/// assert!(star.is_valid);
+/// assert!(star.aspect_ratio < 2.5);
+/// ```
 #[derive(Debug, Clone)]
 pub struct StarDetection {
-    /// Unique identifier for this detection
+    /// Unique identifier for this detection (assigned sequentially)
     pub id: usize,
-    /// Centroid x position (sub-pixel)
+    /// Centroid x-coordinate with sub-pixel precision
     pub x: f64,
-    /// Centroid y position (sub-pixel)
+    /// Centroid y-coordinate with sub-pixel precision  
     pub y: f64,
-    /// Total flux (sum of pixel intensities)
+    /// Total flux (sum of all pixel intensities in the object)
     pub flux: f64,
-    /// Moment of inertia around x-axis
+    /// Second central moment μ₂₀ (variance in x-direction)
     pub m_xx: f64,
-    /// Moment of inertia around y-axis
+    /// Second central moment μ₀₂ (variance in y-direction)
     pub m_yy: f64,
-    /// Cross moment of inertia
+    /// Second central moment μ₁₁ (covariance between x and y)
     pub m_xy: f64,
-    /// Aspect ratio calculated from moments
+    /// Aspect ratio (λ₁/λ₂) from eigenvalues of moment matrix
     pub aspect_ratio: f64,
-    /// Estimated diameter of the star in pixels, calculated from moments
+    /// Estimated object diameter in pixels (4√(λ₁+λ₂)/2)
     pub diameter: f64,
-    /// Is this likely to be a star based on moment analysis?
+    /// True if likely to be a star (aspect_ratio < 2.5)
     pub is_valid: bool,
 }
 
@@ -57,16 +131,31 @@ impl StellarSource for StarDetection {
     }
 }
 
-/// Calculate centroid and moments for a labeled object in the image
+/// Calculate precise centroid and shape moments for a labeled object.
+///
+/// Computes weighted center-of-mass and second-order moments for accurate
+/// sub-pixel centroid determination and shape characterization. Uses intensity
+/// weighting to handle realistic PSF profiles.
+///
+/// # Mathematical Background
+///
+/// Computes raw moments:
+/// - m₀₀ = Σ I(x,y) (total intensity)
+/// - m₁₀ = Σ x·I(x,y), m₀₁ = Σ y·I(x,y) (first moments)
+/// - m₂₀ = Σ x²·I(x,y), m₀₂ = Σ y²·I(x,y), m₁₁ = Σ xy·I(x,y) (second moments)
+///
+/// Then calculates central moments relative to centroid and eigenvalues
+/// of the covariance matrix for shape analysis.
 ///
 /// # Arguments
-/// * `image` - Original grayscale image
-/// * `labeled` - Labeled image from connected components
-/// * `label` - The specific label to calculate centroid for
-/// * `bbox` - Bounding box of the labeled region (min_row, min_col, max_row, max_col)
+/// * `image` - Original grayscale image with intensity values
+/// * `labeled` - Connected component labels from segmentation
+/// * `label` - Specific label ID to process (labels start from 1)
+/// * `bbox` - Bounding box (min_row, min_col, max_row, max_col) for efficiency
+/// * `id` - Unique identifier to assign to this detection
 ///
 /// # Returns
-/// * `StarDetection` containing centroid position and shape information
+/// Complete StarDetection with centroid, flux, moments, and validity assessment
 pub fn calculate_star_centroid(
     image: &ArrayView2<f64>,
     labeled: &ArrayView2<usize>,
@@ -165,14 +254,42 @@ pub fn calculate_star_centroid(
     }
 }
 
-/// Process an entire image to detect stars
+/// Detect stars in an image using threshold segmentation and centroiding.
+///
+/// Complete star detection pipeline that segments bright objects, performs
+/// connected component analysis, and calculates precise centroids with
+/// shape filtering to reject non-stellar objects.
+///
+/// # Algorithm Steps
+/// 1. Apply threshold (Otsu automatic if not specified)
+/// 2. Find connected components in binary image
+/// 3. Calculate bounding boxes for efficiency
+/// 4. Compute moments and centroids for each component
+/// 5. Filter results based on aspect ratio (< 2.5)
 ///
 /// # Arguments
-/// * `image` - Original grayscale image
-/// * `threshold` - Optional threshold value (if None, Otsu's method is used)
+/// * `image` - Input astronomical image as f64 array
+/// * `threshold` - Optional intensity threshold (None = Otsu automatic)
 ///
 /// # Returns
-/// * Vector of StarDetection objects
+/// Vector of valid StarDetection objects with sub-pixel centroids
+///
+/// # Examples
+/// ```rust
+/// use simulator::image_proc::detection::naive::detect_stars;
+/// use ndarray::Array2;
+///
+/// let image = Array2::from_elem((100, 100), 10.0);
+///
+/// // With manual threshold
+/// let stars = detect_stars(&image.view(), Some(50.0));
+///
+/// // With automatic Otsu threshold
+/// let stars_auto = detect_stars(&image.view(), None);
+///
+/// println!("Manual: {} stars, Auto: {} stars",
+///          stars.len(), stars_auto.len());
+/// ```
 pub fn detect_stars(image: &ArrayView2<f64>, threshold: Option<f64>) -> Vec<StarDetection> {
     use super::thresholding::{
         apply_threshold, connected_components, get_bounding_boxes, otsu_threshold,
@@ -203,32 +320,75 @@ pub fn detect_stars(image: &ArrayView2<f64>, threshold: Option<f64>) -> Vec<Star
     stars.into_iter().filter(|star| star.is_valid).collect()
 }
 
-/// Get refined centroid positions for detected stars
+/// Extract centroid positions from star detections.
+///
+/// Convenience function to get just the (x, y) coordinates from
+/// StarDetection objects for algorithms that only need positions.
 ///
 /// # Arguments
-/// * `stars` - Vector of detected stars
+/// * `stars` - Vector of detected stars with complete information
 ///
 /// # Returns
-/// * Vector of (x, y) positions with sub-pixel accuracy
+/// Vector of (x, y) centroid positions with sub-pixel precision
+///
+/// # Examples
+/// ```rust
+/// use simulator::image_proc::detection::naive::{detect_stars, get_centroids};
+/// use ndarray::Array2;
+///
+/// let image = Array2::from_elem((100, 100), 10.0);
+/// let stars = detect_stars(&image.view(), Some(50.0));
+/// let positions = get_centroids(&stars);
+///
+/// for (x, y) in positions {
+///     println!("Star at ({:.2}, {:.2})", x, y);
+/// }
+/// ```
 pub fn get_centroids(stars: &[StarDetection]) -> Vec<(f64, f64)> {
     stars.iter().map(|star| (star.x, star.y)).collect()
 }
 
-/// Processes an image to detect and characterize stars.
+/// Complete star detection pipeline with optional smoothing and automatic thresholding.
 ///
-/// This function implements a complete star detection pipeline:
-/// 1. Optionally applies Gaussian smoothing with specified sigma value
-/// 2. Determines threshold value (either user-provided or automatic using Otsu's method)
-/// 3. Segments the image and identifies connected regions above threshold
-/// 4. Calculates precise centroid position and flux measurements for each detection
+/// High-level interface that handles the entire detection workflow from raw sensor
+/// data to filtered star detections. Includes optional Gaussian smoothing to reduce
+/// noise and improve detection of faint sources.
+///
+/// # Processing Pipeline
+/// 1. **Type conversion**: u16 sensor data → f64 for precise calculations
+/// 2. **Optional smoothing**: Gaussian convolution with specified sigma
+/// 3. **Threshold selection**: User-specified or automatic Otsu method
+/// 4. **Star detection**: Full centroiding pipeline with shape filtering
+///
+/// # Smoothing Benefits
+/// - Reduces pixel noise for faint source detection
+/// - Improves centroid accuracy for undersampled PSFs
+/// - Helps merge fragmented detections of extended sources
 ///
 /// # Arguments
-/// * `sensor_image` - Reference to image array (DN values from sensor)
-/// * `smooth_by` - Optional sigma for Gaussian smoothing in pixels (None = no smoothing)
-/// * `threshold` - Optional custom threshold value (None = use Otsu's method)
+/// * `sensor_image` - Raw sensor image (ADU/DN values as u16)
+/// * `smooth_by` - Optional Gaussian sigma in pixels (None = no smoothing)
+/// * `threshold` - Optional intensity threshold (None = Otsu automatic)
 ///
 /// # Returns
-/// * Vector of `StarDetection` objects, each containing position, flux, and shape information
+/// Vector of validated StarDetection objects with sub-pixel precision
+///
+/// # Examples
+/// ```rust
+/// use simulator::image_proc::detection::naive::do_detections;
+/// use ndarray::Array2;
+///
+/// let sensor_data = Array2::from_elem((512, 512), 1000u16);
+///
+/// // With smoothing for faint stars
+/// let smooth_stars = do_detections(&sensor_data, Some(1.5), None);
+///
+/// // Raw detection without smoothing
+/// let raw_stars = do_detections(&sensor_data, None, Some(5000.0));
+///
+/// println!("Smooth: {} stars, Raw: {} stars",
+///          smooth_stars.len(), raw_stars.len());
+/// ```
 pub fn do_detections(
     sensor_image: &Array2<u16>,
     smooth_by: Option<f64>,

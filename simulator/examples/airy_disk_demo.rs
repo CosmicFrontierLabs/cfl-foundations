@@ -1,11 +1,33 @@
+//! Airy Disk approximation demonstration and comparison example.
+//!
+//! This example demonstrates the theoretical Airy disk pattern produced by a perfect circular aperture
+//! and compares it with two practical approximations: Gaussian and Triangle functions.
+//!
+//! The Airy disk is the diffraction pattern of light from a point source as it passes through
+//! a circular aperture. In stellar imaging, this represents the fundamental limit of angular
+//! resolution for a telescope.
+//!
+//! # Outputs
+//!
+//! This example generates:
+//! - Console output with numerical comparison of approximation quality
+//! - 1D comparison plot showing all three functions overlaid
+//! - 2D grayscale images of each approximation with marked FWHM and first zero rings
+//!
+//! All plots are saved to the `plots/` directory.
+
 use plotters::prelude::*;
 use simulator::image_proc::AiryDisk;
 use std::path::Path;
 
+/// Type of Airy disk approximation to render in 2D images.
 #[derive(Clone, Copy)]
 enum ImageType {
+    /// Exact theoretical Airy disk pattern using Bessel functions
     Exact,
+    /// Gaussian approximation - simpler computation, good near center
     Gaussian,
+    /// Triangle approximation - simplest computation, adequate for many uses
     Triangle,
 }
 
@@ -214,7 +236,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Create a detailed comparison plot of Airy disk and its approximations
+/// Creates a detailed 1D comparison plot of the Airy disk and its approximations.
+///
+/// This function generates a symmetric plot showing the intensity profiles of the exact
+/// Airy disk pattern alongside Gaussian and Triangle approximations. The plot includes:
+///
+/// - Exact Airy disk (blue line) - theoretical pattern using Bessel functions
+/// - Gaussian approximation (red line) - computationally efficient, good near center
+/// - Triangle approximation (green line) - simplest approximation
+/// - Vertical markers at first zero (r₀) and FWHM positions
+///
+/// # Arguments
+///
+/// * `radii` - Array of radial distances for evaluation
+/// * `exact` - Exact Airy disk intensity values
+/// * `gaussian` - Gaussian approximation intensity values
+/// * `triangle` - Triangle approximation intensity values
+/// * `airy_disk` - AiryDisk instance containing parameters
+/// * `save_path` - File path where the plot image should be saved
+///
+/// # Returns
+///
+/// Returns `Ok(())` on successful plot generation, or an error if file I/O fails.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use simulator::image_proc::AiryDisk;
+///
+/// let airy = AiryDisk::new();
+/// let (radii, exact, gauss, tri) = airy.generate_comparison_samples(1000);
+/// create_airy_comparison_plot(&radii, &exact, &gauss, &tri, &airy, "plot.png")?;
+/// ```
 fn create_airy_comparison_plot(
     radii: &[f64],
     exact: &[f64],
@@ -349,7 +402,36 @@ fn create_airy_comparison_plot(
     Ok(())
 }
 
-/// Create a 512x512 greyscale image of an Airy disk with colored rings
+/// Creates a 512×512 grayscale 2D image of an Airy disk pattern with colored rings.
+///
+/// This function renders a 2D representation of the specified Airy disk approximation
+/// as a grayscale intensity map. Key features are highlighted with colored rings:
+///
+/// - Light blue ring marks the first zero (dark ring) at radius r₀
+/// - Light pink ring marks the Full-Width-Half-Maximum (FWHM) radius
+/// - Grayscale intensity represents the theoretical light distribution
+///
+/// The image spans ±2 normalized radii (±2×r₀) from center to edge.
+///
+/// # Arguments
+///
+/// * `airy_disk` - AiryDisk instance containing the physical parameters
+/// * `save_path` - File path where the image should be saved (PNG format)
+/// * `image_type` - Which approximation type to render (Exact, Gaussian, or Triangle)
+///
+/// # Returns
+///
+/// Returns `Ok(())` on successful image generation, or an error if file I/O fails.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use simulator::image_proc::AiryDisk;
+///
+/// let airy = AiryDisk::new();
+/// create_airy_disk_image(&airy, "exact.png", ImageType::Exact)?;
+/// create_airy_disk_image(&airy, "gauss.png", ImageType::Gaussian)?;
+/// ```
 fn create_airy_disk_image(
     airy_disk: &AiryDisk,
     save_path: &str,

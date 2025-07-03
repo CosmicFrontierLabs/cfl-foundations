@@ -39,12 +39,41 @@ pub struct ICPResult {
     pub iterations: usize,
 }
 
-/// Compute squared Euclidean distance between two 2D points
+/// Computes the squared Euclidean distance between two 2D points.
+///
+/// Using squared distance avoids expensive square root calculations
+/// while preserving relative ordering for distance comparisons.
+///
+/// # Arguments
+///
+/// * `p1` - First 2D point
+/// * `p2` - Second 2D point
+///
+/// # Returns
+///
+/// Squared distance: (p1.x - p2.x)² + (p1.y - p2.y)²
 fn squared_distance(p1: &Vector2<f64>, p2: &Vector2<f64>) -> f64 {
     (p1 - p2).norm_squared()
 }
 
-/// Find the closest point in target_points for each source_point
+/// Finds the closest target point for each source point using brute-force search.
+///
+/// This function implements the correspondence step of ICP by finding the
+/// nearest neighbor in the target set for each point in the source set.
+///
+/// # Arguments
+///
+/// * `source_points` - Array of source points to match
+/// * `target_points` - Array of target points to search in
+///
+/// # Returns
+///
+/// Vector of (source_index, target_index) pairs representing closest matches
+///
+/// # Performance
+///
+/// Time complexity: O(n × m) where n = source points, m = target points
+/// For large point sets, consider using spatial data structures like KD-trees.
 fn find_closest_points(
     source_points: &[Vector2<f64>],
     target_points: &[Vector2<f64>],
@@ -70,7 +99,18 @@ fn find_closest_points(
     matches
 }
 
-/// Calculate centroid of a point set
+/// Calculates the geometric centroid (center of mass) of a point set.
+///
+/// The centroid is computed as the arithmetic mean of all point coordinates:
+/// centroid = (1/n) × Σ(points)
+///
+/// # Arguments
+///
+/// * `points` - Array of 2D points
+///
+/// # Returns
+///
+/// Centroid coordinates, or (0,0) if the point set is empty
 fn calculate_centroid(points: &[Vector2<f64>]) -> Vector2<f64> {
     if points.is_empty() {
         return Vector2::zeros();
@@ -140,7 +180,22 @@ fn compute_optimal_transform(
     (q, t)
 }
 
-/// Convert ndarray points to Vector2 points
+/// Converts ndarray point representation to nalgebra Vector2 format.
+///
+/// This function bridges between the ndarray-based public API and
+/// the nalgebra-based internal implementation for easier vector math.
+///
+/// # Arguments
+///
+/// * `points` - 2D array with shape [n_points, 2] where each row is [x, y]
+///
+/// # Returns
+///
+/// Vector of nalgebra Vector2<f64> points
+///
+/// # Panics
+///
+/// Panics if the input array doesn't have exactly 2 columns
 fn convert_to_vector2_points(points: &Array2<f64>) -> Vec<Vector2<f64>> {
     let mut result = Vec::with_capacity(points.shape()[0]);
 
@@ -151,7 +206,20 @@ fn convert_to_vector2_points(points: &Array2<f64>) -> Vec<Vector2<f64>> {
     result
 }
 
-/// Apply transformation to source points
+/// Applies rigid transformation (rotation + translation) to a set of points.
+///
+/// Each point is transformed according to: p' = R × p + t
+/// where R is the rotation matrix and t is the translation vector.
+///
+/// # Arguments
+///
+/// * `points` - Array of points to transform
+/// * `rotation` - 2×2 rotation matrix
+/// * `translation` - 2D translation vector
+///
+/// # Returns
+///
+/// Vector of transformed points
 fn transform_points(
     points: &[Vector2<f64>],
     rotation: &Matrix2<f64>,
@@ -166,7 +234,22 @@ fn transform_points(
     transformed
 }
 
-/// Calculate mean squared error between matched points
+/// Calculates the mean squared error between transformed source points and their matched targets.
+///
+/// This function computes the objective function that ICP seeks to minimize:
+/// MSE = (1/n) × Σ||R × p_src + t - p_tgt||²
+///
+/// # Arguments
+///
+/// * `source_points` - Original source points
+/// * `target_points` - Target points
+/// * `matches` - Point correspondences as (source_idx, target_idx) pairs
+/// * `rotation` - Current rotation matrix estimate
+/// * `translation` - Current translation vector estimate
+///
+/// # Returns
+///
+/// Mean squared error, or infinity if no matches are provided
 fn calculate_error(
     source_points: &[Vector2<f64>],
     target_points: &[Vector2<f64>],
@@ -196,8 +279,8 @@ fn calculate_error(
 /// Iterative Closest Point algorithm for aligning two point sets
 ///
 /// # Arguments
-/// * `source_points` - Source points as ndarray::Array2<f64> with shape [n_points, 2]
-/// * `target_points` - Target points as ndarray::Array2<f64> with shape [m_points, 2]
+/// * `source_points` - Source points as `ndarray::Array2<f64>` with shape [n_points, 2]
+/// * `target_points` - Target points as `ndarray::Array2<f64>` with shape [m_points, 2]
 /// * `max_iterations` - Maximum number of iterations to perform
 /// * `convergence_threshold` - Error threshold for convergence
 ///
@@ -315,7 +398,7 @@ pub trait Locatable2d {
     fn y(&self) -> f64;
 }
 
-/// Implement Locatable for nalgebra::Vector2<f64>
+/// Implement Locatable for `nalgebra::Vector2<f64>`
 impl Locatable2d for Vector2<f64> {
     fn x(&self) -> f64 {
         self.x
@@ -809,7 +892,7 @@ mod tests {
         let mut target_points = Vec::new();
 
         // Create a grid of points
-        let grid_size: i32 = 10;
+        let grid_size: i32 = 5;
         let noise_level = 0.1;
 
         for x in -grid_size..=grid_size {

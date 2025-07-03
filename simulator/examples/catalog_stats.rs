@@ -15,9 +15,43 @@ use std::io::Write;
 use std::path::PathBuf;
 use viz::histogram::create_magnitude_histogram;
 
-/// Convert coordinates from one epoch to another using approximate precession
-/// This is a simplified calculation that ignores proper motion, parallax, and aberration
-/// For high precision work, use a proper astronomical library
+/// Converts equatorial coordinates from one epoch to another using approximate precession.
+///
+/// This function applies precession corrections to account for the slow wobble of Earth's
+/// rotational axis. It uses simplified IAU 2000-based constants for general precession.
+///
+/// # Limitations
+///
+/// This is a simplified calculation that **ignores**:
+/// - Proper motion of stars
+/// - Parallax effects
+/// - Stellar aberration
+/// - Nutation (short-term oscillations)
+/// - Relativistic effects
+///
+/// For high-precision astrometric work, use a full-featured astronomical library.
+///
+/// # Arguments
+///
+/// * `coords` - Original equatorial coordinates (RA/Dec)
+/// * `from_epoch` - Source epoch in Julian years (e.g., 1991.25 for J1991.25)
+/// * `to_epoch` - Target epoch in Julian years (e.g., 2015.0 for J2015.0)
+///
+/// # Returns
+///
+/// New equatorial coordinates adjusted for precession between epochs.
+/// RA is normalized to 0-360° range, Dec is clamped to ±90°.
+///
+/// # Examples
+///
+/// ```rust
+/// use starfield::Equatorial;
+/// use catalog_stats::convert_epoch;
+///
+/// // Convert Hipparcos J1991.25 coordinates to Gaia J2015.0
+/// let hip_coords = Equatorial::from_degrees(123.45, 67.89);
+/// let gaia_coords = convert_epoch(hip_coords, 1991.25, 2015.0);
+/// ```
 pub fn convert_epoch(coords: Equatorial, from_epoch: f64, to_epoch: f64) -> Equatorial {
     let dt = to_epoch - from_epoch; // Time difference in years
 
@@ -61,8 +95,32 @@ pub fn convert_epoch(coords: Equatorial, from_epoch: f64, to_epoch: f64) -> Equa
     Equatorial::from_degrees(normalized_ra, clamped_dec)
 }
 
-/// Efficient collector for brightest stars that maintains a sorted list
-/// of at most max_n stars, automatically dropping dimmer stars
+/// Efficient collector for the brightest stars with automatic brightness-based filtering.
+///
+/// This structure maintains a sorted list of at most `max_n` stars, automatically
+/// dropping dimmer stars when the limit is exceeded. Stars are kept sorted by
+/// magnitude (brightest first), enabling efficient collection of the N brightest
+/// stars from a large catalog without needing to sort the entire dataset.
+///
+/// # Performance
+///
+/// - Time complexity: O(n log k) where n is total stars processed, k is max_n
+/// - Space complexity: O(k) where k is max_n
+/// - Uses binary search for efficient insertion
+///
+/// # Examples
+///
+/// ```rust
+/// use catalog_stats::MaxMagnitudeCollector;
+/// use starfield::catalogs::binary_catalog::MinimalStar;
+///
+/// let mut collector = MaxMagnitudeCollector::new(100);
+/// // Add stars from catalog - only brightest 100 will be kept
+/// for star in catalog.stars() {
+///     collector.add(*star);
+/// }
+/// let brightest = collector.stars(); // Already sorted brightest to dimmest
+/// ```
 #[derive(Debug)]
 pub struct MaxMagnitudeCollector {
     stars: Vec<MinimalStar>,
@@ -70,6 +128,18 @@ pub struct MaxMagnitudeCollector {
 }
 
 impl MaxMagnitudeCollector {
+    /// Creates a new collector that will retain at most `max_n` brightest stars.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_n` - Maximum number of stars to keep in the collection
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use catalog_stats::MaxMagnitudeCollector;
+    /// let collector = MaxMagnitudeCollector::new(1000); // Keep 1000 brightest
+    /// ```
     pub fn new(max_n: usize) -> Self {
         Self {
             stars: Vec::with_capacity(max_n),
@@ -77,8 +147,27 @@ impl MaxMagnitudeCollector {
         }
     }
 
-    /// Add a star to the collection, maintaining brightness order
-    /// Only keeps the brightest max_n stars
+    /// Adds a star to the collection, maintaining brightness order.
+    ///
+    /// If the collection is not yet full, the star is inserted in the correct
+    /// sorted position. If full, the star is only added if it's brighter than
+    /// the dimmest star currently in the collection.
+    ///
+    /// # Arguments
+    ///
+    /// * `star` - Star to potentially add to the collection
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use catalog_stats::MaxMagnitudeCollector;
+    /// # use starfield::catalogs::binary_catalog::MinimalStar;
+    /// let mut collector = MaxMagnitudeCollector::new(3);
+    /// collector.add(MinimalStar { magnitude: 5.0, ..Default::default() });
+    /// collector.add(MinimalStar { magnitude: 3.0, ..Default::default() });
+    /// collector.add(MinimalStar { magnitude: 4.0, ..Default::default() });
+    /// // Collection now has stars with magnitudes [3.0, 4.0, 5.0]
+    /// ```
     pub fn add(&mut self, star: MinimalStar) {
         // If list not full, just insert in sorted position
         if self.stars.len() < self.max_n {
@@ -106,22 +195,36 @@ impl MaxMagnitudeCollector {
         }
     }
 
-    /// Get the collected stars (already sorted brightest to dimmest)
+    /// Returns the collected stars, sorted from brightest to dimmest.
+    ///
+    /// The returned slice is guaranteed to be sorted by magnitude in ascending
+    /// order (brightest stars have the lowest magnitude values).
+    ///
+    /// # Returns
+    ///
+    /// Slice of stars sorted by magnitude (brightest first)
     pub fn stars(&self) -> &[MinimalStar] {
         &self.stars
     }
 
-    /// Get the number of stars collected
+    /// Returns the number of stars currently in the collection.
+    ///
+    /// This will be at most the `max_n` value specified during construction.
     pub fn len(&self) -> usize {
         self.stars.len()
     }
 
-    /// Check if collection is empty
+    /// Returns `true` if the collection contains no stars.
     pub fn is_empty(&self) -> bool {
         self.stars.is_empty()
     }
 }
 
+/// Command-line arguments for the catalog comparison tool.
+///
+/// This structure defines all the parameters needed to compare bright stars
+/// between the Hipparcos catalog and a binary star catalog, finding stars
+/// that are present in Hipparcos but missing from the binary catalog.
 #[derive(Parser, Debug)]
 #[command(name = "catalog_stats")]
 #[command(about = "Find bright stars missing from binary catalog compared to Hipparcos")]

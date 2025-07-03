@@ -1,4 +1,64 @@
-//! Sensor configuration for simulating detector characteristics
+//! Sensor configuration and models for astronomical detector simulation.
+//!
+//! This module provides comprehensive models for CCD and CMOS image sensors
+//! used in astronomical applications. It includes realistic quantum efficiency
+//! curves, noise characteristics, and thermal properties for accurate
+//! photometric and detection simulations.
+//!
+//! # Key Features
+//!
+//! - **Spectral Response**: Detailed quantum efficiency curves from manufacturer data
+//! - **Noise Modeling**: Read noise, dark current, and temperature dependencies
+//! - **Geometry**: Pixel size, array dimensions, and field-of-view calculations
+//! - **Electronics**: ADC characteristics, gain settings, and well depth limits
+//! - **Performance**: Frame rate and dynamic range specifications
+//!
+//! # Sensor Models
+//!
+//! The module includes several real-world sensor configurations:
+//! - **GSENSE4040BSI**: High-performance 4K scientific CMOS (9μm pixels)
+//! - **GSENSE6510BSI**: Optimized for visible light (6.5μm pixels, low noise)
+//! - **HWK4123**: Wide-format sensor with excellent NIR response
+//! - **IMX455**: Full-frame Sony sensor popular in astronomy
+//!
+//! # Physics Models
+//!
+//! ## Quantum Efficiency
+//! Wavelength-dependent conversion efficiency from photons to electrons,
+//! incorporating:
+//! - Anti-reflection coatings
+//! - Silicon absorption characteristics  
+//! - Microlens efficiency
+//! - Color filter effects (for color sensors)
+//!
+//! ## Noise Sources
+//! - **Read Noise**: Electronic noise from amplifiers and ADC
+//! - **Dark Current**: Thermal generation with temperature dependence
+//! - **Shot Noise**: Poisson statistics from photon arrival
+//!
+//! # Examples
+//!
+//! ```rust
+//! use simulator::hardware::sensor::models::{GSENSE6510BSI, ALL_SENSORS};
+//! use simulator::hardware::sensor::SensorConfig;
+//!
+//! // Use a predefined sensor model
+//! let sensor = GSENSE6510BSI.clone();
+//! println!("QE at 550nm: {:.1}%", sensor.qe_at_wavelength(550) * 100.0);
+//! println!("Dark current at -15°C: {:.3} e⁻/px/s",
+//!          sensor.dark_current_at_temperature(-15.0));
+//!
+//! // Create custom sensor for specific field of view
+//! let custom_sensor = sensor.with_dimensions(1024, 768);
+//! let (width_um, height_um) = custom_sensor.dimensions_um();
+//! println!("Active area: {:.1} × {:.1} mm", width_um/1000.0, height_um/1000.0);
+//!
+//! // Survey all available sensors
+//! for sensor in ALL_SENSORS.iter() {
+//!     let megapixels = sensor.width_px * sensor.height_px / 1_000_000;
+//!     println!("{}: {}MP, {:.1}μm pixels", sensor.name, megapixels, sensor.pixel_size_um);
+//! }
+//! ```
 
 #![allow(clippy::approx_constant)]
 
@@ -7,40 +67,75 @@ use once_cell::sync::Lazy;
 use crate::hardware::dark_current::DarkCurrentEstimator;
 use crate::photometry::quantum_efficiency::QuantumEfficiency;
 
-/// Configuration for a sensor detector
+/// Complete sensor configuration for astronomical detector simulation.
+///
+/// Represents a digital image sensor (CCD or CMOS) with all physical and
+/// electronic characteristics needed for realistic astronomical observations.
+/// Combines spectral response, noise properties, geometry, and performance
+/// parameters into a unified model.
+///
+/// # Key Capabilities
+///
+/// - **Spectral modeling**: Wavelength-dependent quantum efficiency
+/// - **Noise simulation**: Read noise, dark current, and shot noise
+/// - **Geometric calculations**: Pixel scale, sensor dimensions, field of view
+/// - **Dynamic range**: Well depth, bit depth, and gain characteristics
+/// - **Thermal modeling**: Temperature-dependent dark current
+///
+/// # Examples
+///
+/// ```rust
+/// use simulator::hardware::sensor::models::GSENSE6510BSI;
+/// use simulator::hardware::sensor::SensorConfig;
+///
+/// // Use predefined sensor model
+/// let sensor = GSENSE6510BSI.clone();
+///
+/// // Query sensor properties
+/// let qe_peak = sensor.qe_at_wavelength(550);  // Peak QE wavelength
+/// let noise_20c = sensor.dark_current_at_temperature(-20.0);
+/// let (width_mm, height_mm) = sensor.dimensions_um();
+///
+/// println!("Peak QE: {:.1}%", qe_peak * 100.0);
+/// println!("Dark current: {:.3} e⁻/px/s", noise_20c);
+/// println!("Active area: {:.1} × {:.1} mm", width_mm/1000.0, height_mm/1000.0);
+///
+/// // Create custom version for different field of view
+/// let cropped = sensor.with_dimensions(1024, 1024);
+/// ```
 #[derive(Debug, Clone)]
 pub struct SensorConfig {
-    /// Quantum efficiency as a function of wavelength (nm)
+    /// Wavelength-dependent quantum efficiency curve from manufacturer data
     pub quantum_efficiency: QuantumEfficiency,
 
-    /// Width of sensor in pixels
+    /// Sensor width in pixels (active imaging area)
     pub width_px: usize,
 
-    /// Height of sensor in pixels
+    /// Sensor height in pixels (active imaging area)
     pub height_px: usize,
 
-    /// Pixel size in microns
+    /// Physical pixel size in micrometers (square pixels assumed)
     pub pixel_size_um: f64,
 
-    /// Read noise in electrons per pixel
+    /// Read noise in electrons per pixel (RMS, from amplifier and ADC)
     pub read_noise_e: f64,
 
-    /// Dark current estimator for temperature-dependent calculations
+    /// Temperature-dependent dark current model
     pub dark_current_estimator: DarkCurrentEstimator,
 
-    /// Name/model of the sensor
+    /// Sensor model name or identifier
     pub name: String,
 
-    /// Bit depth of the sensor
+    /// ADC bit depth (8, 12, 14, 16 bits typical)
     pub bit_depth: u8,
 
-    /// DN (Digital Numbers) per electron (typically at the highest gain setting)
+    /// Conversion gain in DN per electron (camera-dependent)
     pub dn_per_electron: f64,
 
-    /// Max well depth in electrons
+    /// Full well capacity in electrons (saturation limit)
     pub max_well_depth_e: f64,
 
-    /// Maximum frame rate in frames per second
+    /// Maximum sustainable frame rate in Hz
     pub max_frame_rate_fps: f64,
 }
 
@@ -301,7 +396,7 @@ pub mod models {
     });
 
     /// GSENSE6510BSI CMOS sensor with detailed QE curve from manufacturer chart found here
-    /// https://www.gpixel.com/en/details_155.html
+    /// <https://www.gpixel.com/en/details_155.html>
     pub static GSENSE6510BSI: Lazy<SensorConfig> = Lazy::new(|| {
         let wavelengths = vec![
             150.0, 200.0, 210.0, 220.0, 230.0, 240.0, 250.0, 260.0, 270.0, 280.0, 290.0, 300.0,
@@ -386,7 +481,7 @@ pub mod models {
 
     /// Sony IMX455 Full-frame BSI CMOS sensor
     /// Data from: "Characterization of Sony IMX455 sensor for astronomical applications"
-    /// https://arxiv.org/pdf/2207.13052
+    /// <https://arxiv.org/pdf/2207.13052>
     pub static IMX455: Lazy<SensorConfig> = Lazy::new(|| {
         // QE curve from manufacturer data
         // Note: We already have zero at the endpoints as required by QuantumEfficiency

@@ -1,4 +1,103 @@
-//! Quantum efficiency modeling for photometric sensors
+//! Quantum efficiency models for astronomical detectors and photometric systems.
+//!
+//! This module provides accurate wavelength-dependent quantum efficiency modeling
+//! for astronomical detectors, photometric filters, and optical systems. Essential
+//! for synthetic photometry, instrument characterization, and realistic sensor
+//! simulation in space telescope applications.
+//!
+//! # Quantum Efficiency Physics
+//!
+//! Quantum efficiency (QE) represents the probability that an incident photon
+//! of a given wavelength will be detected and converted to a usable signal.
+//! It encompasses the complete detection chain:
+//!
+//! - **Photon absorption**: Wavelength-dependent absorption in detector material
+//! - **Charge generation**: Conversion of absorbed photons to electron-hole pairs
+//! - **Charge collection**: Transport of generated charges to readout circuitry
+//! - **Electronic conversion**: Analog-to-digital conversion efficiency
+//!
+//! # Mathematical Representation
+//!
+//! QE curves are represented as piecewise linear functions QE(λ) where:
+//! - λ is wavelength in nanometers
+//! - QE(λ) ∈ [0, 1] represents detection probability
+//! - QE(λ) = 0 outside the detector's sensitive range
+//! - Linear interpolation between measured data points
+//!
+//! # Applications
+//!
+//! ## Detector Characterization
+//! ```rust
+//! use simulator::photometry::{QuantumEfficiency, Band};
+//!
+//! // Create a CCD quantum efficiency curve
+//! let wavelengths = vec![300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0];
+//! let efficiencies = vec![0.0, 0.3, 0.8, 0.9, 0.7, 0.4, 0.0];
+//!
+//! let ccd_qe = QuantumEfficiency::from_table(wavelengths, efficiencies)
+//!     .expect("Failed to create QE curve");
+//!
+//! // Check peak efficiency
+//! println!("Peak QE at 600nm: {:.1}%", ccd_qe.at(600.0) * 100.0);
+//!
+//! // Get wavelength coverage
+//! let band = ccd_qe.band();
+//! println!("Sensitive range: {:.0}-{:.0} nm", band.lower_nm, band.upper_nm);
+//! ```
+//!
+//! ## Filter Response Modeling
+//! ```rust
+//! use simulator::photometry::{QuantumEfficiency, Band};
+//!
+//! // Create a narrow-band filter (e.g., H-alpha at 656nm)
+//! let ha_band = Band::from_nm_bounds(650.0, 662.0);
+//! let ha_filter = QuantumEfficiency::from_notch(&ha_band, 0.85)
+//!     .expect("Failed to create H-alpha filter");
+//!
+//! // Check filter characteristics
+//! assert_eq!(ha_filter.at(656.0), 0.85);  // Peak transmission
+//! assert_eq!(ha_filter.at(600.0), 0.0);   // Out-of-band rejection
+//! ```
+//!
+//! ## Synthetic Photometry Integration
+//! ```rust
+//! use simulator::photometry::QuantumEfficiency;
+//!
+//! # let wavelengths = vec![400.0, 500.0, 600.0, 700.0];
+//! # let efficiencies = vec![0.0, 0.8, 0.9, 0.0];
+//! # let qe = QuantumEfficiency::from_table(wavelengths, efficiencies).unwrap();
+//! // Integrate with stellar spectrum
+//! let total_response = qe.integrate(|wavelength| {
+//!     // Example: Planck function for 5780K blackbody (solar temperature)
+//!     let h = 6.626e-34; // Planck constant
+//!     let c = 3e8;       // Speed of light  
+//!     let k = 1.381e-23; // Boltzmann constant
+//!     let T = 5780.0;    // Temperature in K
+//!     
+//!     let lambda_m = wavelength * 1e-9; // Convert nm to meters
+//!     let exponent = (h * c) / (lambda_m * k * T);
+//!     
+//!     // Simplified Planck function
+//!     1.0 / (lambda_m.powi(5) * (exponent.exp() - 1.0))
+//! });
+//!
+//! println!("Total integrated response: {:.2e}", total_response);
+//! ```
+//!
+//! # Data Requirements
+//!
+//! QE curves must satisfy physical constraints:
+//! - **Wavelength ordering**: Strictly ascending wavelength values
+//! - **Efficiency bounds**: All values in [0.0, 1.0] range
+//! - **Boundary conditions**: Zero efficiency at wavelength extremes
+//! - **Monotonic segments**: No discontinuities within sensitive range
+//!
+//! # Performance Considerations
+//!
+//! - **Linear interpolation**: O(n) lookup with binary search optimization
+//! - **Memory efficiency**: Compact storage of wavelength-efficiency pairs
+//! - **Numerical stability**: Robust handling of edge cases and extrapolation
+//! - **Integration accuracy**: Trapezoidal rule for photometric calculations
 
 use thiserror::Error;
 
@@ -20,10 +119,22 @@ pub enum QuantumEfficiencyError {
     OutOfRange,
 }
 
-/// Models the quantum efficiency of a sensor across a range of wavelengths
+/// Wavelength-dependent quantum efficiency model for astronomical detectors.
 ///
-/// This struct stores wavelength-efficiency pairs and provides methods to
-/// evaluate the efficiency at any wavelength within the defined range.
+/// Represents the detection probability as a function of photon wavelength,
+/// using piecewise linear interpolation between measured data points. Fundamental
+/// for accurate synthetic photometry, detector characterization, and photometric
+/// system modeling in space telescope simulations.
+///
+/// # Physical Interpretation
+/// - QE(λ) = 0.0: No photons detected at this wavelength
+/// - QE(λ) = 1.0: Perfect detection (100% quantum efficiency)
+/// - Typical values: 0.1-0.9 for modern astronomical detectors
+///
+/// # Data Storage
+/// - **Wavelengths**: Ascending-ordered array in nanometers
+/// - **Efficiencies**: Corresponding QE values in [0, 1] range
+/// - **Interpolation**: Linear between data points, zero outside range
 #[derive(Debug, Clone)]
 pub struct QuantumEfficiency {
     /// Wavelengths in nanometers (nm)
@@ -36,15 +147,39 @@ pub struct QuantumEfficiency {
 // TODO(meawoppl) - convert the internal storage to f64
 
 impl QuantumEfficiency {
-    /// Create a new QuantumEfficiency model from a explicit notch
+    /// Create quantum efficiency model for a rectangular passband (notch filter).
+    ///
+    /// Generates a simple rectangular response with sharp cutoffs at band edges,
+    /// useful for modeling narrow-band filters, laser line filters, or simplified
+    /// detector responses. The response is zero outside the band and constant within.
+    ///
+    /// # Physical Model
+    /// Creates a step function:
+    /// - QE = 0.0 for λ < band.lower_nm
+    /// - QE = efficiency for band.lower_nm ≤ λ ≤ band.upper_nm  
+    /// - QE = 0.0 for λ > band.upper_nm
     ///
     /// # Arguments
-    ///
-    /// * `band` - Band that the notch applies to
-    /// * `efficiency` - Efficiency value (0.0 to 1.0) for the notch
+    /// * `band` - Wavelength range for the passband
+    /// * `efficiency` - Constant QE value within the band [0.0, 1.0]
     ///
     /// # Returns
-    /// A Result containing the new QuantumEfficiency or an error
+    /// Result containing QuantumEfficiency model or validation error
+    ///
+    /// # Examples
+    /// ```rust
+    /// use simulator::photometry::{QuantumEfficiency, Band};
+    ///
+    /// // Create H-alpha narrow-band filter (656.3nm ± 5nm)
+    /// let ha_band = Band::from_nm_bounds(651.3, 661.3);
+    /// let ha_filter = QuantumEfficiency::from_notch(&ha_band, 0.85)
+    ///     .expect("Failed to create H-alpha filter");
+    ///
+    /// // Verify filter properties
+    /// assert_eq!(ha_filter.at(656.3), 0.85);  // Peak transmission
+    /// assert_eq!(ha_filter.at(600.0), 0.0);   // Out-of-band
+    /// assert_eq!(ha_filter.at(700.0), 0.0);   // Out-of-band
+    /// ```
     pub fn from_notch(band: &Band, efficiency: f64) -> Result<Self, QuantumEfficiencyError> {
         // Validate efficiency value
         if !(0.0..=1.0).contains(&efficiency) {
@@ -125,17 +260,41 @@ impl QuantumEfficiency {
         })
     }
 
-    /// Get the quantum efficiency at a specific wavelength
+    /// Evaluate quantum efficiency at specified wavelength using linear interpolation.
     ///
-    /// If the wavelength is outside the defined range, returns 0.0
+    /// Returns the detection probability for photons at the given wavelength.
+    /// Uses linear interpolation between measured data points for wavelengths
+    /// within the defined range, and returns zero for out-of-band wavelengths.
+    ///
+    /// # Interpolation Method
+    /// For wavelength λ between data points (λᵢ, QEᵢ) and (λᵢ₊₁, QEᵢ₊₁):
+    /// QE(λ) = QEᵢ + (QEᵢ₊₁ - QEᵢ) × (λ - λᵢ) / (λᵢ₊₁ - λᵢ)
     ///
     /// # Arguments
-    ///
-    /// * `wavelength` - The wavelength in nanometers (nm)
+    /// * `wavelength` - Photon wavelength in nanometers
     ///
     /// # Returns
+    /// Quantum efficiency [0.0, 1.0] or 0.0 if outside detector range
     ///
-    /// The interpolated efficiency value (0.0 to 1.0)
+    /// # Examples
+    /// ```rust
+    /// use simulator::photometry::QuantumEfficiency;
+    ///
+    /// let wavelengths = vec![400.0, 500.0, 600.0, 700.0];
+    /// let efficiencies = vec![0.0, 0.8, 0.9, 0.0];
+    /// let qe = QuantumEfficiency::from_table(wavelengths, efficiencies).unwrap();
+    ///
+    /// // Direct lookup at data points
+    /// assert_eq!(qe.at(500.0), 0.8);
+    /// assert_eq!(qe.at(600.0), 0.9);
+    ///
+    /// // Linear interpolation between points
+    /// assert!((qe.at(550.0) - 0.85).abs() < 0.01);  // Midpoint between 500nm and 600nm
+    ///
+    /// // Out-of-band returns zero
+    /// assert_eq!(qe.at(300.0), 0.0);   // Below range
+    /// assert_eq!(qe.at(800.0), 0.0);   // Above range
+    /// ```
     pub fn at(&self, wavelength: f64) -> f64 {
         // Return 0.0 if outside the range
         if wavelength < self.wavelengths[0] || wavelength > *self.wavelengths.last().unwrap() {

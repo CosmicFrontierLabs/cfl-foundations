@@ -1,28 +1,97 @@
+//! Image format conversion utilities for astronomical data processing.
+//!
+//! This module provides conversion functions between ndarray Array2 structures
+//! (commonly used in scientific computing) and image crate types (used for
+//! visualization and file I/O). Essential for exporting processed astronomical
+//! data to standard image formats.
+//!
+//! # Coordinate System Conversions
+//!
+//! - **ndarray**: Uses matrix indexing [row, col] = [y, x] with (height, width) dimensions
+//! - **image crate**: Uses graphics indexing (x, y) with (width, height) dimensions
+//!
+//! # Common Use Cases
+//!
+//! - Export processed star field images for visualization
+//! - Convert detection maps to standard image formats
+//! - Save analysis results for presentations and reports
+//! - Interface with image processing libraries
+//!
+//! # Examples
+//!
+//! ```rust
+//! use simulator::image_proc::image::array2_to_gray_image;
+//! use ndarray::Array2;
+//!
+//! // Create a synthetic star field
+//! let mut data = Array2::from_elem((100, 100), 50u8);  // Background
+//! data[[25, 25]] = 255;  // Bright star
+//! data[[75, 50]] = 200;  // Dimmer star
+//!
+//! // Convert to image format for saving
+//! let image = array2_to_gray_image(&data);
+//! // image.save("starfield.png").unwrap();
+//!
+//! println!("Converted {}x{} array to {}x{} image",
+//!          data.nrows(), data.ncols(), image.width(), image.height());
+//! ```
+
 use image::{GrayImage, Luma};
 use ndarray::Array2;
 
-/// Converts an ndarray Array2<u8> to an image::GrayImage
+/// Convert ndarray `Array2<u8>` to image crate GrayImage for visualization and I/O.
 ///
-/// This function takes a 2D array of u8 values and converts it to a GrayImage
-/// from the image crate, preserving the data arrangement. The conversion uses
-/// a direct mapping where array indices [y, x] map to pixel coordinates (x, y).
-/// Note that array dimensions are (height, width) while image dimensions are (width, height).
+/// Performs efficient conversion between scientific computing array format and
+/// standard image format while correctly handling coordinate system differences.
+/// The conversion preserves all pixel data and spatial relationships.
+///
+/// # Coordinate Mapping
+/// - Array index [row, col] → Image pixel (col, row)
+/// - Array dimensions (height, width) → Image dimensions (width, height)
+/// - This ensures proper image orientation is maintained
 ///
 /// # Arguments
-/// * `arr` - Reference to an Array2<u8> containing grayscale pixel values
+/// * `arr` - Reference to 2D grayscale array with u8 pixel values (0-255)
 ///
 /// # Returns
-/// * A new GrayImage containing the same data as the input array
+/// GrayImage with identical pixel data suitable for saving or display
+///
+/// # Performance
+/// - Time: O(width × height) - single pass through all pixels
+/// - Space: O(width × height) - creates new image buffer
+/// - Memory layout optimized for row-major traversal
+///
+/// # Examples
+/// ```rust
+/// use simulator::image_proc::image::array2_to_gray_image;
+/// use ndarray::Array2;
+///
+/// // Create test pattern
+/// let mut array = Array2::zeros((50, 50));
+/// for i in 0..50 {
+///     array[[i, i]] = 255;  // Diagonal line
+/// }
+///
+/// // Convert for visualization
+/// let image = array2_to_gray_image(&array);
+/// assert_eq!(image.width(), 50);
+/// assert_eq!(image.height(), 50);
+///
+/// // Verify pixel mapping: array[row, col] = image(col, row)
+/// assert_eq!(image.get_pixel(10, 10).0[0], 255);  // Diagonal pixel
+/// assert_eq!(image.get_pixel(10, 11).0[0], 0);    // Off-diagonal pixel
+/// ```
 pub fn array2_to_gray_image(arr: &Array2<u8>) -> GrayImage {
-    // Get array dimensions
+    // Get array dimensions (height, width)
     let (height, width) = arr.dim();
 
-    // Create a new GrayImage
+    // Create GrayImage with swapped dimensions (width, height)
     let mut img = GrayImage::new(width as u32, height as u32);
 
-    // Copy data from array to image
+    // Copy data with coordinate system conversion
     for y in 0..height {
         for x in 0..width {
+            // Map array[y, x] to image pixel (x, y)
             img.put_pixel(x as u32, y as u32, Luma([arr[[y, x]]]));
         }
     }

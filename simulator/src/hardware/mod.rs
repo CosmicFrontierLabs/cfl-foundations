@@ -1,4 +1,53 @@
-//! Hardware module for telescope and sensor configurations
+//! Hardware module for telescope, sensor, and satellite configurations.
+//!
+//! This module provides comprehensive models for space telescope hardware,
+//! including optical systems, sensor characteristics, and integrated satellite
+//! configurations. It supports realistic simulation of astronomical observations
+//! with proper modeling of:
+//!
+//! # Components
+//!
+//! - **Telescopes**: Optical parameters including aperture, focal length,
+//!   light efficiency, and geometric properties
+//! - **Sensors**: Detailed CCD/CMOS models with quantum efficiency curves,
+//!   noise characteristics, pixel geometry, and temperature dependencies
+//! - **Satellites**: Integrated telescope-sensor configurations with
+//!   environmental parameters and observation modes
+//! - **Dark Current**: Temperature-dependent noise modeling for thermal
+//!   characterization of sensors
+//! - **Star Projection**: Field-of-view calculations and star positioning
+//!   within sensor focal planes
+//!
+//! # Physics Models
+//!
+//! The module incorporates realistic physics including:
+//! - Airy disk PSF calculations for diffraction-limited optics
+//! - Quantum efficiency spectral response curves
+//! - Temperature-dependent dark current scaling
+//! - Photon noise and read noise contributions
+//! - Optical throughput and vignetting effects
+//!
+//! # Usage Examples
+//!
+//! ```rust
+//! use simulator::hardware::{SatelliteConfig, TelescopeConfig, SensorConfig};
+//! use simulator::hardware::telescope::models::DEMO_50CM;
+//! use simulator::hardware::sensor::models::GSENSE6510BSI;
+//!
+//! // Create a satellite configuration
+//! let satellite = SatelliteConfig::new(
+//!     DEMO_50CM.clone(),
+//!     GSENSE6510BSI.clone(),
+//!     -10.0,  // Temperature in °C
+//!     550.0,  // Wavelength in nm
+//! );
+//!
+//! // Calculate field of view
+//! let fov_degrees = simulator::hardware::field_diameter(
+//!     &satellite.telescope,
+//!     &satellite.sensor
+//! );
+//! ```
 
 pub mod dark_current;
 pub mod satellite;

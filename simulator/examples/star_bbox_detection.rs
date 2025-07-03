@@ -1,3 +1,37 @@
+//! Star detection example using bounding box analysis and centroid calculation.
+//!
+//! This example demonstrates a complete astronomical image processing pipeline that combines
+//! multiple detection techniques to identify and characterize stars in a synthetic image:
+//!
+//! # Processing Pipeline
+//!
+//! 1. **Image Creation**: Generates a synthetic star field with realistic noise and galaxy features
+//! 2. **Preprocessing**: Applies Gaussian smoothing to reduce noise
+//! 3. **Thresholding**: Uses Otsu's method for automatic threshold selection
+//! 4. **Component Analysis**: Performs connected components labeling
+//! 5. **Bounding Box Detection**: Identifies rectangular regions containing stars
+//! 6. **Centroid Analysis**: Calculates precise star positions and sizes using moment analysis
+//! 7. **Box Merging**: Combines overlapping detection regions
+//! 8. **Visualization**: Creates multiple output images showing different aspects
+//!
+//! # Output Images
+//!
+//! The example produces four visualization types:
+//! - **Original boxes** (red): Raw bounding boxes from connected components
+//! - **Merged boxes** (pale green): Overlapping boxes merged with diameter labels
+//! - **Star circles** (pale blue): Actual star sizes as circles at centroid positions
+//! - **X markers** (light blue): Star centroids marked with crosses and diameter labels
+//!
+//! # Use Cases
+//!
+//! This pipeline is suitable for:
+//! - Astronomical survey processing
+//! - Star photometry preparation
+//! - Astrometric calibration
+//! - Quality assessment of detection algorithms
+//!
+//! All outputs are saved to the test output directory for analysis.
+
 use image::{DynamicImage, GrayImage, Luma};
 use ndarray::Array2;
 use simulator::image_proc::detection::{apply_threshold, connected_components, otsu_threshold};
@@ -203,7 +237,28 @@ fn main() {
 
 // Test function removed - text rendering now working properly
 
-// Create a test image with simulated stars
+/// Creates a synthetic test image simulating an astronomical star field.
+///
+/// This function generates a realistic 512×512 pixel astronomical image containing:
+/// - Multiple stars of varying sizes and brightnesses with Gaussian profiles
+/// - A galaxy-like extended object with spiral structure
+/// - Realistic background noise simulating sensor characteristics
+/// - Dark sky background typical of night observations
+///
+/// The synthetic data provides a controlled test case for evaluating
+/// star detection algorithms with known ground truth.
+///
+/// # Returns
+///
+/// A grayscale `DynamicImage` containing the synthetic star field
+///
+/// # Star Characteristics
+///
+/// The generated stars have:
+/// - Gaussian intensity profiles (realistic PSF approximation)
+/// - Radii ranging from 2-5 pixels (typical for ground-based telescopes)
+/// - Peak intensities from 190-250 (avoiding saturation)
+/// - Positions spread across the field of view
 fn create_test_image() -> DynamicImage {
     let width = 512;
     let height = 512;
@@ -235,7 +290,24 @@ fn create_test_image() -> DynamicImage {
     DynamicImage::ImageLuma8(image)
 }
 
-// Helper function to add a star with Gaussian profile
+/// Adds a star with a Gaussian intensity profile to the image.
+///
+/// This function simulates a realistic stellar point spread function (PSF)
+/// by rendering a 2D Gaussian profile centered at the specified coordinates.
+/// The star extends to 3× the specified radius to capture the full PSF.
+///
+/// # Arguments
+///
+/// * `image` - The image to modify
+/// * `x` - X-coordinate of the star center (pixels)
+/// * `y` - Y-coordinate of the star center (pixels)
+/// * `radius` - Characteristic radius of the Gaussian PSF (pixels)
+/// * `intensity` - Peak intensity at the star center (0-255)
+///
+/// # PSF Model
+///
+/// The intensity follows: I(r) = intensity × exp(-r²/(2σ²))
+/// where σ = radius and r is the distance from center.
 fn add_star(image: &mut GrayImage, x: u32, y: u32, radius: u32, intensity: u8) {
     let width = image.width();
     let height = image.height();
@@ -262,7 +334,28 @@ fn add_star(image: &mut GrayImage, x: u32, y: u32, radius: u32, intensity: u8) {
     }
 }
 
-// Helper function to add a galaxy-like feature
+/// Adds a galaxy-like extended object with spiral structure to the image.
+///
+/// This function creates a realistic extended astronomical object with:
+/// - Smooth radial intensity falloff
+/// - Spiral arm structure for visual complexity
+/// - Random bright knots simulating star formation regions
+/// - Realistic surface brightness distribution
+///
+/// # Arguments
+///
+/// * `image` - The image to modify
+/// * `x` - X-coordinate of the galaxy center (pixels)
+/// * `y` - Y-coordinate of the galaxy center (pixels)
+/// * `radius` - Effective radius of the galaxy (pixels)
+/// * `intensity` - Peak surface brightness (0-255)
+///
+/// # Structure
+///
+/// The galaxy combines:
+/// - Quadratic radial falloff: (1 - (r/R)²)
+/// - Spiral modulation: sin(0.2r + 2θ)
+/// - 15 random bright knots within 80% of the radius
 fn add_galaxy(image: &mut GrayImage, x: u32, y: u32, radius: u32, intensity: u8) {
     let width = image.width();
     let height = image.height();
@@ -313,7 +406,28 @@ fn add_galaxy(image: &mut GrayImage, x: u32, y: u32, radius: u32, intensity: u8)
     }
 }
 
-// Add random noise to the image
+/// Adds realistic sensor noise to the image.
+///
+/// This function simulates the random noise characteristics typical of
+/// astronomical CCD/CMOS sensors by adding uniform random noise to each pixel.
+/// The noise is symmetric around zero with the specified amplitude.
+///
+/// # Arguments
+///
+/// * `image` - The image to add noise to
+/// * `amplitude` - Maximum noise amplitude (0-255)
+///
+/// # Noise Model
+///
+/// Each pixel receives random noise in the range [-amplitude, +amplitude]
+/// using a uniform distribution. The final pixel values are clamped to [0, 255].
+///
+/// # Typical Values
+///
+/// For realistic astronomical images:
+/// - Low noise: amplitude = 3-5 (excellent conditions)
+/// - Medium noise: amplitude = 8-12 (typical ground-based)
+/// - High noise: amplitude = 15-20 (poor conditions or faint targets)
 fn add_noise(image: &mut GrayImage, amplitude: u8) {
     use rand::Rng;
     let mut rng = rand::thread_rng();
