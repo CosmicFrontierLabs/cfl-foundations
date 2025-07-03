@@ -440,21 +440,21 @@ pub fn add_stars_to_image(
         let xc = star.x.round() as i32;
         let yc = star.y.round() as i32;
 
-        for y in (xc - max_pix_dist)..=(xc + max_pix_dist) {
-            for x in (yc - max_pix_dist)..=(yc + max_pix_dist) {
+        for x in (xc - max_pix_dist)..=(xc + max_pix_dist) {
+            for y in (yc - max_pix_dist)..=(yc + max_pix_dist) {
                 // Bounds check x/y - Skip out of bounds pixels
                 if x < 0 || y < 0 || x >= width as i32 || y >= height as i32 {
                     continue;
                 }
 
                 // Calculate pixel center position relative to star
-                let x_pixel = y as f64 - star.x;
-                let y_pixel = x as f64 - star.y;
+                let x_pixel = x as f64 - star.x;
+                let y_pixel = y as f64 - star.y;
 
                 // Use Simpson's rule integration for accurate flux calculation
                 let contribution = airy_pix.pixel_flux_simpson(x_pixel, y_pixel, star.flux);
 
-                image[[x as usize, y as usize]] += contribution;
+                image[[y as usize, x as usize]] += contribution;
             }
         }
     }
@@ -628,6 +628,33 @@ mod tests {
         let airy_pix = ScaledAiryDisk::with_radius_scale(sigma_pix);
 
         let image = add_stars_to_image(50, 50, &stars, airy_pix);
+
+        let added_flux = image.sum();
+
+        // Very loose bounds, but should catch egregious errors
+        assert!(added_flux > 0.0);
+    }
+
+    #[test]
+    fn test_fuzz_aspected() {
+        let sigma_pix = 2.0;
+        let total_flux = 100.0;
+
+        let mut rng = rand::thread_rng();
+
+        let mut stars = Vec::new();
+        for _ in 0..1000 {
+            stars.push(StarInFrame {
+                x: rng.gen_range(-50.0..150.0),
+                y: rng.gen_range(-50.0..150.0),
+                flux: total_flux,
+                star: test_star_data(),
+            });
+        }
+
+        let airy_pix = ScaledAiryDisk::with_radius_scale(sigma_pix);
+
+        let image = add_stars_to_image(23, 57, &stars, airy_pix);
 
         let added_flux = image.sum();
 
