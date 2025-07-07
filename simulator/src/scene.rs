@@ -50,9 +50,11 @@
 //! use simulator::photometry::zodical::SolarAngularCoordinates;
 //! use starfield::{Equatorial, catalogs::StarData};
 //!
+//! # // Use small sensor for fast doctest
+//! # let small_sensor = GSENSE6510BSI.with_dimensions(16, 16);
 //! # let satellite_config = SatelliteConfig::new(
 //! #     DEMO_50CM.clone(),
-//! #     GSENSE6510BSI.clone(),
+//! #     small_sensor,
 //! #     -10.0,
 //! #     550.0
 //! # );
@@ -445,7 +447,9 @@ impl Scene {
     ///
     /// # use simulator::hardware::{SatelliteConfig, telescope::models::DEMO_50CM, sensor::models::GSENSE6510BSI};
     /// # use starfield::Equatorial;
-    /// # let satellite_config = SatelliteConfig::new(DEMO_50CM.clone(), GSENSE6510BSI.clone(), -10.0, 550.0);
+    /// # // Use small sensor for fast doctest
+    /// # let small_sensor = GSENSE6510BSI.with_dimensions(16, 16);
+    /// # let satellite_config = SatelliteConfig::new(DEMO_50CM.clone(), small_sensor, -10.0, 550.0);
     /// # let scene = Scene::from_catalog(satellite_config, vec![], Equatorial::from_degrees(0.0, 0.0), 1.0);
     /// // Render scene with moderate zodiacal light
     /// let zodiacal_coords = SolarAngularCoordinates::new(90.0, 30.0).unwrap();

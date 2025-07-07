@@ -84,7 +84,8 @@ use rand_distr::{Distribution, Normal, Poisson};
 /// use simulator::hardware::sensor::models::GSENSE6510BSI;
 /// use std::time::Duration;
 ///
-/// let sensor = GSENSE6510BSI.clone();
+/// // Use small sensor for fast doctest
+/// let sensor = GSENSE6510BSI.with_dimensions(16, 16);
 /// let exposure = Duration::from_secs(60);  // 1 minute exposure
 /// let temp = -15.0;  // Cold space telescope
 ///
