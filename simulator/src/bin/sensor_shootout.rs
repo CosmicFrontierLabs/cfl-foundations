@@ -463,16 +463,26 @@ fn write_results_to_csv(
     writeln!(csv_file, "Satellite Configurations:")?;
     for (i, satellite) in satellites.iter().enumerate() {
         let fov_deg = field_diameter(&satellite.telescope, &satellite.sensor);
+        let dark_current = satellite
+            .sensor
+            .dark_current_at_temperature(satellite.temperature_c);
+        let read_noise = satellite
+            .sensor
+            .read_noise_estimator
+            .estimate(satellite.temperature_c, args.shared.exposure.0)
+            .unwrap_or(f64::NAN);
         writeln!(
             csv_file,
-            "Satellite {}: {} - Circumcircle FOV: {:.4}° - Focal Length: {:.8}m - Aperture: {:.2}m - Temp: {:.1}°C - Wavelength: {:.0}nm",
+            "Satellite {}: {} - Circumcircle FOV: {:.4}° - Focal Length: {:.8}m - Aperture: {:.2}m - Temp: {:.1}°C - Wavelength: {:.0}nm - Read Noise: {:.2} e⁻ - Dark Current: {:.4} e⁻/px/s",
             i + 1,
             satellite.sensor.name,
             fov_deg,
             satellite.telescope.focal_length_m,
             satellite.telescope.aperture_m,
             satellite.temperature_c,
-            satellite.wavelength_nm
+            satellite.wavelength_nm,
+            read_noise,
+            dark_current
         )?;
     }
     writeln!(csv_file)?;

@@ -63,3 +63,18 @@ IMPORTANT: Always run `cargo fmt` before committing any code changes!
 - Focus on explaining the WHY (purpose) not just the WHAT (changes)
 - Prefer shorter, more focused commits over large monolithic ones
 - Reference issue numbers when applicable
+
+## Commonly Worked Files
+### sensor_shootout.rs (simulator/src/bin/sensor_shootout.rs)
+- Compares performance of different sensor models under various conditions
+- Runs experiments across multiple sky pointings and satellites
+- Outputs CSV with detection results, magnitudes, and ICP matching errors
+- Can run in single-shot debug mode with fixed coordinates (e.g., Pleiades)
+- Supports parallel/serial execution and optional image saving
+- CSV header includes sensor noise characteristics (read noise, dark current at temp)
+
+### sensor_floor_est.rs (simulator/src/bin/sensor_floor_est.rs) 
+- Estimates sensor noise floor and detection limits
+- Analyzes minimum detectable star magnitudes for each sensor configuration
+- Useful for understanding sensor sensitivity and performance boundaries
+- Works with same sensor models as sensor_shootout

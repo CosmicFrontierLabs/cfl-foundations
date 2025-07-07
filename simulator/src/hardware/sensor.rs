@@ -482,7 +482,7 @@ pub mod models {
             2300,
             4.6,
             crate::hardware::read_noise::ReadNoiseEstimator::hwk4123(),
-            DarkCurrentEstimator::new(0.1, 20.0), // 0.1 e-/px/s at 20°C
+            DarkCurrentEstimator::new(0.1, 0.0), // 0.1 e-/px/s at 0°C
             12,
             7.42,
             7_500.0,
@@ -524,7 +524,7 @@ pub mod models {
             DarkCurrentEstimator::new(0.002, -20.0), // 0.002 e-/px/s at -20°C (from arxiv paper)
             16,
             0.343,
-            71_600.0,
+            51_000.0, // Max well depth not including "extended mode" (intermediate digitization?)
             21.33,
         )
     });
@@ -542,6 +542,8 @@ pub mod models {
 
 #[cfg(test)]
 mod model_tests {
+    use approx::assert_relative_eq;
+
     use super::*;
 
     #[test]
@@ -600,7 +602,12 @@ mod model_tests {
             .estimate(20.0, std::time::Duration::from_secs_f64(1.0 / 5.0))
             .unwrap();
         assert!((hwk_read_noise - 0.301).abs() < 0.01);
-        assert_eq!(models::HWK4123.dark_current_at_temperature(20.0), 0.1);
+        assert_eq!(models::HWK4123.dark_current_at_temperature(0.0), 0.1);
+        assert_relative_eq!(
+            models::HWK4123.dark_current_at_temperature(20.0),
+            0.565,
+            epsilon = 0.05
+        );
         assert_eq!(models::HWK4123.max_frame_rate_fps, 120.0);
         // QE should be close to 0.8 at 550nm for this sensor
         assert!(models::HWK4123.qe_at_wavelength(550) > 0.75);
