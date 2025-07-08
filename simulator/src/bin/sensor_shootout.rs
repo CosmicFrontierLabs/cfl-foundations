@@ -15,7 +15,7 @@
 //!
 //! Usage:
 //! ```
-//! cargo run --bin sensor_shootout -- [OPTIONS]
+//! cargo run --release --bin sensor_shootout -- [OPTIONS]
 //! ```
 //!
 //! See --help for detailed options.
@@ -84,7 +84,7 @@ struct ExperimentResult {
     sensor_name: String,
     coordinates: Equatorial,
     detected_magnitudes: Vec<f64>,
-    icp_rms_error: f64,
+    alignment_error: f64,
 }
 
 /// Parse coordinates string in format "ra,dec" (degrees)
@@ -262,12 +262,11 @@ fn run_experiment<T: StarCatalog>(
             satellite.sensor.name.replace(" ", "_"),
         );
 
-        // Only pick stuff that is noise_multiple above the noise floor
-        let mean_noise_elec = render_result
-            .sensor_noise_image
-            .mean()
-            .expect("Can't take image mean");
-        let background_rms = mean_noise_elec * satellite.sensor.dn_per_electron;
+        // Calculate background RMS from the sensor noise in electrons, then convert to DN
+        // This properly accounts for the noise sources (read noise + dark current + zodiacal)
+        let noise_electrons = &render_result.sensor_noise_image + &render_result.zodiacal_image;
+        let noise_rms_electrons = noise_electrons.mapv(|x| x * x).mean().unwrap_or(0.0).sqrt();
+        let background_rms = noise_rms_electrons * satellite.sensor.dn_per_electron;
         let airy_disk_pixels = satellite.airy_disk_fwhm_sampled().fwhm();
         let detection_sigma = params.common_args.noise_multiple;
 
@@ -341,18 +340,27 @@ fn run_experiment<T: StarCatalog>(
                     magnitudes.last().unwrap_or(&f64::NAN)
                 );
 
+                debug!("ICP match results:");
+                debug!("\tMatched stars: {}", matches.len());
+                debug!("\tTranslation: {:?}", icp_result.translation);
+                debug!("\tRotation: {:?}", icp_result.rotation);
+                debug!("\tScale: {:?}", icp_result.rotation_quat);
+
+                let alignment_error = icp_result.translation.map(|disp| disp * disp).sum().sqrt();
+
                 ExperimentResult {
                     experiment_num: params.experiment_num,
                     sensor_name: satellite.sensor.name.clone(),
                     coordinates: params.ra_dec,
                     detected_magnitudes: magnitudes,
-                    icp_rms_error: icp_result.mean_squared_error.sqrt(),
+                    alignment_error,
                 }
             }
             Err(e) => {
                 warn!(
                     "ICP matching failed for satellite {}: {}",
-                    satellite.sensor.name, e
+                    satellite.description(),
+                    e
                 );
 
                 ExperimentResult {
@@ -360,7 +368,7 @@ fn run_experiment<T: StarCatalog>(
                     sensor_name: satellite.sensor.name.clone(),
                     coordinates: params.ra_dec,
                     detected_magnitudes: Vec::new(),
-                    icp_rms_error: f64::NAN,
+                    alignment_error: f64::NAN,
                 }
             }
         };
@@ -489,7 +497,7 @@ fn write_results_to_csv(
 
     // Write CSV data header
     writeln!(csv_file, "Experiment Data:")?;
-    writeln!(csv_file, "experiment_num,sensor_name,ra_degrees,dec_degrees,detected_count,icp_rms_error,detected_magnitudes")?;
+    writeln!(csv_file, "experiment_num,sensor_name,ra_degrees,dec_degrees,detected_count,alignment_error_pix,detected_magnitudes")?;
 
     // Write experiment results
     for result in results {
@@ -500,7 +508,7 @@ fn write_results_to_csv(
             result.coordinates.ra_degrees(),
             result.coordinates.dec_degrees(),
             result.detected_magnitudes.len(),
-            result.icp_rms_error,
+            result.alignment_error,
             result
                 .detected_magnitudes
                 .iter()
@@ -785,9 +793,17 @@ fn debug_stats(
     // Print ICP match distances
     for (dete, star) in matches.iter() {
         let distance = ((dete.x() - star.x()).powf(2.0) + (dete.y() - star.y()).powf(2.0)).sqrt();
+        debug!("Matched star with distance {:.2}", distance);
         debug!(
-            "Matched star {:?} to source {:?} with distance {:.2}",
-            dete, star, distance
+            "\tDetected X/Y: ({:.2}, {:.2}), Source X/Y: ({:.2}, {:.2})",
+            dete.x(),
+            dete.y(),
+            star.x(),
+            star.y()
+        );
+        debug!(
+            "\tDetected flux: {:.2}, Source magnitude: {:.2}",
+            dete.flux, star.star.magnitude
         );
     }
     // Get statistics for binning (gross)
