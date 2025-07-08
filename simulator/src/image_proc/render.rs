@@ -5,12 +5,10 @@ use starfield::{catalogs::StarData, Equatorial};
 
 use crate::{
     algo::icp::Locatable2d,
-    field_diameter,
     hardware::SatelliteConfig,
     image_proc::airy::ScaledAiryDisk,
     photometry::{zodical::SolarAngularCoordinates, ZodicalLight},
-    star_data_to_electrons,
-    star_math::StarProjector,
+    star_math::{field_diameter, star_data_to_electrons, StarProjector},
     SensorConfig,
 };
 

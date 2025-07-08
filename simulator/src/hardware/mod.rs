@@ -15,8 +15,6 @@
 //!   environmental parameters and observation modes
 //! - **Dark Current**: Temperature-dependent noise modeling for thermal
 //!   characterization of sensors
-//! - **Star Projection**: Field-of-view calculations and star positioning
-//!   within sensor focal planes
 //!
 //! # Physics Models
 //!
@@ -43,7 +41,7 @@
 //! );
 //!
 //! // Calculate field of view
-//! let fov_degrees = simulator::hardware::field_diameter(
+//! let fov_degrees = simulator::star_math::field_diameter(
 //!     &satellite.telescope,
 //!     &satellite.sensor
 //! );
@@ -53,10 +51,8 @@ pub mod dark_current;
 pub mod read_noise;
 pub mod satellite;
 pub mod sensor;
-pub mod star_projection;
 pub mod telescope;
 
 pub use satellite::SatelliteConfig;
 pub use sensor::SensorConfig;
-pub use star_projection::field_diameter;
 pub use telescope::TelescopeConfig;

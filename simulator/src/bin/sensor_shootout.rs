@@ -46,7 +46,7 @@ use simulator::photometry::zodical::SolarAngularCoordinates;
 use simulator::scene::Scene;
 use simulator::shared_args::SharedSimulationArgs;
 use simulator::star_math::EquatorialRandomizer;
-use simulator::{field_diameter, SensorConfig};
+use simulator::{star_math::field_diameter, SensorConfig};
 use starfield::catalogs::{StarCatalog, StarData};
 use starfield::Equatorial;
 use std::collections::HashMap;

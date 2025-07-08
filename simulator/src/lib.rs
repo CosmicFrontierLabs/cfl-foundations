@@ -127,15 +127,13 @@ pub mod star_math;
 // Re-exports for easier access
 pub use algo::icp::{iterative_closest_point, ICPResult};
 pub use hardware::sensor::SensorConfig;
-pub use hardware::star_projection::{
-    field_diameter, filter_stars_in_field, pixel_scale, star_data_to_electrons,
-};
 pub use hardware::telescope::TelescopeConfig;
 pub use image_proc::histogram_stretch::stretch_histogram;
 pub use photometry::quantum_efficiency::QuantumEfficiency;
 pub use photometry::spectrum::{Spectrum, CGS};
 pub use photometry::trapezoid::trap_integrate;
 pub use scene::Scene;
+pub use star_math::{field_diameter, filter_stars_in_field, pixel_scale, star_data_to_electrons};
 pub use starfield::catalogs::StarPosition;
 
 #[cfg(test)]
