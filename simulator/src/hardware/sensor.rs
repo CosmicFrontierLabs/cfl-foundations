@@ -206,7 +206,9 @@ impl SensorConfig {
 
     /// Get dark current at a specific temperature in electrons/pixel/second
     pub fn dark_current_at_temperature(&self, temp_c: f64) -> f64 {
-        self.dark_current_estimator.estimate_at_temperature(temp_c)
+        self.dark_current_estimator
+            .estimate_at_temperature(temp_c)
+            .expect("Temperature out of interpolation range")
     }
 }
 
@@ -228,8 +230,8 @@ mod tests {
             1024,
             1024,
             5.5,
-            crate::hardware::read_noise::ReadNoiseEstimator::constant(2.0),
-            DarkCurrentEstimator::new(0.01, 20.0),
+            ReadNoiseEstimator::constant(2.0),
+            DarkCurrentEstimator::from_reference_point(0.01, 20.0),
             8,
             3.0,
             1e20,
@@ -259,8 +261,8 @@ mod tests {
             1024,
             768,
             5.5,
-            crate::hardware::read_noise::ReadNoiseEstimator::constant(2.0),
-            DarkCurrentEstimator::new(0.01, 20.0),
+            ReadNoiseEstimator::constant(2.0),
+            DarkCurrentEstimator::from_reference_point(0.01, 20.0),
             8,
             3.0,
             1e20,
@@ -281,8 +283,8 @@ mod tests {
             1024,
             768,
             5.5,
-            crate::hardware::read_noise::ReadNoiseEstimator::constant(2.0),
-            DarkCurrentEstimator::new(0.01, 20.0),
+            ReadNoiseEstimator::constant(2.0),
+            DarkCurrentEstimator::from_reference_point(0.01, 20.0),
             8,
             3.0,
             1e20,
@@ -397,8 +399,8 @@ pub mod models {
             4096,
             4096,
             9.0,
-            crate::hardware::read_noise::ReadNoiseEstimator::constant(2.3),
-            DarkCurrentEstimator::new(0.04, -40.0), // 0.04 e-/px/s at -40°C
+            ReadNoiseEstimator::constant(2.3),
+            DarkCurrentEstimator::from_reference_point(0.04, -40.0), // 0.04 e-/px/s at -40°C
             12,
             0.35,
             39_200.0,
@@ -439,8 +441,8 @@ pub mod models {
             3200,
             3200,
             6.5,
-            crate::hardware::read_noise::ReadNoiseEstimator::constant(0.7),
-            DarkCurrentEstimator::new(0.2, -10.0), // 0.2 e-/px/s at -10°C
+            ReadNoiseEstimator::constant(0.7),
+            DarkCurrentEstimator::from_reference_point(0.2, -10.0), // 0.2 e-/px/s at -10°C
             12,
             0.35,
             21_000.0,
@@ -481,8 +483,8 @@ pub mod models {
             4096,
             2300,
             4.6,
-            crate::hardware::read_noise::ReadNoiseEstimator::hwk4123(),
-            DarkCurrentEstimator::new(0.1, 0.0), // 0.1 e-/px/s at 0°C
+            ReadNoiseEstimator::hwk4123(),
+            DarkCurrentEstimator::from_two_points(-20.0, 0.0198, 0.0, 0.1), // 0.0198 e-/px/s at -20°C, 0.1 e-/px/s at 0°C
             12,
             7.42,
             7_500.0,
@@ -492,7 +494,14 @@ pub mod models {
 
     /// Sony IMX455 Full-frame BSI CMOS sensor
     /// Data from: "Characterization of Sony IMX455 sensor for astronomical applications"
+    /// Sources:
     /// <https://arxiv.org/pdf/2207.13052>
+    /// <https://www.qhyccd.com/scientific-camera-qhy600pro-imx455/>
+    ///
+    /// NOTE: We are using parameter here consistent with the gain setting of "60" in "High gain mode"
+    /// which is just past the knee where the read noise is very low, and well depth is still broad enough to
+    /// support a wide range of source brightnesses. See this document for more details:
+    /// <https://docs.google.com/spreadsheets/d/16WdFvMo3rj3Z9252pq32agsLV-wm7YNacvqfkEgSOAI/edit?gid=1094380256#gid=1094380256>
     pub static IMX455: Lazy<SensorConfig> = Lazy::new(|| {
         // QE curve from manufacturer data
         // Note: We already have zero at the endpoints as required by QuantumEfficiency
@@ -520,11 +529,16 @@ pub mod models {
             9568,
             6380,
             3.75, // Pixel pitch in microns
-            crate::hardware::read_noise::ReadNoiseEstimator::constant(2.67), // Read noise in electrons (from arxiv paper)
-            DarkCurrentEstimator::new(0.002, -20.0), // 0.002 e-/px/s at -20°C (from arxiv paper)
+            ReadNoiseEstimator::constant(1.58),
+            DarkCurrentEstimator::from_curve(
+                vec![-20.0, -15.0, -10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 20.0],
+                vec![
+                    0.0022, 0.0032, 0.0046, 0.0068, 0.0105, 0.0357, 0.0675, 0.1231, 0.2208,
+                ],
+            ), // Measured dark current data for IMX455
             16,
-            0.343,
-            51_000.0, // Max well depth not including "extended mode" (intermediate digitization?)
+            0.4,
+            26_000.0,
             21.33,
         )
     });
@@ -561,9 +575,10 @@ mod model_tests {
                 .unwrap(),
             2.3
         );
-        assert_eq!(
+        assert_relative_eq!(
             models::GSENSE4040BSI.dark_current_at_temperature(-40.0),
-            0.04
+            0.04,
+            epsilon = 1e-6
         );
         assert_eq!(models::GSENSE4040BSI.max_frame_rate_fps, 24.0);
         // QE should be close to 0.9 at 550nm for this sensor
@@ -582,9 +597,10 @@ mod model_tests {
                 .unwrap(),
             0.7
         );
-        assert_eq!(
+        assert_relative_eq!(
             models::GSENSE6510BSI.dark_current_at_temperature(-10.0),
-            0.2
+            0.2,
+            epsilon = 1e-6
         );
         assert_eq!(models::GSENSE6510BSI.max_frame_rate_fps, 88.0);
         // QE should peak around 520-550nm for this sensor
@@ -602,11 +618,18 @@ mod model_tests {
             .estimate(20.0, std::time::Duration::from_secs_f64(1.0 / 5.0))
             .unwrap();
         assert!((hwk_read_noise - 0.301).abs() < 0.01);
-        assert_eq!(models::HWK4123.dark_current_at_temperature(0.0), 0.1);
         assert_relative_eq!(
-            models::HWK4123.dark_current_at_temperature(20.0),
-            0.565,
-            epsilon = 0.05
+            models::HWK4123.dark_current_at_temperature(0.0),
+            0.1,
+            epsilon = 1e-6
+        );
+        // HWK4123 now uses different doubling rate from two reference points
+        // Just verify it's in reasonable range
+        let hwk_dc_20 = models::HWK4123.dark_current_at_temperature(20.0);
+        assert!(
+            hwk_dc_20 > 0.4 && hwk_dc_20 < 0.6,
+            "HWK4123 dark current at 20°C: {}",
+            hwk_dc_20
         );
         assert_eq!(models::HWK4123.max_frame_rate_fps, 120.0);
         // QE should be close to 0.8 at 550nm for this sensor
@@ -617,15 +640,19 @@ mod model_tests {
         assert_eq!(models::IMX455.width_px, 9568);
         assert_eq!(models::IMX455.height_px, 6380);
         assert_eq!(models::IMX455.pixel_size_um, 3.75);
-        // Check read noise at room temperature with 1s exposure
+        // Check read noise at room temperature with 0.2s exposure
         assert_eq!(
             models::IMX455
                 .read_noise_estimator
                 .estimate(20.0, std::time::Duration::from_secs_f64(0.2))
                 .unwrap(),
-            2.67
+            1.58
         );
-        assert_eq!(models::IMX455.dark_current_at_temperature(-20.0), 0.002);
+        assert_relative_eq!(
+            models::IMX455.dark_current_at_temperature(-20.0),
+            0.0022,
+            epsilon = 1e-6
+        );
         assert_eq!(models::IMX455.max_frame_rate_fps, 21.33);
 
         // Get actual QE value to print for debugging

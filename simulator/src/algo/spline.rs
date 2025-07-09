@@ -34,6 +34,7 @@ use std::f64;
 /// // Generate smooth curve with 100 points
 /// let (x_smooth, y_smooth) = spline.interpolate(100);
 /// ```
+#[derive(Debug, Clone, PartialEq)]
 pub struct CubicSpline {
     x: Vec<f64>,
     y: Vec<f64>,

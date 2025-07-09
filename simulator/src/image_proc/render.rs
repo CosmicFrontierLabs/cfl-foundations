@@ -490,7 +490,7 @@ mod tests {
             1024,
             5.5,
             crate::hardware::read_noise::ReadNoiseEstimator::constant(2.0),
-            DarkCurrentEstimator::new(0.01, 20.0),
+            DarkCurrentEstimator::from_reference_point(0.01, 20.0),
             bit_depth,
             dn_per_electron,
             max_well_depth_e,

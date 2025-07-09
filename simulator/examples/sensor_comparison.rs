@@ -68,7 +68,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Dark current at 0°C
         let dark_current = config
             .dark_current_estimator
-            .estimate_at_temperature(temp_c);
+            .estimate_at_temperature(temp_c)
+            .expect("Interpolation should be valid");
 
         // Read noise - estimate at room temperature with 1s exposure for comparison
         let read_noise = config
@@ -151,7 +152,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("- **Peak QE:** {:.3} at {:.0}nm", peak_qe, peak_wavelength);
 
         // Dark current at 0°C only
-        let dc_0c = config.dark_current_estimator.estimate_at_temperature(0.0);
+        let dc_0c = config
+            .dark_current_estimator
+            .estimate_at_temperature(0.0)
+            .expect("Interpolation should be valid");
         println!("- **Dark current @ 0°C:** {:.4} e⁻/pixel/s", dc_0c);
     }
 

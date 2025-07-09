@@ -365,7 +365,7 @@ mod tests {
             size.0,
             5.0,
             crate::hardware::read_noise::ReadNoiseEstimator::constant(read_noise),
-            DarkCurrentEstimator::new(dark_current, 20.0),
+            DarkCurrentEstimator::from_reference_point(dark_current, 20.0),
             8,
             1.0,
             1.0,
