@@ -102,8 +102,8 @@
 //! let star = BlackbodyStellarSpectrum::new(5778.0, 1.0);  // Solar temperature
 //!
 //! // Get standard photometric filters
-//! let b_band = b_filter().expect("Failed to create B filter");
-//! let v_band = v_filter().expect("Failed to create V filter");
+//! let b_band = b_filter();
+//! let v_band = v_filter();
 //!
 //! // Calculate synthetic photometry for 1-meter telescope, 30-second exposure
 //! let aperture = 10000.0;  // cm² (1-meter diameter)

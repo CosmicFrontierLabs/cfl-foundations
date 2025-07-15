@@ -83,7 +83,7 @@
 //! let zodi = STISZodiacalSpectrum::new(1.0);
 //!
 //! // Calculate zodiacal light flux in Johnson V-band
-//! let v_band = v_filter().expect("Failed to create V-band filter");
+//! let v_band = v_filter();
 //! let v_background = zodi.irradiance(&v_band.band());
 //!
 //! // Calculate background in wide visible band

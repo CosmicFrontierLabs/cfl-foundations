@@ -58,7 +58,7 @@
 //!
 //! // Get both passbands for color transformations
 //! let gaia_g = &*GAIA_PASSBAND;
-//! let johnson_v = v_filter().unwrap();
+//! let johnson_v = v_filter();
 //!
 //! // Check wavelength coverage overlap
 //! let g_band = gaia_g.band();
@@ -139,8 +139,8 @@ use once_cell::sync::Lazy;
 ///
 /// // Compare effective wavelengths
 /// let gaia_band = GAIA_PASSBAND.band();
-/// let v_band = v_filter().unwrap().band();
-/// let b_band = b_filter().unwrap().band();
+/// let v_band = v_filter().band();
+/// let b_band = b_filter().band();
 ///
 /// println!("Passband comparisons:");
 /// println!("Gaia G: {:.0}-{:.0} nm", gaia_band.lower_nm, gaia_band.upper_nm);

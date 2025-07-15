@@ -50,9 +50,9 @@
 //! use simulator::photometry::QuantumEfficiency;
 //!
 //! // Create individual filters
-//! let u = u_filter().expect("Failed to create U filter");
-//! let b = b_filter().expect("Failed to create B filter");
-//! let v = v_filter().expect("Failed to create V filter");
+//! let u = u_filter();
+//! let b = b_filter();
+//! let v = v_filter();
 //!
 //! // Check transmission at effective wavelengths
 //! println!("U filter at 365nm: {:.2}", u.at(365.0));
@@ -68,8 +68,8 @@
 //! use std::time::Duration;
 //!
 //! // Create filters and stellar spectrum
-//! let b = b_filter().unwrap();
-//! let v = v_filter().unwrap();
+//! let b = b_filter();
+//! let v = v_filter();
 //! let sun = BlackbodyStellarSpectrum::new(5778.0, 1.0);  // Solar spectrum
 //!
 //! // Calculate magnitudes (simplified)
@@ -90,10 +90,7 @@
 //! use simulator::photometry::{QuantumEfficiency, Spectrum};
 //!
 //! // Get all three filters at once
-//! let (u_result, b_result, v_result) = ubv_filters();
-//! let u = u_result.unwrap();
-//! let b = b_result.unwrap();
-//! let v = v_result.unwrap();
+//! let (u, b, v) = ubv_filters();
 //!
 //! // Analyze different stellar types
 //! let hot_star = BlackbodyStellarSpectrum::new(25000.0, 1.0);  // O-type
@@ -232,7 +229,7 @@ fn create_qe_from_data(data: &[(f64, f64)]) -> Result<QuantumEfficiency, Quantum
 /// - **Atmospheric cutoff**: <300nm (space-only)
 ///
 /// # Returns
-/// Result containing U-band QuantumEfficiency, or error if filter creation fails
+/// U-band QuantumEfficiency
 ///
 /// # Examples
 /// ```rust
@@ -240,7 +237,7 @@ fn create_qe_from_data(data: &[(f64, f64)]) -> Result<QuantumEfficiency, Quantum
 /// use simulator::photometry::stellar::BlackbodyStellarSpectrum;
 /// use simulator::photometry::QuantumEfficiency;
 ///
-/// let u = u_filter().expect("Failed to create U filter");
+/// let u = u_filter();
 ///
 /// // U filter is sensitive to hot stars
 /// let hot_star = BlackbodyStellarSpectrum::new(30000.0, 1.0);  // O-type
@@ -251,8 +248,8 @@ fn create_qe_from_data(data: &[(f64, f64)]) -> Result<QuantumEfficiency, Quantum
 /// assert_eq!(u.at(300.0), 0.2);   // UV cutoff
 /// assert_eq!(u.at(400.0), 0.2);   // Blue cutoff
 /// ```
-pub fn u_filter() -> Result<QuantumEfficiency, QuantumEfficiencyError> {
-    create_qe_from_data(&U_FILTER_DATA)
+pub fn u_filter() -> QuantumEfficiency {
+    create_qe_from_data(&U_FILTER_DATA).expect("U filter data is hardcoded and should never fail")
 }
 
 /// Create Johnson B-band photometric filter (blue, ~445nm).
@@ -269,7 +266,7 @@ pub fn u_filter() -> Result<QuantumEfficiency, QuantumEfficiencyError> {
 /// - **Standard reference**: Primary blue magnitude system
 ///
 /// # Returns
-/// Result containing B-band QuantumEfficiency, or error if filter creation fails
+/// B-band QuantumEfficiency
 ///
 /// # Examples
 /// ```rust
@@ -278,7 +275,7 @@ pub fn u_filter() -> Result<QuantumEfficiency, QuantumEfficiencyError> {
 /// use simulator::photometry::{QuantumEfficiency, Spectrum};
 /// use std::time::Duration;
 ///
-/// let b = b_filter().expect("Failed to create B filter");
+/// let b = b_filter();
 ///
 /// // B filter for stellar classification
 /// let sun = BlackbodyStellarSpectrum::new(5778.0, 1.0);
@@ -294,8 +291,8 @@ pub fn u_filter() -> Result<QuantumEfficiency, QuantumEfficiencyError> {
 /// assert_eq!(b.at(390.0), 0.35);   // UV side
 /// assert_eq!(b.at(500.0), 0.4);    // Green side
 /// ```
-pub fn b_filter() -> Result<QuantumEfficiency, QuantumEfficiencyError> {
-    create_qe_from_data(&B_FILTER_DATA)
+pub fn b_filter() -> QuantumEfficiency {
+    create_qe_from_data(&B_FILTER_DATA).expect("B filter data is hardcoded and should never fail")
 }
 
 /// Create Johnson V-band photometric filter (visual, ~551nm).
@@ -312,7 +309,7 @@ pub fn b_filter() -> Result<QuantumEfficiency, QuantumEfficiencyError> {
 /// - **Human eye match**: Closely approximates photopic vision
 ///
 /// # Returns
-/// Result containing V-band QuantumEfficiency, or error if filter creation fails
+/// V-band QuantumEfficiency
 ///
 /// # Examples
 /// ```rust
@@ -320,7 +317,7 @@ pub fn b_filter() -> Result<QuantumEfficiency, QuantumEfficiencyError> {
 /// use simulator::photometry::stellar::BlackbodyStellarSpectrum;
 /// use simulator::photometry::QuantumEfficiency;
 ///
-/// let v = v_filter().expect("Failed to create V filter");
+/// let v = v_filter();
 ///
 /// // V filter closely matches human eye sensitivity
 /// let sun = BlackbodyStellarSpectrum::new(5778.0, 1.0);
@@ -335,8 +332,8 @@ pub fn b_filter() -> Result<QuantumEfficiency, QuantumEfficiencyError> {
 /// println!("V filter band: {} to {} nm",
 ///          v.band().lower_nm, v.band().upper_nm);
 /// ```
-pub fn v_filter() -> Result<QuantumEfficiency, QuantumEfficiencyError> {
-    create_qe_from_data(&V_FILTER_DATA)
+pub fn v_filter() -> QuantumEfficiency {
+    create_qe_from_data(&V_FILTER_DATA).expect("V filter data is hardcoded and should never fail")
 }
 
 /// Create complete Johnson UBV photometric filter set for multi-band observations.
@@ -353,7 +350,7 @@ pub fn v_filter() -> Result<QuantumEfficiency, QuantumEfficiencyError> {
 /// - **Synthetic photometry**: Space telescope calibration and validation
 ///
 /// # Returns
-/// Tuple of Results containing (U, B, V) QuantumEfficiency objects
+/// Tuple containing (U, B, V) QuantumEfficiency objects
 ///
 /// # Examples
 /// ```rust
@@ -363,10 +360,7 @@ pub fn v_filter() -> Result<QuantumEfficiency, QuantumEfficiencyError> {
 /// use std::time::Duration;
 ///
 /// // Get complete UBV filter set
-/// let (u_result, b_result, v_result) = ubv_filters();
-/// let u = u_result.expect("Failed to create U filter");
-/// let b = b_result.expect("Failed to create B filter");
-/// let v = v_result.expect("Failed to create V filter");
+/// let (u, b, v) = ubv_filters();
 ///
 /// // Multi-band stellar photometry
 /// let star = BlackbodyStellarSpectrum::new(5778.0, 1.0);  // Solar type
@@ -384,11 +378,7 @@ pub fn v_filter() -> Result<QuantumEfficiency, QuantumEfficiencyError> {
 ///
 /// println!("UBV photometry - U-B: {:.3}, B-V: {:.3}", ub_color, bv_color);
 /// ```
-pub fn ubv_filters() -> (
-    Result<QuantumEfficiency, QuantumEfficiencyError>,
-    Result<QuantumEfficiency, QuantumEfficiencyError>,
-    Result<QuantumEfficiency, QuantumEfficiencyError>,
-) {
+pub fn ubv_filters() -> (QuantumEfficiency, QuantumEfficiency, QuantumEfficiency) {
     (u_filter(), b_filter(), v_filter())
 }
 
@@ -400,18 +390,15 @@ mod tests {
     #[test]
     fn test_filter_creation() {
         // Test that all filters can be created successfully
-        let u_result = u_filter();
-        let b_result = b_filter();
-        let v_result = v_filter();
-
-        assert!(u_result.is_ok(), "U filter creation failed");
-        assert!(b_result.is_ok(), "B filter creation failed");
-        assert!(v_result.is_ok(), "V filter creation failed");
+        let _u = u_filter();
+        let _b = b_filter();
+        let _v = v_filter();
+        // If we get here, all filters were created successfully
     }
 
     #[test]
     fn test_u_filter_wavelength_range() {
-        let u = u_filter().unwrap();
+        let u = u_filter();
         let band = u.band();
 
         // Check that the wavelength range matches our data
@@ -429,7 +416,7 @@ mod tests {
 
     #[test]
     fn test_b_filter_wavelength_range() {
-        let b = b_filter().unwrap();
+        let b = b_filter();
         let band = b.band();
 
         // Check that the wavelength range matches our data
@@ -448,7 +435,7 @@ mod tests {
 
     #[test]
     fn test_v_filter_wavelength_range() {
-        let v = v_filter().unwrap();
+        let v = v_filter();
         let band = v.band();
 
         // Check that the wavelength range matches our data

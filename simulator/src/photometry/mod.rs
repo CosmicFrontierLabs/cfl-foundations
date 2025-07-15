@@ -44,8 +44,8 @@
 //! let star = BlackbodyStellarSpectrum::new(star_temp, 1.0);
 //!
 //! // 2. Get photometric filters
-//! let b_band = b_filter().expect("Failed to create B filter");
-//! let v_band = v_filter().expect("Failed to create V filter");
+//! let b_band = b_filter();
+//! let v_band = v_filter();
 //!
 //! // 3. Calculate synthetic photometry
 //! let exposure = Duration::from_secs(30);
