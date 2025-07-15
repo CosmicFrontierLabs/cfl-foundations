@@ -405,7 +405,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if err.is_nan() {
                         write!(csv_file, ",").unwrap(); // Empty cell for NaN
                     } else {
-                        write!(csv_file, "{:.2},", err).unwrap();
+                        write!(csv_file, "{:.4},", err).unwrap();
                     }
                 }
                 writeln!(csv_file).unwrap();
@@ -432,7 +432,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if err.is_nan() {
                         write!(csv_file, ",").unwrap(); // Empty cell for NaN
                     } else {
-                        write!(csv_file, "{:.2},", err).unwrap();
+                        write!(csv_file, "{:.4},", err).unwrap();
                     }
                 }
                 writeln!(csv_file).unwrap();
