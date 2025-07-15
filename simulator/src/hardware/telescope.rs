@@ -111,6 +111,8 @@ pub struct TelescopeConfig {
     pub light_efficiency: f64,
     /// Telescope model name or identifier
     pub name: String,
+    /// Central obscuration ratio (0.0-1.0, fraction of aperture radius blocked)
+    pub obscuration_ratio: f64,
 }
 
 const MAS_PER_RAD: f64 = 360.0 * 60.0 * 60.0 * 1000.0 / (PI * 2.0);
@@ -128,6 +130,7 @@ impl TelescopeConfig {
             aperture_m,
             focal_length_m,
             light_efficiency,
+            obscuration_ratio: 0.0,
         }
     }
 
@@ -192,7 +195,10 @@ impl TelescopeConfig {
 
     /// Calculate the collecting area in square meters
     pub fn collecting_area_m2(&self) -> f64 {
-        PI * (self.aperture_m / 2.0).powi(2)
+        let outer_area = PI * (self.aperture_m / 2.0).powi(2);
+        let obscured_diameter = self.aperture_m * self.obscuration_ratio;
+        let obscured_area = PI * (obscured_diameter / 2.0).powi(2);
+        outer_area - obscured_area
     }
 
     /// Calculate the effective collecting area considering light efficiency
@@ -207,6 +213,7 @@ impl TelescopeConfig {
             aperture_m: self.aperture_m,
             focal_length_m,
             light_efficiency: self.light_efficiency,
+            obscuration_ratio: self.obscuration_ratio,
         }
     }
 }
@@ -283,6 +290,23 @@ mod tests {
             expected_effective_area,
             epsilon = 1e-6
         ));
+    }
+
+    #[test]
+    fn test_obscuration_ratio() {
+        // Test case from user: 50cm aperture with 42% obscuration should have 1617 cm² clear area
+        let mut telescope = TelescopeConfig::new("Test Obscured", 0.5, 4.0, 1.0);
+        telescope.obscuration_ratio = 0.42;
+
+        let area_m2 = telescope.collecting_area_m2();
+        let area_cm2 = area_m2 * 10000.0; // Convert m² to cm²
+
+        // Expected: 1617 cm²
+        assert!(
+            approx_eq!(f64, area_cm2, 1617.0, epsilon = 1.0),
+            "Expected 1617 cm², got {:.1} cm²",
+            area_cm2
+        );
     }
 }
 
