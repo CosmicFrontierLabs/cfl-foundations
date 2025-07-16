@@ -9,7 +9,7 @@ use clap::Parser;
 use rayon::prelude::*;
 use simulator::hardware::sensor::models::ALL_SENSORS;
 use simulator::hardware::SatelliteConfig;
-use simulator::image_proc::airy::ScaledAiryDisk;
+use simulator::image_proc::airy::PixelScaledAiryDisk;
 use simulator::image_proc::detection::{detect_stars_unified, StarDetection, StarFinder};
 use simulator::image_proc::generate_sensor_noise;
 use simulator::image_proc::render::{add_stars_to_image, quantize_image, StarInFrame};
@@ -142,7 +142,7 @@ fn test_algorithm(
         let detection_sigma = args.shared.noise_multiple;
 
         // Run detection algorithm
-        let scaled_airy_disk = ScaledAiryDisk::with_fwhm(airy_disk_pixels);
+        let scaled_airy_disk = PixelScaledAiryDisk::with_fwhm(airy_disk_pixels);
         let detected_stars: Vec<StarDetection> = match detect_stars_unified(
             quantized.view(),
             algorithm,

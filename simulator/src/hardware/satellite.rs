@@ -1,5 +1,5 @@
 use super::{sensor::SensorConfig, telescope::TelescopeConfig};
-use crate::image_proc::airy::ScaledAiryDisk;
+use crate::image_proc::airy::PixelScaledAiryDisk;
 use crate::photometry::QuantumEfficiency;
 
 /// Complete satellite configuration combining telescope optics and sensor.
@@ -207,7 +207,7 @@ impl SatelliteConfig {
     ///
     /// # Returns
     /// A ScaledAiryDisk scaled to pixels for this telescope/sensor combination
-    pub fn airy_disk_pixel_space(&self) -> ScaledAiryDisk {
+    pub fn airy_disk_pixel_space(&self) -> PixelScaledAiryDisk {
         // Get Airy disk radius in microns from telescope
         let airy_radius_um = self.telescope.airy_disk_radius_um(self.wavelength_nm);
 
@@ -215,7 +215,7 @@ impl SatelliteConfig {
         let airy_radius_pixels = airy_radius_um / self.sensor.pixel_size_um;
 
         // Create scaled Airy disk with pixel radius
-        ScaledAiryDisk::with_first_zero(airy_radius_pixels)
+        PixelScaledAiryDisk::with_first_zero(airy_radius_pixels)
     }
 
     /// Create a ScaledAiryDisk based on FWHM sampling for this satellite configuration
@@ -239,12 +239,12 @@ impl SatelliteConfig {
     /// let airy_disk = satellite.airy_disk_fwhm_sampled();
     /// println!("FWHM in pixels: {:.2}", airy_disk.fwhm());
     /// ```
-    pub fn airy_disk_fwhm_sampled(&self) -> ScaledAiryDisk {
+    pub fn airy_disk_fwhm_sampled(&self) -> PixelScaledAiryDisk {
         // Get current FWHM sampling ratio (pixels per FWHM)
         let fwhm_pixels = self.fwhm_sampling_ratio();
 
         // Create scaled Airy disk with this FWHM size
-        ScaledAiryDisk::with_fwhm(fwhm_pixels)
+        PixelScaledAiryDisk::with_fwhm(fwhm_pixels)
     }
 
     /// Adjust telescope focal length to achieve specific FWHM sampling in pixels

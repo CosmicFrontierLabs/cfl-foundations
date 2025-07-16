@@ -34,7 +34,7 @@ use simulator::algo::{
 use simulator::hardware::sensor::models as sensor_models;
 use simulator::hardware::telescope::models::DEMO_50CM;
 use simulator::hardware::SatelliteConfig;
-use simulator::image_proc::airy::ScaledAiryDisk;
+use simulator::image_proc::airy::PixelScaledAiryDisk;
 use simulator::image_proc::detection::{detect_stars_unified, StarFinder};
 use simulator::image_proc::histogram_stretch::sigma_stretch;
 use simulator::image_proc::image::array2_to_gray_image;
@@ -305,7 +305,7 @@ fn run_experiment<T: StarCatalog>(
             let detection_sigma = params.common_args.noise_multiple;
 
             // Do the star detection
-            let scaled_airy_disk = ScaledAiryDisk::with_fwhm(airy_disk_pixels);
+            let scaled_airy_disk = PixelScaledAiryDisk::with_fwhm(airy_disk_pixels);
             let detected_stars = match detect_stars_unified(
                 render_result.quantized_image.view(),
                 params.common_args.star_finder,

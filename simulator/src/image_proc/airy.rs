@@ -468,12 +468,12 @@ pub static AIRY_DISK: Lazy<AiryDisk> = Lazy::new(AiryDisk::new);
 /// println!("PSF FWHM: {:.2} pixels", telescope_psf.fwhm());
 /// ```
 #[derive(Debug, Clone, Copy)]
-pub struct ScaledAiryDisk {
+pub struct PixelScaledAiryDisk {
     disk: AiryDisk,
     radius_scale: f64,
 }
 
-impl ScaledAiryDisk {
+impl PixelScaledAiryDisk {
     /// Creates a new ScaledAiryDisk with a default AiryDisk and given radius scale.
     ///
     /// # Arguments
@@ -482,7 +482,7 @@ impl ScaledAiryDisk {
     /// # Returns
     /// ScaledAiryDisk instance with specified scaling
     fn new(radius_scale: f64) -> Self {
-        ScaledAiryDisk {
+        PixelScaledAiryDisk {
             disk: *AIRY_DISK,
             radius_scale,
         }
@@ -773,7 +773,7 @@ mod tests {
 
     #[test]
     fn test_scaled_disk_unity() {
-        let unscaled = ScaledAiryDisk::new(1.0);
+        let unscaled = PixelScaledAiryDisk::new(1.0);
         assert_relative_eq!(unscaled.fwhm(), AIRY_DISK.fwhm, epsilon = 1e-10);
 
         let zero_rad = unscaled.first_zero();
@@ -785,7 +785,7 @@ mod tests {
 
     #[test]
     fn test_scaled_airy_disk_fwmh() {
-        let scaled = ScaledAiryDisk::with_fwhm(2.0);
+        let scaled = PixelScaledAiryDisk::with_fwhm(2.0);
 
         let fwhm = scaled.fwhm();
         assert_relative_eq!(fwhm, 2.0, epsilon = 1e-10);
@@ -799,14 +799,14 @@ mod tests {
 
     #[test]
     fn test_scaled_airy_disk_first_zero() {
-        let scaled = ScaledAiryDisk::with_first_zero(2.0);
+        let scaled = PixelScaledAiryDisk::with_first_zero(2.0);
         assert_relative_eq!(scaled.first_zero(), 2.0, epsilon = 1e-10);
     }
 
     #[test]
     fn test_pixel_flux_centered() {
         // Test flux when PSF is centered on pixel
-        let psf = ScaledAiryDisk::with_first_zero(1.0);
+        let psf = PixelScaledAiryDisk::with_first_zero(1.0);
         let flux = 1000.0;
 
         let pixel_flux = psf.pixel_flux_simpson(0.0, 0.0, flux);
@@ -827,7 +827,7 @@ mod tests {
     #[test]
     fn test_flux_conservation() {
         // Test relative flux distribution for normalized PSF
-        let psf = ScaledAiryDisk::new(2.0);
+        let psf = PixelScaledAiryDisk::new(2.0);
         let flux = 1.0; // Use unit flux to measure PSF normalization
 
         // First measure total PSF integral over large area
@@ -860,7 +860,7 @@ mod tests {
     #[test]
     fn test_offset_star() {
         // Test flux distribution when star is between pixels
-        let psf = ScaledAiryDisk::with_first_zero(1.0);
+        let psf = PixelScaledAiryDisk::with_first_zero(1.0);
         let flux = 1000.0;
 
         // Star at (0.0, 0.0) - corner between 4 pixels

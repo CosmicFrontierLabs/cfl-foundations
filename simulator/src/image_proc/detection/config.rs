@@ -41,7 +41,7 @@
 //! println!("IRAF FWHM: {:.2} pixels", iraf_config.fwhm);
 //! ```
 
-use crate::image_proc::airy::ScaledAiryDisk;
+use crate::image_proc::airy::PixelScaledAiryDisk;
 use starfield::image::starfinders::{DAOStarFinderConfig, IRAFStarFinderConfig};
 
 /// Create DAOStarFinder configuration optimized for space telescope observations.
@@ -76,7 +76,7 @@ use starfield::image::starfinders::{DAOStarFinderConfig, IRAFStarFinderConfig};
 /// assert_eq!(config.threshold, 6.0);  // 5σ × 1.0 RMS × 1.2 factor
 /// ```
 pub fn dao_autoconfig(
-    scaled_airy_disk: &ScaledAiryDisk,
+    scaled_airy_disk: &PixelScaledAiryDisk,
     background_rms: f64,
     detection_sigma: f64,
 ) -> DAOStarFinderConfig {
@@ -132,7 +132,7 @@ pub fn dao_autoconfig(
 /// assert_eq!(config.minsep_fwhm, 1.5);  // 1.5× FWHM separation
 /// ```
 pub fn iraf_autoconfig(
-    scaled_airy_disk: &ScaledAiryDisk,
+    scaled_airy_disk: &PixelScaledAiryDisk,
     background_rms: f64,
     detection_sigma: f64,
 ) -> IRAFStarFinderConfig {
@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn test_space_telescope_configs() {
         // Create a scaled Airy disk with FWHM of 2.5 pixels
-        let scaled_airy_disk = ScaledAiryDisk::with_fwhm(2.5);
+        let scaled_airy_disk = PixelScaledAiryDisk::with_fwhm(2.5);
         let background_rms = 1.2;
         let detection_sigma = 5.0;
 

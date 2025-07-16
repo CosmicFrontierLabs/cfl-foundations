@@ -65,7 +65,7 @@ use ndarray::ArrayView2;
 use starfield::image::starfinders::{DAOStarFinder, IRAFStarFinder, StellarSource};
 
 use super::config::{dao_autoconfig, iraf_autoconfig};
-use crate::image_proc::airy::ScaledAiryDisk;
+use crate::image_proc::airy::PixelScaledAiryDisk;
 
 /// Available star detection algorithms with different complexity/performance tradeoffs.
 ///
@@ -169,7 +169,7 @@ impl std::str::FromStr for StarFinder {
 pub fn detect_stars(
     image: ArrayView2<u16>,
     algorithm: StarFinder,
-    scaled_airy_disk: &ScaledAiryDisk,
+    scaled_airy_disk: &PixelScaledAiryDisk,
     background_rms: f64,
     detection_sigma: f64,
 ) -> Result<Vec<Box<dyn StellarSource>>, String> {
@@ -199,7 +199,7 @@ pub fn detect_stars(
 /// Includes automatic type conversion and error handling.
 fn detect_dao(
     image: ArrayView2<u16>,
-    scaled_airy_disk: &ScaledAiryDisk,
+    scaled_airy_disk: &PixelScaledAiryDisk,
     background_rms: f64,
     detection_sigma: f64,
 ) -> Result<Vec<Box<dyn StellarSource>>, String> {
@@ -228,7 +228,7 @@ fn detect_dao(
 /// Includes automatic type conversion and error handling.
 fn detect_iraf(
     image: ArrayView2<u16>,
-    scaled_airy_disk: &ScaledAiryDisk,
+    scaled_airy_disk: &PixelScaledAiryDisk,
     background_rms: f64,
     detection_sigma: f64,
 ) -> Result<Vec<Box<dyn StellarSource>>, String> {

@@ -60,7 +60,7 @@
 use clap::{Parser, Subcommand};
 use ndarray::Array2;
 use simulator::algo::min_max_scan::MinMaxScan;
-use simulator::image_proc::airy::ScaledAiryDisk;
+use simulator::image_proc::airy::PixelScaledAiryDisk;
 use starfield::image::starfinders::{
     DAOStarFinder, DAOStarFinderConfig, IRAFStarFinder, IRAFStarFinderConfig, StellarSource,
 };
@@ -117,7 +117,7 @@ fn generate_star_image(
     image_size: usize,
     position_x: f64,
     position_y: f64,
-    scaled_airy_disk: &ScaledAiryDisk,
+    scaled_airy_disk: &PixelScaledAiryDisk,
     flux: f64,
 ) -> Array2<f64> {
     let mut image = Array2::<f64>::zeros((image_size, image_size));
@@ -208,7 +208,7 @@ fn test_naive_single(position_x: f64, position_y: f64, image: &Array2<f64>) -> O
 /// Run grid test for any detector
 fn run_grid_test(detector: &str, grid_size: usize, image_size: usize) {
     let fwhm = 2.355; // FWHM in pixels
-    let scaled_airy_disk = ScaledAiryDisk::with_fwhm(fwhm);
+    let scaled_airy_disk = PixelScaledAiryDisk::with_fwhm(fwhm);
     let background_rms = 10.0; // Reasonable noise level for test stars
     let detection_sigma = 3.0;
     let flux = 1000.0; // Total integrated flux
@@ -291,7 +291,7 @@ fn run_grid_test(detector: &str, grid_size: usize, image_size: usize) {
 /// Run parameter sweep for DAO
 fn sweep_dao_parameter(param: &str) {
     let fwhm = 2.355; // FWHM in pixels
-    let scaled_airy_disk = ScaledAiryDisk::with_fwhm(fwhm);
+    let scaled_airy_disk = PixelScaledAiryDisk::with_fwhm(fwhm);
     let test_x = 25.3;
     let test_y = 25.7;
     let image_size = 51;
@@ -352,7 +352,7 @@ fn sweep_dao_parameter(param: &str) {
 /// Run parameter sweep for IRAF
 fn sweep_iraf_parameter(param: &str) {
     let fwhm = 2.355; // FWHM in pixels
-    let scaled_airy_disk = ScaledAiryDisk::with_fwhm(fwhm);
+    let scaled_airy_disk = PixelScaledAiryDisk::with_fwhm(fwhm);
     let test_x = 25.3;
     let test_y = 25.7;
     let image_size = 51;
@@ -426,7 +426,7 @@ fn main() {
             );
 
             let base_fwhm = sigma * 2.355;
-            let scaled_airy_disk = ScaledAiryDisk::with_fwhm(base_fwhm);
+            let scaled_airy_disk = PixelScaledAiryDisk::with_fwhm(base_fwhm);
             let flux = 1000.0;
 
             // Generate the image once

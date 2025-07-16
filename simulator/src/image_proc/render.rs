@@ -6,7 +6,7 @@ use starfield::{catalogs::StarData, Equatorial};
 use crate::{
     algo::icp::Locatable2d,
     hardware::SatelliteConfig,
-    image_proc::airy::ScaledAiryDisk,
+    image_proc::airy::PixelScaledAiryDisk,
     photometry::{zodical::SolarAngularCoordinates, ZodicalLight},
     star_math::{field_diameter, star_data_to_electrons, StarProjector},
     SensorConfig,
@@ -464,7 +464,7 @@ pub fn add_stars_to_image(
     width: usize,
     height: usize,
     stars: &Vec<StarInFrame>,
-    airy_pix: ScaledAiryDisk,
+    airy_pix: PixelScaledAiryDisk,
 ) -> Array2<f64> {
     // Create new image array with specified dimensions
     let mut image = Array2::zeros((height, width));
@@ -550,7 +550,7 @@ mod tests {
                 star: test_star_data(),
             }];
 
-            let airy_pix = ScaledAiryDisk::with_first_zero(sigma_pix);
+            let airy_pix = PixelScaledAiryDisk::with_first_zero(sigma_pix);
             let image = add_stars_to_image(50, 50, &stars, airy_pix);
 
             let added_flux = image.sum();
@@ -570,7 +570,7 @@ mod tests {
             flux: total_flux,
             star: test_star_data(),
         }];
-        let airy_pix = ScaledAiryDisk::with_radius_scale(sigma_pix);
+        let airy_pix = PixelScaledAiryDisk::with_radius_scale(sigma_pix);
 
         let image = add_stars_to_image(50, 50, &stars, airy_pix);
 
@@ -596,7 +596,7 @@ mod tests {
             star: test_star_data(),
         }];
 
-        let airy_pix = ScaledAiryDisk::with_radius_scale(sigma_pix);
+        let airy_pix = PixelScaledAiryDisk::with_radius_scale(sigma_pix);
 
         let image = add_stars_to_image(50, 50, &stars, airy_pix);
 
@@ -636,7 +636,7 @@ mod tests {
                 star: test_star_data(),
             },
         ];
-        let airy_pix = ScaledAiryDisk::with_fwhm(sigma_pix);
+        let airy_pix = PixelScaledAiryDisk::with_fwhm(sigma_pix);
 
         let image = add_stars_to_image(50, 50, &stars, airy_pix);
 
@@ -663,7 +663,7 @@ mod tests {
             });
         }
 
-        let airy_pix = ScaledAiryDisk::with_radius_scale(sigma_pix);
+        let airy_pix = PixelScaledAiryDisk::with_radius_scale(sigma_pix);
 
         let image = add_stars_to_image(50, 50, &stars, airy_pix);
 
@@ -690,7 +690,7 @@ mod tests {
             });
         }
 
-        let airy_pix = ScaledAiryDisk::with_radius_scale(sigma_pix);
+        let airy_pix = PixelScaledAiryDisk::with_radius_scale(sigma_pix);
 
         let image = add_stars_to_image(23, 57, &stars, airy_pix);
 

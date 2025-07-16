@@ -15,7 +15,7 @@
 
 use ndarray::Array2;
 use simulator::algo::min_max_scan::MinMaxScan;
-use simulator::image_proc::airy::ScaledAiryDisk;
+use simulator::image_proc::airy::PixelScaledAiryDisk;
 use simulator::image_proc::detection::StarFinder;
 use starfield::image::starfinders::StellarSource;
 
@@ -88,7 +88,7 @@ fn run_single_star_test(
         _ => {
             // Use the unified interface for DAO and IRAF
             use simulator::image_proc::detection::detect_stars_unified;
-            let scaled_airy_disk = ScaledAiryDisk::with_fwhm(airy_disk_pixels);
+            let scaled_airy_disk = PixelScaledAiryDisk::with_fwhm(airy_disk_pixels);
             match detect_stars_unified(
                 u16_image.view(),
                 *detector,
@@ -200,7 +200,7 @@ fn run_subpixel_grid_test(image_size: usize, sigma: f64, detector: &StarFinder) 
                 _ => {
                     // Use the unified interface for DAO and IRAF
                     use simulator::image_proc::detection::detect_stars_unified;
-                    let scaled_airy_disk = ScaledAiryDisk::with_fwhm(airy_disk_pixels);
+                    let scaled_airy_disk = PixelScaledAiryDisk::with_fwhm(airy_disk_pixels);
                     match detect_stars_unified(
                         u16_image.view(),
                         *detector,
@@ -529,7 +529,7 @@ fn test_sigma_effect(image_size: usize, detector: &StarFinder) {
             _ => {
                 // Use the unified interface for DAO and IRAF
                 use simulator::image_proc::detection::detect_stars_unified;
-                let scaled_airy_disk = ScaledAiryDisk::with_fwhm(airy_disk_pixels);
+                let scaled_airy_disk = PixelScaledAiryDisk::with_fwhm(airy_disk_pixels);
                 match detect_stars_unified(
                     u16_image.view(),
                     *detector,

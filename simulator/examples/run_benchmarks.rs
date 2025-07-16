@@ -22,7 +22,7 @@
 //! cargo bench
 //! ```
 
-use simulator::image_proc::airy::ScaledAiryDisk;
+use simulator::image_proc::airy::PixelScaledAiryDisk;
 use simulator::image_proc::render::{add_stars_to_image, StarInFrame};
 use starfield::catalogs::StarData;
 use starfield::Equatorial;
@@ -117,7 +117,7 @@ fn bench_add_stars_to_image() {
 
                 // Run the benchmark
                 let start = Instant::now();
-                let airy_pix = ScaledAiryDisk::with_fwhm(sigma);
+                let airy_pix = PixelScaledAiryDisk::with_fwhm(sigma);
                 let _image = add_stars_to_image(size, size, &stars, airy_pix);
                 let duration = start.elapsed();
 
