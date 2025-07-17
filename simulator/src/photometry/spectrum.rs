@@ -273,25 +273,13 @@ impl Band {
 }
 
 pub fn nm_sub_bands(band: &Band) -> Vec<Band> {
-    // Decompose the band into integer nanometer bands
-    // Special case the first and last bands
-    let mut bands: Vec<Band> = Vec::new();
+    // Calculate the number of 1nm sub-bands needed to cover the band
+    let band_width = band.width();
+    let n_bands = band_width.ceil() as usize;
 
-    let first_int_nm = band.lower_nm.ceil() as u32;
-    let last_int_nm = band.upper_nm.floor() as u32;
-
-    if band.lower_nm != first_int_nm as f64 {
-        bands.push(Band::from_nm_bounds(band.lower_nm, first_int_nm as f64));
-    }
-    bands.extend(
-        (first_int_nm..last_int_nm).map(|nm| Band::from_nm_bounds(nm as f64, nm as f64 + 1.0)),
-    );
-
-    if last_int_nm as f64 != band.upper_nm {
-        bands.push(Band::from_nm_bounds(last_int_nm as f64, band.upper_nm));
-    }
-
-    bands
+    // Use the Band subdivision method to create equally-sized sub-bands
+    // This ensures consistent subdivision behavior and avoids code duplication
+    band.as_n_subbands(n_bands)
 }
 
 pub fn wavelength_to_ergs(wavelength_nm: f64) -> f64 {
