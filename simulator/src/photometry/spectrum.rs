@@ -235,6 +235,41 @@ impl Band {
         let upper_freq = CGS::SPEED_OF_LIGHT / (self.lower_nm * 1e-7);
         (lower_freq, upper_freq)
     }
+
+    /// Divide this band into n equally-sized sub-bands
+    ///
+    /// Creates n sub-bands that completely cover the wavelength range
+    /// of this band, with each sub-band having equal width in nanometers.
+    ///
+    /// # Arguments
+    /// * `n` - Number of sub-bands to create (must be >= 1)
+    ///
+    /// # Returns
+    /// Vec of n Band objects covering the original wavelength range
+    ///
+    /// # Panics
+    /// Panics if n is 0
+    pub fn as_n_subbands(&self, n: usize) -> Vec<Band> {
+        if n == 0 {
+            panic!("Number of sub-bands must be at least 1");
+        }
+
+        let mut subbands = Vec::with_capacity(n);
+        let width = self.width() / n as f64;
+
+        for i in 0..n {
+            let lower = self.lower_nm + i as f64 * width;
+            let upper = if i == n - 1 {
+                // For the last sub-band, use exact upper bound to avoid floating point errors
+                self.upper_nm
+            } else {
+                self.lower_nm + (i + 1) as f64 * width
+            };
+            subbands.push(Band::from_nm_bounds(lower, upper));
+        }
+
+        subbands
+    }
 }
 
 pub fn nm_sub_bands(band: &Band) -> Vec<Band> {
@@ -480,5 +515,84 @@ mod tests {
 
         assert_relative_eq!(lower_freq2, expected_lower2, epsilon = 1e-10);
         assert_relative_eq!(upper_freq2, expected_upper2, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_band_as_n_subbands() {
+        // Test basic subdivision
+        let band = Band::from_nm_bounds(400.0, 700.0);
+        let subbands = band.as_n_subbands(3);
+
+        assert_eq!(subbands.len(), 3);
+
+        // Check that sub-bands cover the full range
+        assert_eq!(subbands[0].lower_nm, 400.0);
+        assert_eq!(subbands[2].upper_nm, 700.0);
+
+        // Check sub-band widths (should be 100nm each)
+        assert_relative_eq!(subbands[0].width(), 100.0, epsilon = 1e-10);
+        assert_relative_eq!(subbands[1].width(), 100.0, epsilon = 1e-10);
+        assert_relative_eq!(subbands[2].width(), 100.0, epsilon = 1e-10);
+
+        // Check boundaries connect
+        assert_eq!(subbands[0].upper_nm, subbands[1].lower_nm);
+        assert_eq!(subbands[1].upper_nm, subbands[2].lower_nm);
+    }
+
+    #[test]
+    fn test_band_as_n_subbands_single() {
+        // Test n=1 case
+        let band = Band::from_nm_bounds(500.0, 600.0);
+        let subbands = band.as_n_subbands(1);
+
+        assert_eq!(subbands.len(), 1);
+        assert_eq!(subbands[0].lower_nm, 500.0);
+        assert_eq!(subbands[0].upper_nm, 600.0);
+        assert_eq!(subbands[0].width(), band.width());
+    }
+
+    #[test]
+    fn test_band_as_n_subbands_many() {
+        // Test with many sub-bands
+        let band = Band::from_nm_bounds(400.0, 500.0);
+        let subbands = band.as_n_subbands(10);
+
+        assert_eq!(subbands.len(), 10);
+
+        // Each should be 10nm wide
+        for subband in &subbands {
+            assert_relative_eq!(subband.width(), 10.0, epsilon = 1e-10);
+        }
+
+        // Check coverage
+        assert_eq!(subbands.first().unwrap().lower_nm, 400.0);
+        assert_eq!(subbands.last().unwrap().upper_nm, 500.0);
+
+        // Check no gaps
+        for i in 0..9 {
+            assert_eq!(subbands[i].upper_nm, subbands[i + 1].lower_nm);
+        }
+    }
+
+    #[test]
+    fn test_band_as_n_subbands_odd_division() {
+        // Test when width doesn't divide evenly
+        let band = Band::from_nm_bounds(400.0, 403.0);
+        let subbands = band.as_n_subbands(2);
+
+        assert_eq!(subbands.len(), 2);
+        assert_eq!(subbands[0].lower_nm, 400.0);
+        assert_eq!(subbands[1].upper_nm, 403.0);
+
+        // First should be 1.5nm, second should cover the rest
+        assert_relative_eq!(subbands[0].width(), 1.5, epsilon = 1e-10);
+        assert_relative_eq!(subbands[1].width(), 1.5, epsilon = 1e-10);
+    }
+
+    #[test]
+    #[should_panic(expected = "Number of sub-bands must be at least 1")]
+    fn test_band_as_n_subbands_zero() {
+        let band = Band::from_nm_bounds(400.0, 700.0);
+        let _ = band.as_n_subbands(0);
     }
 }
