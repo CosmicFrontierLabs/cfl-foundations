@@ -21,27 +21,17 @@ runs:
         sudo apt-get install -y libfontconfig1-dev libcfitsio-dev
     
     - name: Setup Rust toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: stable
         components: rustfmt, clippy
-        override: true
     
-    - name: Generate cache key
+    - name: Cache Rust dependencies
       if: inputs.setup-cache == 'true'
-      id: cache-key
-      shell: bash
-      run: |
-        echo "key=$(find . -name "Cargo.toml" -type f -o -name "CACHE_VERSION" | sort | xargs sha256sum | sha256sum | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
-    
-    - name: Cache cargo registry
-      if: inputs.setup-cache == 'true'
-      uses: actions/cache@v3
+      uses: Swatinem/rust-cache@v2
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ steps.cache-key.outputs.key }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-
+        # Cache key includes OS, toolchain, and Cargo.lock
+        key: ${{ runner.os }}-rust-cache
+        # Cache the target directory and cargo registry
+        cache-targets: true
+        # Also cache the cargo index
+        cache-all-crates: true
