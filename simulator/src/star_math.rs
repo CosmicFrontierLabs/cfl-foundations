@@ -147,7 +147,7 @@ use crate::algo::MinMaxScan;
 // This is used when the catalog does not provide a B-V value
 // In practice this is mostly for faint stars, but this is a
 // reasonable guess for stuff on the main sequence
-const DEFAULT_BV: f64 = 1.4;
+pub const DEFAULT_BV: f64 = 1.4;
 
 /// Calculate the circular field of view diameter for a telescope-sensor combination.
 ///

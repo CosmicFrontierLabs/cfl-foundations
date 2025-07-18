@@ -69,8 +69,7 @@ use std::time::Duration;
 use once_cell::sync::Lazy;
 
 use super::gaia::GAIA_PASSBAND;
-use super::quantum_efficiency::QuantumEfficiency;
-use super::spectrum::{nm_sub_bands, wavelength_to_ergs, Band, Spectrum, CGS};
+use super::spectrum::{Band, Spectrum, CGS};
 
 /// Flat spectral energy distribution for calibration and reference sources.
 ///
@@ -173,52 +172,7 @@ impl Spectrum for FlatStellarSpectrum {
         self.spectral_flux_density * (upper_freq - lower_freq)
     }
 
-    fn photons(&self, band: &Band, aperture_cm2: f64, duration: std::time::Duration) -> f64 {
-        // Convert power to photons per second
-        // E = h * c / λ, so N = P / (h * c / λ)
-        // where P is power in erg/s, h is Planck's constant, c is speed of light, and λ is wavelength in cm
-        let mut total_photons = 0.0;
-
-        // Decompose the band into integer nanometer bands
-        // Special case the first and last bands
-        let bands = nm_sub_bands(band);
-
-        // Integrate over each wavelength in the band
-        for band in bands {
-            let energy_per_photon = wavelength_to_ergs(band.center());
-            let irradiance = self.irradiance(&band);
-            total_photons += irradiance / energy_per_photon;
-        }
-
-        // Multiply by duration to get total photons detected
-        total_photons * duration.as_secs_f64() * aperture_cm2
-    }
-
-    fn photo_electrons(
-        &self,
-        qe: &QuantumEfficiency,
-        aperture_cm2: f64,
-        duration: &Duration,
-    ) -> f64 {
-        // Convert power to photons per second
-        // E = h * c / λ, so N = P / (h * c / λ)
-        // where P is power in erg/s, h is Planck's constant, c is speed of light, and λ is wavelength in cm
-        let mut total_electrons = 0.0;
-
-        // Decompose the band into integer nanometer bands
-        // Special case the first and last bands
-        let bands = nm_sub_bands(&qe.band());
-
-        // Integrate over each wavelength in the band
-        for band in bands {
-            let energy_per_photon = wavelength_to_ergs(band.center());
-            let photons_in_band = self.irradiance(&band) / energy_per_photon;
-            total_electrons += qe.at(band.center()) * photons_in_band;
-        }
-
-        // Multiply by duration to get total photons detected
-        total_electrons * duration.as_secs_f64() * aperture_cm2
-    }
+    // Use default implementations for photons() and photo_electrons() from the trait
 }
 
 /// Physically accurate blackbody stellar spectrum using Planck's radiation law.
@@ -427,7 +381,7 @@ impl Spectrum for BlackbodyStellarSpectrum {
         }
 
         // Decompose the band into integer nanometer bands for integration
-        let bands = nm_sub_bands(band);
+        let bands = band.as_n_subbands(band.width().ceil() as usize);
 
         // Integrate irradiance over all sub-bands
         let mut total_irradiance = 0.0;
@@ -451,6 +405,8 @@ impl Spectrum for BlackbodyStellarSpectrum {
 
 #[cfg(test)]
 mod tests {
+    use crate::QuantumEfficiency;
+
     use super::*;
     use approx::assert_relative_eq;
 
@@ -616,53 +572,6 @@ mod tests {
         // Test range outside spectrum
         let band3 = Band::from_nm_bounds(0.1, 0.2); // Very small wavelengths but not negative
         assert!(spectrum.irradiance(&band3) > 0.0);
-    }
-
-    #[test]
-    fn test_photoelectron_math_100percent() {
-        let aperture_cm2 = 1.0; // 1 cm² aperture
-        let duration = std::time::Duration::from_secs(1); // 1 second observation
-
-        let band = Band::from_nm_bounds(400.0, 600.0);
-        // Make a pretend QE that is perfect in the 400-600nm range
-        let qe = QuantumEfficiency::from_notch(&band, 1.0).unwrap();
-
-        // Create a flat spectrum with a known flux density
-        let spectrum = FlatStellarSpectrum::from_ab_mag(0.0);
-
-        let photons = spectrum.photons(&band, aperture_cm2, duration);
-        let electrons = spectrum.photo_electrons(&qe, aperture_cm2, &duration);
-
-        // For a perfect QE, the number of electrons should equal the number of photons
-        let err = f64::abs(photons - electrons) / photons;
-
-        assert!(
-            err < 0.01,
-            "Expected {} electrons, got {}",
-            photons,
-            electrons
-        );
-    }
-
-    #[test]
-    fn test_photoelectron_math_50_percent() {
-        let aperture_cm2 = 1.0; // 1 cm² aperture
-        let duration = std::time::Duration::from_secs(1); // 1 second observation
-
-        let band = Band::from_nm_bounds(400.0, 600.0);
-        // Make a pretend QE with 50% efficiency in the 400-600nm range
-        let qe = QuantumEfficiency::from_notch(&band, 0.5).unwrap();
-
-        // Create a flat spectrum with a known flux density
-        let spectrum = FlatStellarSpectrum::from_ab_mag(0.0);
-
-        let photons = spectrum.photons(&band, aperture_cm2, duration);
-        let electrons = spectrum.photo_electrons(&qe, aperture_cm2, &duration);
-
-        // For 50% QE, electrons should be ~50% of photons
-        let ratio = electrons / photons;
-
-        assert_relative_eq!(ratio, 0.5, epsilon = 0.01);
     }
 
     #[test]

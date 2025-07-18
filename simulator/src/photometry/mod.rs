@@ -140,6 +140,7 @@ pub mod color;
 pub mod filters;
 pub mod gaia;
 pub mod human;
+pub mod photoconversion;
 pub mod quantum_efficiency;
 pub mod spectrum;
 pub mod stellar;
@@ -148,11 +149,12 @@ pub mod trapezoid;
 pub mod zodical;
 
 pub use color::{
-    color_temperature_index, generate_temperature_sequence, spectrum_to_rgb_values,
-    temperature_to_spectral_class,
+    color_temperature_index, generate_temperature_sequence, rgb_values_to_color,
+    spectrum_to_rgb_values, temperature_to_spectral_class,
 };
 pub use filters::{b_filter, u_filter, ubv_filters, v_filter};
 pub use human::{HumanPhotoreceptor, HumanVision};
+pub use photoconversion::psf_photons_photoelectrons;
 pub use quantum_efficiency::QuantumEfficiency;
 pub use spectrum::{Band, Spectrum};
 pub use stellar::{BlackbodyStellarSpectrum, FlatStellarSpectrum};

@@ -272,16 +272,6 @@ impl Band {
     }
 }
 
-pub fn nm_sub_bands(band: &Band) -> Vec<Band> {
-    // Calculate the number of 1nm sub-bands needed to cover the band
-    let band_width = band.width();
-    let n_bands = band_width.ceil() as usize;
-
-    // Use the Band subdivision method to create equally-sized sub-bands
-    // This ensures consistent subdivision behavior and avoids code duplication
-    band.as_n_subbands(n_bands)
-}
-
 pub fn wavelength_to_ergs(wavelength_nm: f64) -> f64 {
     // Convert wavelength in nanometers to energy in erg
     // E = h * c / λ, where λ is in cm
@@ -367,24 +357,7 @@ pub trait Spectrum: Send + Sync {
     ///
     /// The number of photons detected in the specified band
     fn photons(&self, band: &Band, aperture_cm2: f64, duration: Duration) -> f64 {
-        // Convert power to photons per second
-        // E = h * c / λ, so N = P / (h * c / λ)
-        // where P is power in erg/s, h is Planck's constant, c is speed of light, and λ is wavelength in cm
-        let mut total_photons = 0.0;
-
-        // Decompose the band into integer nanometer bands
-        // Special case the first and last bands
-        let bands = nm_sub_bands(band);
-
-        // Integrate over each wavelength in the band
-        for band in bands {
-            let energy_per_photon = wavelength_to_ergs(band.center());
-            let irradiance = self.irradiance(&band);
-            total_photons += irradiance / energy_per_photon;
-        }
-
-        // Multiply by duration to get total photons detected
-        total_photons * duration.as_secs_f64() * aperture_cm2
+        crate::photometry::photoconversion::photons(self, band, aperture_cm2, duration)
     }
 
     /// Calculate the photo-electrons obtained from this spectrum when using a sensor with a given quantum efficiency
@@ -403,24 +376,7 @@ pub trait Spectrum: Send + Sync {
         aperture_cm2: f64,
         duration: &Duration,
     ) -> f64 {
-        // Convert power to photons per second
-        // E = h * c / λ, so N = P / (h * c / λ)
-        // where P is power in erg/s, h is Planck's constant, c is speed of light, and λ is wavelength in cm
-        let mut total_electrons = 0.0;
-
-        // Decompose the band into integer nanometer bands
-        // Special case the first and last bands
-        let bands = nm_sub_bands(&qe.band());
-
-        // Integrate over each wavelength in the band
-        for band in bands {
-            let energy_per_photon = wavelength_to_ergs(band.center());
-            let photons_in_band = self.irradiance(&band) / energy_per_photon;
-            total_electrons += qe.at(band.center()) * photons_in_band;
-        }
-
-        // Multiply by duration to get total photons detected
-        total_electrons * duration.as_secs_f64() * aperture_cm2
+        crate::photometry::photoconversion::photo_electrons(self, qe, aperture_cm2, duration)
     }
 }
 
@@ -461,54 +417,6 @@ impl Spectrum for FlatSpectrum {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
-
-    #[test]
-    fn test_nm_sub_bands() {
-        let lowest = 400.0;
-        let highest = 700.0;
-
-        let band = Band::from_nm_bounds(lowest, highest);
-        let sub_bands = nm_sub_bands(&band);
-
-        // Should create bands for each integer nm in the range
-        assert_eq!(sub_bands.len(), 300); // 700 - 400
-
-        // Check first and last bands
-        assert_eq!(sub_bands[0].lower_nm, lowest);
-        assert_eq!(sub_bands[0].upper_nm, lowest + 1.0);
-        assert_eq!(sub_bands.last().unwrap().lower_nm, highest - 1.0);
-        assert_eq!(sub_bands.last().unwrap().upper_nm, highest);
-
-        // Check middle band
-        assert_eq!(sub_bands[150].lower_nm, 550.0);
-        assert_eq!(sub_bands[150].upper_nm, 551.0);
-
-        for b in &sub_bands {
-            assert!(
-                b.lower_nm < b.upper_nm,
-                "Band {}..{} is invalid",
-                b.lower_nm,
-                b.upper_nm
-            );
-            assert!(b.lower_nm >= lowest, "OOB {}", b.lower_nm);
-            assert!(b.upper_nm <= highest, "OOB {}", b.upper_nm);
-        }
-    }
-
-    #[test]
-    fn test_nm_sub_bands_tiny() {
-        let lowest = 10.0;
-        let highest = 11.0;
-
-        let band = Band::from_nm_bounds(lowest, highest);
-        let sub_bands = nm_sub_bands(&band);
-
-        assert_eq!(sub_bands.len(), 1); // 11 - 10
-
-        // Check the single band created
-        assert_eq!(sub_bands[0].lower_nm, lowest);
-        assert_eq!(sub_bands[0].upper_nm, highest);
-    }
 
     #[test]
     fn test_band_frequency_bounds() {
