@@ -109,12 +109,11 @@ fn test_algorithm(
             star: star_data,
             x: xpos,
             y: ypos,
-            flux,
+            spot: flux,
         };
 
         // Create electron image and add star
-        let airy_disk = satellite.airy_disk_fwhm_sampled();
-        let e_image = add_stars_to_image(args.domain, args.domain, &vec![star], airy_disk);
+        let e_image = add_stars_to_image(args.domain, args.domain, &vec![star]);
 
         // Generate and add noise
         let sensor_noise = generate_sensor_noise(

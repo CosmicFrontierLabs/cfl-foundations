@@ -381,7 +381,7 @@ impl Spectrum for BlackbodyStellarSpectrum {
         }
 
         // Decompose the band into integer nanometer bands for integration
-        let bands = band.as_n_subbands(band.width().ceil() as usize);
+        let bands = band.sub_nm_bands();
 
         // Integrate irradiance over all sub-bands
         let mut total_irradiance = 0.0;

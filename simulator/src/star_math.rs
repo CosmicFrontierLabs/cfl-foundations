@@ -138,7 +138,9 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 use crate::hardware::{SatelliteConfig, SensorConfig, TelescopeConfig};
-use crate::{photometry::BlackbodyStellarSpectrum, Spectrum};
+use crate::photometry::photoconversion::PhotoElectronSpot;
+use crate::photometry::psf_photons_photoelectrons;
+use crate::photometry::BlackbodyStellarSpectrum;
 
 #[cfg(test)]
 use crate::algo::MinMaxScan;
@@ -234,13 +236,21 @@ pub fn star_data_to_electrons(
     star_data: &StarData,
     exposure: &Duration,
     satellite: &SatelliteConfig,
-) -> f64 {
+) -> PhotoElectronSpot {
     let spectrum = BlackbodyStellarSpectrum::from_gaia_bv_magnitude(
         star_data.b_v.unwrap_or(DEFAULT_BV),
         star_data.magnitude,
     );
     let aperture_cm2 = satellite.telescope.collecting_area_m2() * 1.0e4; // Convert m^2 to cm^2
-    spectrum.photo_electrons(&satellite.combined_qe, aperture_cm2, exposure)
+    let (_elec, photo_elec) = psf_photons_photoelectrons(
+        &satellite.airy_disk_pixel_space(),
+        &spectrum,
+        &satellite.sensor.quantum_efficiency,
+        aperture_cm2,
+        exposure,
+    );
+
+    photo_elec
 }
 
 /// Filter stars that would be visible in the field of view
@@ -1043,7 +1053,7 @@ mod tests {
 
         assert!(approx_eq!(
             f64,
-            elec_large / elec_small,
+            elec_large.electrons / elec_small.electrons,
             expected_ratio,
             epsilon = 0.01 // Allow 1% tolerance for QE differences
         ));

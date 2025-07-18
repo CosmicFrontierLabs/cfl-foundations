@@ -7,11 +7,27 @@ use crate::photometry::{
 };
 use std::time::Duration;
 
-pub struct SpotFlux {
-    pub spot: PixelScaledAiryDisk,
+#[derive(Debug, Clone)]
+pub struct PhotoElectronSpot {
+    pub disk: PixelScaledAiryDisk,
 
     // total ingegrated flux in photons or photoelectrons
-    pub quantity: f64,
+    pub electrons: f64,
+}
+
+impl PhotoElectronSpot {
+    pub fn with_fwhm_quantity(fwhm: f64, reference_wavelength: f64, electrons: f64) -> Self {
+        let disk = PixelScaledAiryDisk::with_fwhm(fwhm, reference_wavelength);
+        PhotoElectronSpot { disk, electrons }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PhotonSpot {
+    pub disk: PixelScaledAiryDisk,
+
+    // total ingegrated flux in photons or photoelectrons
+    pub photons: f64,
 }
 
 /// Calculate effective PSF and photon flux for chromatic sources.
@@ -39,7 +55,7 @@ pub fn psf_photons_photoelectrons<S: Spectrum>(
     qe: &QuantumEfficiency,
     aperture_cm2: f64,
     duration: &Duration,
-) -> (SpotFlux, SpotFlux) {
+) -> (PhotonSpot, PhotoElectronSpot) {
     let band = qe.band();
     // THe names in this section are a bit more punctuated than I like
     // but `p_` and `pe_` are used to indicate photon and photo-electrons
@@ -52,7 +68,7 @@ pub fn psf_photons_photoelectrons<S: Spectrum>(
     let mut p_weighted_fwhm_sum = 0.0;
     let mut p_weight_total = 0.0;
 
-    let sub_bands = band.as_n_subbands(band.width().ceil() as usize);
+    let sub_bands = band.sub_nm_bands();
 
     for sub_band in sub_bands {
         // Compute the photons and photo-electrons flux for this sub-band
@@ -93,13 +109,13 @@ pub fn psf_photons_photoelectrons<S: Spectrum>(
     let pe_psf = PixelScaledAiryDisk::with_fwhm(pe_fwhm, pe_ref_wavelength);
 
     let flux_scale = aperture_cm2 * duration.as_secs_f64();
-    let p_spot_flux = SpotFlux {
-        spot: p_psf,
-        quantity: total_p_flux * flux_scale,
+    let p_spot_flux = PhotonSpot {
+        disk: p_psf,
+        photons: total_p_flux * flux_scale,
     };
-    let pe_spot_flux = SpotFlux {
-        spot: pe_psf,
-        quantity: total_pe_flux * flux_scale,
+    let pe_spot_flux = PhotoElectronSpot {
+        disk: pe_psf,
+        electrons: total_pe_flux * flux_scale,
     };
 
     (p_spot_flux, pe_spot_flux)
@@ -130,7 +146,7 @@ pub fn photons<S: Spectrum + ?Sized>(
 
     // Decompose the band into integer nanometer bands
     // Special case the first and last bands
-    let bands = band.as_n_subbands(band.width().ceil() as usize);
+    let bands = band.sub_nm_bands();
 
     // Integrate over each wavelength in the band
     for band in bands {
@@ -172,7 +188,7 @@ pub fn photo_electrons<S: Spectrum + ?Sized>(
         // Calculate the number of 1nm sub-bands needed to cover the band
         // Use the Band subdivision method to create equally-sized sub-bands
         // This ensures consistent subdivision behavior and avoids code duplication
-        band.as_n_subbands(band.width().ceil() as usize)
+        band.sub_nm_bands()
     };
 
     // Integrate over each wavelength in the band
@@ -214,9 +230,9 @@ mod tests {
         );
 
         // The effective scale should be very close to the input disk's FWHM for narrow band at reference wavelength
-        assert_relative_eq!(photons.spot.fwhm(), achromatic_disk.fwhm(), epsilon = 1e-2);
+        assert_relative_eq!(photons.disk.fwhm(), achromatic_disk.fwhm(), epsilon = 1e-2);
         assert_relative_eq!(
-            photoelectrons.spot.fwhm(),
+            photoelectrons.disk.fwhm(),
             achromatic_disk.fwhm(),
             epsilon = 1e-2
         );
@@ -240,16 +256,16 @@ mod tests {
 
         println!(
             "Chromatic PSF FWHM: {:.3}, Photoelectron FWHM: {:.3}",
-            e_spot.spot.fwhm(),
-            pe_spot.spot.fwhm()
+            e_spot.disk.fwhm(),
+            pe_spot.disk.fwhm()
         );
         assert!(
-            e_spot.spot.fwhm() > airy.fwhm(),
+            e_spot.disk.fwhm() > airy.fwhm(),
             "Expected chromatic psf {} to be larger than achromatic psf {}",
-            e_spot.spot.fwhm(),
+            e_spot.disk.fwhm(),
             airy.fwhm()
         );
-        assert_relative_eq!(e_spot.spot.fwhm(), airy.fwhm(), epsilon = 0.1);
+        assert_relative_eq!(e_spot.disk.fwhm(), airy.fwhm(), epsilon = 0.1);
     }
 
     #[test]
@@ -283,18 +299,18 @@ mod tests {
 
         // IR-sensitive detector should see wider PSF due to longer wavelengths
         assert!(
-            ir_pe.spot.fwhm() > visible_pe.spot.fwhm(),
+            ir_pe.disk.fwhm() > visible_pe.disk.fwhm(),
             "IR-sensitive detector PSF ({:.3}) should be wider than visible-only PSF ({:.3})",
-            ir_pe.spot.fwhm(),
-            visible_pe.spot.fwhm()
+            ir_pe.disk.fwhm(),
+            visible_pe.disk.fwhm()
         );
 
         // The photon-weighted PSF should also be wider for IR
         assert!(
-            ir_photons.spot.fwhm() > visible_photons.spot.fwhm(),
+            ir_photons.disk.fwhm() > visible_photons.disk.fwhm(),
             "IR photon PSF ({:.3}) should be wider than visible photon PSF ({:.3})",
-            ir_photons.spot.fwhm(),
-            visible_photons.spot.fwhm()
+            ir_photons.disk.fwhm(),
+            visible_photons.disk.fwhm()
         );
 
         // For IR-sensitive detector, the photoelectron PSF may be narrower than photon PSF
@@ -303,13 +319,13 @@ mod tests {
 
         println!(
             "Visible detector - Photon FWHM: {:.3}, PE FWHM: {:.3}",
-            visible_photons.spot.fwhm(),
-            visible_pe.spot.fwhm()
+            visible_photons.disk.fwhm(),
+            visible_pe.disk.fwhm()
         );
         println!(
             "IR-sensitive detector - Photon FWHM: {:.3}, PE FWHM: {:.3}",
-            ir_photons.spot.fwhm(),
-            ir_pe.spot.fwhm()
+            ir_photons.disk.fwhm(),
+            ir_pe.disk.fwhm()
         );
     }
 

@@ -69,7 +69,7 @@ impl ExperimentParams {
             star: star_data,
             x: xpos,
             y: ypos,
-            flux,
+            spot: flux,
         }
     }
 }

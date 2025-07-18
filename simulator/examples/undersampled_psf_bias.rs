@@ -188,7 +188,7 @@ fn create_star_at_position(
         star: star_data,
         x,
         y,
-        flux,
+        spot: flux,
     }
 }
 

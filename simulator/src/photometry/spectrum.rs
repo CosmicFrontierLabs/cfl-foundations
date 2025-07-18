@@ -270,8 +270,19 @@ impl Band {
 
         subbands
     }
-}
 
+    /// Create sub-bands with 1nm width covering the full band
+    ///
+    /// This is a convenience method that creates sub-bands of 1nm width,
+    /// with the number of sub-bands equal to the ceiling of the band width.
+    /// Common pattern for spectral integration.
+    ///
+    /// # Returns
+    /// Vec of Band objects with ~1nm width each
+    pub fn sub_nm_bands(&self) -> Vec<Band> {
+        self.as_n_subbands(self.width().ceil() as usize)
+    }
+}
 pub fn wavelength_to_ergs(wavelength_nm: f64) -> f64 {
     // Convert wavelength in nanometers to energy in erg
     // E = h * c / λ, where λ is in cm

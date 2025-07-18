@@ -22,8 +22,8 @@
 //! cargo bench
 //! ```
 
-use simulator::image_proc::airy::PixelScaledAiryDisk;
 use simulator::image_proc::render::{add_stars_to_image, StarInFrame};
+use simulator::photometry::photoconversion::PhotoElectronSpot;
 use starfield::catalogs::StarData;
 use starfield::Equatorial;
 use std::time::Instant;
@@ -48,9 +48,9 @@ use std::time::Instant;
 /// ```rust
 /// let stars = create_test_stars(100, 1000.0);
 /// assert_eq!(stars.len(), 100);
-/// assert!(stars.iter().all(|s| s.flux == 1000.0));
+/// assert!(stars.iter().all(|s| s.spot.electrons == 1000.0));
 /// ```
-fn create_test_stars(count: usize, flux: f64) -> Vec<StarInFrame> {
+fn create_test_stars(count: usize, flux: f64, sigma: f64) -> Vec<StarInFrame> {
     let mut stars = Vec::with_capacity(count);
 
     // Create test star data
@@ -69,7 +69,7 @@ fn create_test_stars(count: usize, flux: f64) -> Vec<StarInFrame> {
         stars.push(StarInFrame {
             x,
             y,
-            flux,
+            spot: PhotoElectronSpot::with_fwhm_quantity(sigma, 550.0, flux),
             star: star_data,
         });
     }
@@ -113,12 +113,11 @@ fn bench_add_stars_to_image() {
         for &star_count in &star_counts {
             for &sigma in &sigma_values {
                 // Create test stars
-                let stars = create_test_stars(star_count, 1000.0);
+                let stars = create_test_stars(star_count, 1000.0, sigma);
 
                 // Run the benchmark
                 let start = Instant::now();
-                let airy_pix = PixelScaledAiryDisk::with_fwhm(sigma, 550.0);
-                let _image = add_stars_to_image(size, size, &stars, airy_pix);
+                let _image = add_stars_to_image(size, size, &stars);
                 let duration = start.elapsed();
 
                 println!(

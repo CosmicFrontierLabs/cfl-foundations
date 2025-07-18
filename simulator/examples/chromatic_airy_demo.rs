@@ -88,13 +88,13 @@ fn analyze_sensor_psf(
             integration_time,
         );
 
-        let broadening = (pe.spot.fwhm() / airy_disk.fwhm() - 1.0) * 100.0;
-        let effective_wavelength = pe.spot.reference_wavelength;
+        let broadening = (pe.disk.fwhm() / airy_disk.fwhm() - 1.0) * 100.0;
+        let effective_wavelength = pe.disk.reference_wavelength;
 
         results.push((
             star_type.to_string(),
             *temp,
-            pe.spot.fwhm(),
+            pe.disk.fwhm(),
             broadening,
             effective_wavelength,
         ));
@@ -175,7 +175,7 @@ fn create_sensor_plot(
     for &r in radii.iter() {
         // Star profiles
         for (j, psf) in star_psfs.iter().enumerate() {
-            star_profiles[j].push(psf.spot.gaussian_approximation(r) * psf.quantity);
+            star_profiles[j].push(psf.disk.gaussian_approximation(r) * psf.electrons);
         }
     }
 
@@ -263,7 +263,7 @@ fn create_sensor_plot(
     // Plot star profiles
     for (i, ((_, star_type, temp), profile)) in stars.iter().zip(star_profiles.iter()).enumerate() {
         let color = &star_colors[i];
-        let eff_wavelength = star_psfs[i].spot.reference_wavelength;
+        let eff_wavelength = star_psfs[i].disk.reference_wavelength;
         let label = if star_type.contains("B-V") {
             format!("{} ({:.0}K, {:.0}nm)", star_type, temp, eff_wavelength)
         } else {
@@ -355,7 +355,7 @@ fn create_2d_psf_comparison(
         aperture_cm2,
         integration_time,
     );
-    let sun_image = create_psf_image(&|r| sun_pe.spot.intensity(r) * sun_pe.quantity);
+    let sun_image = create_psf_image(&|r| sun_pe.disk.intensity(r) * sun_pe.electrons);
 
     // Log scale for visualization
     let log_scale = |x: f64| -> f64 {

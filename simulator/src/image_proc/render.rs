@@ -6,8 +6,9 @@ use starfield::{catalogs::StarData, Equatorial};
 use crate::{
     algo::icp::Locatable2d,
     hardware::SatelliteConfig,
-    image_proc::airy::PixelScaledAiryDisk,
-    photometry::{zodical::SolarAngularCoordinates, ZodicalLight},
+    photometry::{
+        photoconversion::PhotoElectronSpot, zodical::SolarAngularCoordinates, ZodicalLight,
+    },
     star_math::{field_diameter, star_data_to_electrons, StarProjector},
     SensorConfig,
 };
@@ -18,7 +19,7 @@ use super::{generate_sensor_noise, noise::apply_poisson_photon_noise};
 pub struct StarInFrame {
     pub x: f64,
     pub y: f64,
-    pub flux: f64,
+    pub spot: PhotoElectronSpot,
     pub star: StarData,
 }
 
@@ -149,7 +150,6 @@ impl Renderer {
             satellite_config.sensor.width_px,
             satellite_config.sensor.height_px,
             &rendered_stars,
-            airy_pix,
         );
 
         Self {
@@ -173,14 +173,11 @@ impl Renderer {
     /// A new Renderer with the base star image pre-computed
     ///
     pub fn from_stars(stars: &Vec<StarInFrame>, satellite_config: SatelliteConfig) -> Self {
-        let airy_pix = satellite_config.airy_disk_pixel_space();
-
         // Create base star image for 1 second exposure
         let base_star_image = add_stars_to_image(
             satellite_config.sensor.width_px,
             satellite_config.sensor.height_px,
             stars,
-            airy_pix,
         );
 
         Self {
@@ -244,7 +241,10 @@ impl Renderer {
             .map(|star| StarInFrame {
                 x: star.x,
                 y: star.y,
-                flux: star.flux * exposure_factor,
+                spot: PhotoElectronSpot {
+                    disk: star.spot.disk,
+                    electrons: star.spot.electrons * exposure_factor,
+                },
                 star: star.star,
             })
             .collect();
@@ -373,19 +373,19 @@ pub fn project_stars_to_pixels(
         }
 
         // Calculate photon flux using telescope model
-        let electrons = star_data_to_electrons(star, exposure, satellite);
+        let photo_electrons = star_data_to_electrons(star, exposure, satellite);
 
         // Create StarInFrame with projected coordinates and flux
         projected_stars.push(StarInFrame {
             x,
             y,
-            flux: electrons,
+            spot: photo_electrons,
             star: *star,
         });
     }
 
     // Sort by flux for consistent rendering (float addition isn't associative)
-    projected_stars.sort_by(|a, b| a.flux.partial_cmp(&b.flux).unwrap());
+    projected_stars.sort_by(|a, b| a.spot.electrons.partial_cmp(&b.spot.electrons).unwrap());
 
     projected_stars
 }
@@ -427,33 +427,27 @@ pub fn quantize_image(electron_img: &Array2<f64>, sensor: &SensorConfig) -> Arra
 /// ```
 /// use ndarray::Array2;
 /// use simulator::image_proc::render::{add_stars_to_image, StarInFrame};
+/// use simulator::photometry::photoconversion::PhotoElectronSpot;
 /// use starfield::catalogs::StarData;
 /// use starfield::Equatorial;
-/// use simulator::image_proc::airy::PixelScaledAiryDisk;
 /// let star_data = StarData {
 ///     id: 0,
 ///     magnitude: 10.0,
 ///     position: Equatorial::from_degrees(0.0, 0.0),
 ///     b_v: None,
 /// };
-/// let stars = vec![StarInFrame { x: 50.0, y: 50.0, flux: 1000.0, star: star_data }];
-/// let airy_pix = PixelScaledAiryDisk::with_fwhm(2.0, 550.0);
-/// let image = add_stars_to_image(100, 100, &stars, airy_pix);
+/// let stars = vec![StarInFrame { x: 50.0, y: 50.0, spot: PhotoElectronSpot::with_fwhm_quantity(2.0, 550.0, 1000.0), star: star_data }];
+/// let image = add_stars_to_image(100, 100, &stars);
 /// ```
-pub fn add_stars_to_image(
-    width: usize,
-    height: usize,
-    stars: &Vec<StarInFrame>,
-    airy_pix: PixelScaledAiryDisk,
-) -> Array2<f64> {
+pub fn add_stars_to_image(width: usize, height: usize, stars: &Vec<StarInFrame>) -> Array2<f64> {
     // Create new image array with specified dimensions
     let mut image = Array2::zeros((height, width));
 
-    // 2x the first 0 should cover 99.99999% of flux or so
-    let max_pix_dist = (airy_pix.first_zero().max(1.0) * 2.0).ceil() as i32;
-
     // Calculate the contribution of all stars to this pixel
     for star in stars {
+        // 2x the first 0 should cover 99.99999% of flux or so
+        let max_pix_dist: i32 = (star.spot.disk.first_zero().max(1.0) * 2.0).ceil() as i32;
+
         // Calculate pixel range to check based on star position
         let xc = star.x.round() as i32;
         let yc = star.y.round() as i32;
@@ -470,7 +464,10 @@ pub fn add_stars_to_image(
                 let y_pixel = y as f64 - star.y;
 
                 // Use Simpson's rule integration for accurate flux calculation
-                let contribution = airy_pix.pixel_flux_simpson(x_pixel, y_pixel, star.flux);
+                let contribution =
+                    star.spot
+                        .disk
+                        .pixel_flux_simpson(x_pixel, y_pixel, star.spot.electrons);
 
                 image[[y as usize, x as usize]] += contribution;
             }
@@ -483,10 +480,13 @@ pub fn add_stars_to_image(
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
-    use rand::Rng;
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
 
     use super::*;
-    use crate::hardware::{dark_current::DarkCurrentEstimator, sensor::create_flat_qe};
+    use crate::hardware::{
+        dark_current::DarkCurrentEstimator, read_noise::ReadNoiseEstimator, sensor::create_flat_qe,
+    };
 
     fn test_star_data() -> StarData {
         StarData {
@@ -494,6 +494,15 @@ mod tests {
             magnitude: 10.0,
             position: Equatorial::from_degrees(0.0, 0.0),
             b_v: None,
+        }
+    }
+
+    fn create_star_in_frame(x: f64, y: f64, sigma: f64, flux: f64) -> StarInFrame {
+        StarInFrame {
+            x,
+            y,
+            spot: PhotoElectronSpot::with_fwhm_quantity(sigma, 550.0, flux),
+            star: test_star_data(),
         }
     }
 
@@ -509,7 +518,7 @@ mod tests {
             1024,
             1024,
             5.5,
-            crate::hardware::read_noise::ReadNoiseEstimator::constant(2.0),
+            ReadNoiseEstimator::constant(2.0),
             DarkCurrentEstimator::from_reference_point(0.01, 20.0),
             bit_depth,
             dn_per_electron,
@@ -523,16 +532,8 @@ mod tests {
         for sigma_pix in vec![2.0, 4.0, 8.0] {
             let total_flux = 1000.0;
 
-            let stars = vec![StarInFrame {
-                x: 25.0,
-                y: 25.0,
-                flux: total_flux,
-                star: test_star_data(),
-            }];
-
-            let airy_pix = PixelScaledAiryDisk::with_first_zero(sigma_pix, 550.0);
-            let image = add_stars_to_image(50, 50, &stars, airy_pix);
-
+            let stars = vec![create_star_in_frame(25.0, 25.0, sigma_pix, total_flux)];
+            let image = add_stars_to_image(50, 50, &stars);
             let added_flux = image.sum();
             println!("Sigma: {}, Added Flux: {}", sigma_pix, added_flux);
             // assert_relative_eq!(added_flux, total_flux, epsilon = 1.0);
@@ -544,16 +545,8 @@ mod tests {
         let sigma_pix = 2.0;
         let total_flux = 1000.0;
 
-        let stars = vec![StarInFrame {
-            x: 60.0,
-            y: 60.0,
-            flux: total_flux,
-            star: test_star_data(),
-        }];
-        let airy_pix = PixelScaledAiryDisk::with_radius_scale(sigma_pix, 550.0);
-
-        let image = add_stars_to_image(50, 50, &stars, airy_pix);
-
+        let stars = vec![create_star_in_frame(60.0, 60.0, sigma_pix, total_flux)];
+        let image = add_stars_to_image(50, 50, &stars);
         let added_flux = image.sum();
         // With Simpson's rule, some flux can still be captured even when star center is outside
         // Expect very small flux contribution
@@ -569,19 +562,9 @@ mod tests {
         let sigma_pix = 4.0;
         let total_flux = 1000.0;
 
-        let stars = vec![StarInFrame {
-            x: -0.5,
-            y: 25.0,
-            flux: total_flux,
-            star: test_star_data(),
-        }];
-
-        let airy_pix = PixelScaledAiryDisk::with_radius_scale(sigma_pix, 550.0);
-
-        let image = add_stars_to_image(50, 50, &stars, airy_pix);
-
+        let stars = vec![create_star_in_frame(-0.5, 25.0, sigma_pix, total_flux)];
+        let image = add_stars_to_image(50, 50, &stars);
         let added_flux = image.sum();
-        // Right now pixel coords are edge/corner centered, but flus is kinda not intuitive that way
         assert_relative_eq!(added_flux * 2.0, total_flux, epsilon = total_flux * 0.01);
     }
 
@@ -591,38 +574,16 @@ mod tests {
         let total_flux = 250.0;
 
         let stars = vec![
-            StarInFrame {
-                x: -0.5,
-                y: -0.5,
-                flux: total_flux,
-                star: test_star_data(),
-            },
-            StarInFrame {
-                x: -0.5,
-                y: 49.5,
-                flux: total_flux,
-                star: test_star_data(),
-            },
-            StarInFrame {
-                x: 49.5,
-                y: -0.5,
-                flux: total_flux,
-                star: test_star_data(),
-            },
-            StarInFrame {
-                x: 49.5,
-                y: 49.5,
-                flux: total_flux,
-                star: test_star_data(),
-            },
+            create_star_in_frame(-0.5, -0.5, sigma_pix, total_flux),
+            create_star_in_frame(-0.5, 49.5, sigma_pix, total_flux),
+            create_star_in_frame(49.5, -0.5, sigma_pix, total_flux),
+            create_star_in_frame(49.5, 49.5, sigma_pix, total_flux),
         ];
-        let airy_pix = PixelScaledAiryDisk::with_fwhm(sigma_pix, 550.0);
 
-        let image = add_stars_to_image(50, 50, &stars, airy_pix);
-
+        let image = add_stars_to_image(50, 50, &stars);
         let added_flux = image.sum();
 
-        // The total flux should be about 1% of the 1 star flux value, because we see 1/4 of each star
+        // The total flux should be about 1 star flux value, because we see 1/4 of each star
         assert_relative_eq!(added_flux, total_flux, epsilon = total_flux * 0.01);
     }
 
@@ -631,22 +592,16 @@ mod tests {
         let sigma_pix = 2.0;
         let total_flux = 100.0;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = StdRng::seed_from_u64(42);
 
         let mut stars = Vec::new();
         for _ in 0..100 {
-            stars.push(StarInFrame {
-                x: rng.gen_range(-50.0..150.0),
-                y: rng.gen_range(-50.0..150.0),
-                flux: total_flux,
-                star: test_star_data(),
-            });
+            let x = rng.gen_range(-50.0..150.0);
+            let y = rng.gen_range(-50.0..150.0);
+            stars.push(create_star_in_frame(x, y, sigma_pix, total_flux));
         }
 
-        let airy_pix = PixelScaledAiryDisk::with_radius_scale(sigma_pix, 550.0);
-
-        let image = add_stars_to_image(50, 50, &stars, airy_pix);
-
+        let image = add_stars_to_image(50, 50, &stars);
         let added_flux = image.sum();
 
         // Very loose bounds, but should catch egregious errors
@@ -658,22 +613,16 @@ mod tests {
         let sigma_pix = 2.0;
         let total_flux = 100.0;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = StdRng::seed_from_u64(42);
 
         let mut stars = Vec::new();
         for _ in 0..1000 {
-            stars.push(StarInFrame {
-                x: rng.gen_range(-50.0..150.0),
-                y: rng.gen_range(-50.0..150.0),
-                flux: total_flux,
-                star: test_star_data(),
-            });
+            let x = rng.gen_range(-50.0..150.0);
+            let y = rng.gen_range(-50.0..150.0);
+            stars.push(create_star_in_frame(x, y, sigma_pix, total_flux));
         }
 
-        let airy_pix = PixelScaledAiryDisk::with_radius_scale(sigma_pix, 550.0);
-
-        let image = add_stars_to_image(23, 57, &stars, airy_pix);
-
+        let image = add_stars_to_image(23, 57, &stars);
         let added_flux = image.sum();
 
         // Very loose bounds, but should catch egregious errors
@@ -879,7 +828,7 @@ mod tests {
         let sensor = create_test_sensor(12, 0.25, 50000.0); // 0.25 DN/e-, 50k well depth
 
         // Simulate realistic noise levels in electrons
-        let mut rng = rand::thread_rng();
+        let mut rng = StdRng::seed_from_u64(42);
         let mut zodiacal = Array2::zeros((100, 100));
         let mut sensor_noise = Array2::zeros((100, 100));
 
