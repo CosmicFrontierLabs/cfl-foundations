@@ -154,7 +154,7 @@ pub use color::{
 };
 pub use filters::{b_filter, u_filter, ubv_filters, v_filter};
 pub use human::{HumanPhotoreceptor, HumanVision};
-pub use photoconversion::psf_photons_photoelectrons;
+pub use photoconversion::photon_electron_fluxes;
 pub use quantum_efficiency::QuantumEfficiency;
 pub use spectrum::{Band, Spectrum};
 pub use stellar::{BlackbodyStellarSpectrum, FlatStellarSpectrum};

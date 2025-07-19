@@ -290,13 +290,8 @@ impl Scene {
         let star_refs: Vec<&StarData> = catalog_stars.iter().collect();
 
         // Use shared projection function
-        let projected_stars = project_stars_to_pixels(
-            &star_refs,
-            &pointing_center,
-            &satellite_config,
-            &exposure_time,
-            padding,
-        );
+        let projected_stars =
+            project_stars_to_pixels(&star_refs, &pointing_center, &satellite_config, padding);
 
         Self {
             satellite_config,

@@ -15,7 +15,7 @@ use simulator::image_proc::generate_sensor_noise;
 use simulator::image_proc::render::{add_stars_to_image, quantize_image, StarInFrame};
 use simulator::photometry::ZodicalLight;
 use simulator::shared_args::SharedSimulationArgs;
-use simulator::star_data_to_electrons;
+use simulator::star_data_to_fluxes;
 use starfield::catalogs::StarData;
 use starfield::Equatorial;
 
@@ -103,17 +103,21 @@ fn test_algorithm(
             b_v: None,
         };
 
-        let flux = star_data_to_electrons(&star_data, &args.shared.exposure.0, &satellite);
-
         let star = StarInFrame {
-            star: star_data,
             x: xpos,
             y: ypos,
-            spot: flux,
+            spot: star_data_to_fluxes(&star_data, &satellite),
+            star: star_data,
         };
 
         // Create electron image and add star
-        let e_image = add_stars_to_image(args.domain, args.domain, &vec![star]);
+        let e_image = add_stars_to_image(
+            args.domain,
+            args.domain,
+            &vec![star],
+            &args.shared.exposure.0,
+            satellite.telescope.collecting_area_cm2(),
+        );
 
         // Generate and add noise
         let sensor_noise = generate_sensor_noise(

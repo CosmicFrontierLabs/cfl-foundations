@@ -135,7 +135,7 @@ pub use photometry::quantum_efficiency::QuantumEfficiency;
 pub use photometry::spectrum::{Spectrum, CGS};
 pub use photometry::trapezoid::trap_integrate;
 pub use scene::Scene;
-pub use star_math::{field_diameter, filter_stars_in_field, pixel_scale, star_data_to_electrons};
+pub use star_math::{field_diameter, filter_stars_in_field, pixel_scale, star_data_to_fluxes};
 pub use starfield::catalogs::StarPosition;
 
 #[cfg(test)]

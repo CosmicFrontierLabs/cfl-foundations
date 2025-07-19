@@ -16,7 +16,7 @@ use crate::hardware::SatelliteConfig;
 use crate::image_proc::detection::{detect_stars_unified, StarDetection, StarFinder};
 use crate::image_proc::render::StarInFrame;
 use crate::photometry::zodical::SolarAngularCoordinates;
-use crate::star_data_to_electrons;
+use crate::star_data_to_fluxes;
 use crate::Scene;
 use core::f64;
 use rand::rngs::StdRng;
@@ -62,14 +62,11 @@ impl ExperimentParams {
             b_v: None,
         };
 
-        // Calculate electrons based on magnitude
-        let flux = star_data_to_electrons(&star_data, &self.exposure, &self.satellite);
-
         StarInFrame {
             star: star_data,
             x: xpos,
             y: ypos,
-            spot: flux,
+            spot: star_data_to_fluxes(&star_data, &self.satellite),
         }
     }
 }
@@ -251,7 +248,7 @@ pub fn run_single_experiment(params: &ExperimentParams) -> ExperimentResults {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hardware::sensor::models::{ALL_SENSORS, GSENSE4040BSI};
+    use crate::hardware::sensor::models::{ALL_SENSORS, GSENSE4040BSI, HWK4123};
     use crate::hardware::telescope::models::DEMO_50CM;
     use crate::hardware::telescope::TelescopeConfig;
     use crate::photometry::zodical::SolarAngularCoordinates;
@@ -346,19 +343,11 @@ mod tests {
         // Test with a faint star to verify detection limits
         let domain = 128;
         let faint_magnitude = 16.0; // Faint star
-        let exposure = Duration::from_millis(100000); // Longer exposure
-        let noise_floor_multiplier = 3.0; // More sensitive threshold
-        let experiment_count = 5;
+        let exposure = Duration::from_secs(1); // Longer exposure
 
-        let telescope = TelescopeConfig::new("Test 50mm Faint", 0.05, 0.5, 0.85);
-
-        let coordinates = SolarAngularCoordinates::zodiacal_minimum();
-
-        // Test with IMX455 (most sensitive sensor)
-        let sensor = &ALL_SENSORS[0]; // IMX455
-        let sized_sensor = sensor.with_dimensions(domain, domain);
-        let satellite = SatelliteConfig::new(telescope, sized_sensor, 0.0, 550.0);
-
+        let telescope = DEMO_50CM.clone();
+        let sensor = HWK4123.with_dimensions(domain, domain);
+        let satellite = SatelliteConfig::new(telescope, sensor.clone(), 0.0, 550.0);
         let adjusted_satellite = satellite.with_fwhm_sampling(2.0);
 
         let params = ExperimentParams {
@@ -366,12 +355,12 @@ mod tests {
             satellite: adjusted_satellite,
             exposure,
             mag: faint_magnitude,
-            noise_floor_multiplier,
+            noise_floor_multiplier: 3.0, // More sensitive threshold
             indices: (0, 0, 0),
-            experiment_count,
-            coordinates,
+            experiment_count: 5,
+            coordinates: SolarAngularCoordinates::zodiacal_minimum(),
             star_finder: StarFinder::Naive,
-            seed: 12345, // Different seed for variety
+            seed: 12345, // Fixed seed
         };
 
         let results = run_single_experiment(&params);

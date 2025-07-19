@@ -15,7 +15,7 @@ use simulator::image_proc::detection::{detect_stars_unified, StarFinder};
 use simulator::image_proc::render::StarInFrame;
 use simulator::photometry::zodical::SolarAngularCoordinates;
 use simulator::scene::Scene;
-use simulator::star_data_to_electrons;
+use simulator::star_data_to_fluxes;
 use starfield::catalogs::StarData;
 use starfield::Equatorial;
 use std::error::Error;
@@ -86,13 +86,7 @@ fn run_bias_experiment(params: &BiasExperimentParams) -> BiasExperimentResults {
         let true_x = params.center + params.x_offset - 0.5;
         let true_y = params.center + params.y_offset - 0.5;
 
-        let star = create_star_at_position(
-            true_x,
-            true_y,
-            params.magnitude,
-            &params.exposure,
-            &params.satellite,
-        );
+        let star = create_star_at_position(true_x, true_y, params.magnitude, &params.satellite);
 
         // Create scene and render
         let scene = Scene::from_stars(
@@ -172,7 +166,6 @@ fn create_star_at_position(
     x: f64,
     y: f64,
     magnitude: f64,
-    exposure: &Duration,
     satellite: &SatelliteConfig,
 ) -> StarInFrame {
     let star_data = StarData {
@@ -182,13 +175,13 @@ fn create_star_at_position(
         b_v: None,
     };
 
-    let flux = star_data_to_electrons(&star_data, exposure, satellite);
+    let flux = star_data_to_fluxes(&star_data, satellite);
 
     StarInFrame {
-        star: star_data,
         x,
         y,
         spot: flux,
+        star: star_data,
     }
 }
 
@@ -429,7 +422,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Create heatmaps for all PSF sampling values
     println!("\nCreating bias heatmaps for all PSF sampling values...");
 
-    for (idx, (psf_sampling, _, x_bias, y_bias)) in all_results.iter().enumerate() {
+    for (psf_sampling, _, x_bias, y_bias) in all_results.iter() {
         let filename = format!(
             "plots/psf_bias_heatmap_{:.2}_fwhm_per_pixel.png",
             psf_sampling
@@ -464,8 +457,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         let scale_limit = max_abs_bias.max(0.05); // Minimum scale of 0.05 for visibility
 
         chart_x.draw_series(x_bias.indexed_iter().map(|((y, x), &value)| {
-            let clamped_value = value.clamp(-scale_limit, scale_limit);
-
             // Blue for negative, red for positive, white at zero
             let color = if value < 0.0 {
                 let intensity = (value.abs() / scale_limit).min(1.0);
@@ -503,8 +494,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         let scale_limit_y = max_abs_bias_y.max(0.05); // Minimum scale of 0.05 for visibility
 
         chart_y.draw_series(y_bias.indexed_iter().map(|((y, x), &value)| {
-            let clamped_value = value.clamp(-scale_limit_y, scale_limit_y);
-
             // Blue for negative, red for positive, white at zero
             let color = if value < 0.0 {
                 let intensity = (value.abs() / scale_limit_y).min(1.0);

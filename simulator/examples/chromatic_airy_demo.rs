@@ -12,7 +12,7 @@ use simulator::hardware::sensor::models::{HWK4123, IMX455};
 use simulator::image_proc::airy::PixelScaledAiryDisk;
 use simulator::photometry::{
     color::{rgb_values_to_color, spectrum_to_rgb_values},
-    psf_photons_photoelectrons,
+    photon_electron_fluxes,
     stellar::{temperature_from_bv, BlackbodyStellarSpectrum},
     QuantumEfficiency,
 };
@@ -62,8 +62,6 @@ fn analyze_sensor_psf(
     detector_qe: &QuantumEfficiency,
     airy_disk: &PixelScaledAiryDisk,
     stars: &[(&BlackbodyStellarSpectrum, &str, f64)],
-    aperture_cm2: f64,
-    integration_time: &Duration,
 ) -> Vec<(String, f64, f64, f64, f64)> {
     println!("\n{} Sensor Analysis", sensor_name);
     println!("{}", "=".repeat(sensor_name.len() + 16));
@@ -80,13 +78,7 @@ fn analyze_sensor_psf(
     let mut results = Vec::new();
 
     for (star, star_type, temp) in stars {
-        let (_, pe) = psf_photons_photoelectrons(
-            airy_disk,
-            *star,
-            detector_qe,
-            aperture_cm2,
-            integration_time,
-        );
+        let pe = photon_electron_fluxes(airy_disk, *star, detector_qe).electrons;
 
         let broadening = (pe.disk.fwhm() / airy_disk.fwhm() - 1.0) * 100.0;
         let effective_wavelength = pe.disk.reference_wavelength;
@@ -164,8 +156,7 @@ fn create_sensor_plot(
     // Recompute PSFs for this sensor
     let mut star_psfs = Vec::new();
     for (star, _, _) in stars {
-        let (_, pe) =
-            psf_photons_photoelectrons(airy_disk, *star, sensor_qe, aperture_cm2, integration_time);
+        let pe = photon_electron_fluxes(airy_disk, *star, sensor_qe).electrons;
         star_psfs.push(pe);
     }
 
@@ -175,7 +166,10 @@ fn create_sensor_plot(
     for &r in radii.iter() {
         // Star profiles
         for (j, psf) in star_psfs.iter().enumerate() {
-            star_profiles[j].push(psf.disk.gaussian_approximation(r) * psf.electrons);
+            star_profiles[j].push(
+                psf.disk.gaussian_approximation(r)
+                    * psf.integrated_over(integration_time, aperture_cm2),
+            );
         }
     }
 
@@ -348,14 +342,10 @@ fn create_2d_psf_comparison(
     let mono_image = create_psf_image(&|r| airy_disk.intensity(r));
 
     // Create chromatic PSF image for sun-like star
-    let (_, sun_pe) = psf_photons_photoelectrons(
-        airy_disk,
-        sun_like,
-        sensor_qe,
-        aperture_cm2,
-        integration_time,
-    );
-    let sun_image = create_psf_image(&|r| sun_pe.disk.intensity(r) * sun_pe.electrons);
+    let sun_pe = photon_electron_fluxes(airy_disk, sun_like, sensor_qe).electrons;
+    let sun_image = create_psf_image(&|r| {
+        sun_pe.disk.intensity(r) * sun_pe.integrated_over(integration_time, aperture_cm2)
+    });
 
     // Log scale for visualization
     let log_scale = |x: f64| -> f64 {
@@ -449,14 +439,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Analyze all sensors
     let mut all_results = Vec::new();
     for (sensor_name, sensor_qe) in &sensors {
-        let results = analyze_sensor_psf(
-            sensor_name,
-            sensor_qe,
-            &airy_disk,
-            &stars,
-            aperture_cm2,
-            &integration_time,
-        );
+        let results = analyze_sensor_psf(sensor_name, sensor_qe, &airy_disk, &stars);
         all_results.push((sensor_name, results));
     }
 

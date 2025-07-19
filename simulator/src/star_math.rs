@@ -126,8 +126,6 @@
 //! - **Detector alignment**: Coordinate system registration
 //! - **Pointing accuracy**: Astrometric residual analysis
 
-use std::time::Duration;
-
 use nalgebra::Matrix3;
 use starfield::catalogs::{StarData, StarPosition};
 use starfield::framelib::inertial::InertialFrame;
@@ -138,8 +136,8 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 use crate::hardware::{SatelliteConfig, SensorConfig, TelescopeConfig};
-use crate::photometry::photoconversion::PhotoElectronSpot;
-use crate::photometry::psf_photons_photoelectrons;
+use crate::photometry::photoconversion::SourceFlux;
+use crate::photometry::photon_electron_fluxes;
 use crate::photometry::BlackbodyStellarSpectrum;
 
 #[cfg(test)]
@@ -208,49 +206,41 @@ pub fn pixel_scale(telescope: &TelescopeConfig, sensor: &SensorConfig) -> f64 {
     plate_scale_arcsec_per_mm * (sensor.pixel_size_um / 1000.0)
 }
 
-/// Convert stellar magnitude and color to detected electron count.
+/// Convert stellar magnitude and color to photon and electron flux rates.
 ///
 /// Performs complete photometric calculation from stellar parameters to
-/// expected detector signal. Uses realistic blackbody spectra, telescope
-/// characteristics, and sensor quantum efficiency for accurate predictions.
+/// expected detector signal flux rates. Uses realistic blackbody spectra,
+/// telescope characteristics, and sensor quantum efficiency for accurate predictions.
 ///
 /// # Physics Model
-/// 1. **Stellar spectrum**: Blackbody model from B-V color and magnitude
-/// 2. **Light collection**: Telescope aperture and optical efficiency
-/// 3. **Spectral response**: Sensor QE curve integration over spectrum  
-/// 4. **Time integration**: Exposure duration scaling
+/// 1. **Stellar spectrum**: Blackbody model from B-V color (or default 1.4) and magnitude
+/// 2. **PSF calculation**: Chromatic Airy disk with wavelength-dependent scaling
+/// 3. **Spectral response**: Integration over sensor QE curve and stellar spectrum
+/// 4. **Flux calculation**: Returns flux rates (photons/electrons per second per cm²)
 ///
 /// # Arguments
-/// * `star_data` - Stellar catalog entry (position, magnitude, B-V color)
-/// * `exposure` - Integration time duration
-/// * `telescope` - Optical system configuration (aperture, efficiency)
-/// * `sensor` - Detector characteristics (QE curve, etc.)
+/// * `star_data` - Stellar catalog entry with magnitude and optional B-V color
+/// * `satellite` - Complete satellite configuration including telescope and sensor
 ///
 /// # Returns
-/// Expected photoelectron count in sensor pixels
+/// `SourceFlux` containing:
+/// - Photon flux rate and effective PSF
+/// - Photoelectron flux rate and effective PSF
 ///
-/// # Usage
-/// Converts star catalog data to expected photoelectron count for photometric
-/// calculations. Handles spectral integration and quantum efficiency weighting.
-pub fn star_data_to_electrons(
-    star_data: &StarData,
-    exposure: &Duration,
-    satellite: &SatelliteConfig,
-) -> PhotoElectronSpot {
+/// # Implementation Notes
+/// - Uses B-V color if available, otherwise defaults to 1.4 (typical main sequence)
+/// - Calls `photon_electron_fluxes` for chromatic PSF and flux calculation
+/// - Returns flux rates that must be integrated over time and aperture area
+pub fn star_data_to_fluxes(star_data: &StarData, satellite: &SatelliteConfig) -> SourceFlux {
     let spectrum = BlackbodyStellarSpectrum::from_gaia_bv_magnitude(
         star_data.b_v.unwrap_or(DEFAULT_BV),
         star_data.magnitude,
     );
-    let aperture_cm2 = satellite.telescope.collecting_area_m2() * 1.0e4; // Convert m^2 to cm^2
-    let (_elec, photo_elec) = psf_photons_photoelectrons(
+    photon_electron_fluxes(
         &satellite.airy_disk_pixel_space(),
         &spectrum,
         &satellite.sensor.quantum_efficiency,
-        aperture_cm2,
-        exposure,
-    );
-
-    photo_elec
+    )
 }
 
 /// Filter stars that would be visible in the field of view
@@ -618,6 +608,7 @@ mod tests {
     use crate::hardware::sensor::models as sensor_models;
     use crate::hardware::telescope::models as telescope_models;
     use std::f64::consts::PI;
+    use std::time::Duration;
 
     const ZERO_ZERO: Equatorial = Equatorial { ra: 0.0, dec: 0.0 };
 
@@ -1045,15 +1036,23 @@ mod tests {
         let star_data = StarData::new(0, 0.0, 0.0, 2.0, None);
 
         let second = Duration::from_secs_f64(1.0);
-        let elec_small = star_data_to_electrons(&star_data, &second, &small_satellite);
-        let elec_large = star_data_to_electrons(&star_data, &second, &large_satellite);
+        let elec_small = star_data_to_fluxes(&star_data, &small_satellite)
+            .electrons
+            .integrated_over(&second, small_telescope.collecting_area_cm2());
+        let elec_large = star_data_to_fluxes(&star_data, &large_satellite)
+            .electrons
+            .integrated_over(&second, large_telescope.collecting_area_cm2());
 
         // Aperture ratio squared: 1.0^2 / 0.5^2 = 4.0
         let expected_ratio = (large_telescope.aperture_m / small_telescope.aperture_m).powi(2);
 
+        println!(
+            "Small telescope electrons: {}, Large telescope electrons: {}",
+            elec_small, elec_large
+        );
         assert!(approx_eq!(
             f64,
-            elec_large.electrons / elec_small.electrons,
+            elec_large / elec_small,
             expected_ratio,
             epsilon = 0.01 // Allow 1% tolerance for QE differences
         ));

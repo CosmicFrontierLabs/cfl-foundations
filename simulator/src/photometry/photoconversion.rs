@@ -7,55 +7,106 @@ use crate::photometry::{
 };
 use std::time::Duration;
 
+/// Represents a point source flux with associated PSF characteristics.
+///
+/// Combines an effective PSF (point spread function) with a flux rate,
+/// representing either photon or photoelectron flux from a point source
+/// like a star. The flux is given as a rate per unit area.
+///
+/// # Fields
+/// * `disk` - Effective chromatic PSF as a pixel-scaled Airy disk
+/// * `flux` - Flux rate in units of particles per second per cm²
+///
+/// # Usage
+/// Use `integrated_over()` to calculate total particle counts for a given
+/// exposure time and telescope aperture area.
 #[derive(Debug, Clone)]
-pub struct PhotoElectronSpot {
+pub struct SpotFlux {
     pub disk: PixelScaledAiryDisk,
 
-    // total ingegrated flux in photons or photoelectrons
-    pub electrons: f64,
+    // Quantity of photons or electrons per second per cm²
+    pub flux: f64,
 }
 
-impl PhotoElectronSpot {
-    pub fn with_fwhm_quantity(fwhm: f64, reference_wavelength: f64, electrons: f64) -> Self {
-        let disk = PixelScaledAiryDisk::with_fwhm(fwhm, reference_wavelength);
-        PhotoElectronSpot { disk, electrons }
+impl SpotFlux {
+    /// Calculate total particle count from flux rate.
+    ///
+    /// Integrates the flux rate over the given exposure time and telescope
+    /// aperture area to calculate the total number of particles (photons
+    /// or photoelectrons) collected.
+    ///
+    /// # Arguments
+    /// * `exposure` - Integration time duration
+    /// * `aperture_cm2` - Telescope collecting area in cm²
+    ///
+    /// # Returns
+    /// Total particle count (photons or electrons)
+    ///
+    /// # Formula
+    /// `total = flux_rate × aperture_area × exposure_time`
+    pub fn integrated_over(&self, exposure: &Duration, aperture_cm2: f64) -> f64 {
+        // Convert the flux to total photons or electrons over the integration time
+        self.flux * aperture_cm2 * exposure.as_secs_f64()
     }
 }
 
+/// Complete flux characterization for a chromatic point source.
+///
+/// Contains both photon and photoelectron flux rates with their respective
+/// effective PSFs. The two fluxes differ because:
+/// - Photon flux represents all incident photons regardless of detection
+/// - Photoelectron flux accounts for quantum efficiency wavelength dependence
+///
+/// The effective PSFs may also differ since QE weighting changes the
+/// relative contribution of different wavelengths to the final PSF shape.
 #[derive(Debug, Clone)]
-pub struct PhotonSpot {
-    pub disk: PixelScaledAiryDisk,
+pub struct SourceFlux {
+    /// Effective PSF/flux for photon flux
+    pub photons: SpotFlux,
 
-    // total ingegrated flux in photons or photoelectrons
-    pub photons: f64,
+    /// Effective PSF/flux for photoelectron flux
+    pub electrons: SpotFlux,
 }
 
-/// Calculate effective PSF and photon flux for chromatic sources.
+/// Calculate effective PSF and photon/electron flux rates for chromatic sources.
 ///
-/// Computes the photon-weighted average PSF size when integrating
-/// over the source spectrum and detector quantum efficiency.
-/// The effective PSF diameter accounts for chromatic broadening
-/// due to wavelength-dependent diffraction.
+/// Computes wavelength-dependent PSF broadening and photon/photoelectron
+/// flux rates when integrating over the source spectrum and detector quantum efficiency.
+/// The effective PSF size accounts for chromatic aberration due to wavelength-dependent
+/// diffraction patterns.
+///
+/// # Algorithm
+/// 1. Subdivides the QE band into 1nm sub-bands
+/// 2. For each sub-band:
+///    - Calculates photon flux from spectrum irradiance
+///    - Applies QE to get photoelectron flux
+///    - Scales PSF size linearly with wavelength (above reference)
+///    - Accumulates flux-weighted PSF sizes
+/// 3. Computes effective PSF from weighted averages
 ///
 /// # Arguments
 /// * `psf` - Reference PSF with baseline FWHM and reference wavelength
 /// * `spectrum` - Source spectral energy distribution
 /// * `qe` - Detector quantum efficiency curve
-/// * `aperture_cm2` - Telescope aperture area in cm²
-/// * `duration` - Integration time
-/// * `n_wavelength_samples` - Number of sub-bands for integration (default 20)
 ///
 /// # Returns
-/// Tuple of (PixelScaledAiryDisk, total_flux) where:
-/// - PixelScaledAiryDisk has the effective photon-weighted diameter
-/// - total_flux is the total photon count
-pub fn psf_photons_photoelectrons<S: Spectrum>(
+/// `SourceFlux` containing:
+/// - `photons`: SpotFlux with photon-weighted effective PSF and flux rate (photons/s/cm²)
+/// - `electrons`: SpotFlux with photoelectron-weighted effective PSF and flux rate (e⁻/s/cm²)
+///
+/// # PSF Scaling Rules
+/// - Below reference wavelength: No scaling (assumes diffraction-limited)
+/// - Above reference wavelength: Linear scaling with wavelength ratio
+///
+/// # Usage
+/// The returned flux rates must be integrated over exposure time and telescope
+/// aperture area to get total photon/electron counts. Use `SpotFlux::integrated_over()`
+/// for this calculation.
+pub fn photon_electron_fluxes<S: Spectrum>(
     psf: &PixelScaledAiryDisk,
     spectrum: &S,
     qe: &QuantumEfficiency,
-    aperture_cm2: f64,
-    duration: &Duration,
-) -> (PhotonSpot, PhotoElectronSpot) {
+) -> SourceFlux {
     let band = qe.band();
     // THe names in this section are a bit more punctuated than I like
     // but `p_` and `pe_` are used to indicate photon and photo-electrons
@@ -108,17 +159,16 @@ pub fn psf_photons_photoelectrons<S: Spectrum>(
     let pe_ref_wavelength = psf.reference_wavelength * pe_scale;
     let pe_psf = PixelScaledAiryDisk::with_fwhm(pe_fwhm, pe_ref_wavelength);
 
-    let flux_scale = aperture_cm2 * duration.as_secs_f64();
-    let p_spot_flux = PhotonSpot {
-        disk: p_psf,
-        photons: total_p_flux * flux_scale,
-    };
-    let pe_spot_flux = PhotoElectronSpot {
-        disk: pe_psf,
-        electrons: total_pe_flux * flux_scale,
-    };
-
-    (p_spot_flux, pe_spot_flux)
+    SourceFlux {
+        photons: SpotFlux {
+            disk: p_psf,
+            flux: total_p_flux,
+        },
+        electrons: SpotFlux {
+            disk: pe_psf,
+            flux: total_pe_flux,
+        },
+    }
 }
 
 /// Calculate the number of photons within a wavelength range
@@ -205,7 +255,7 @@ pub fn photo_electrons<S: Spectrum + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::photometry::{stellar::FlatStellarSpectrum, Band};
+    use crate::photometry::{stellar::FlatStellarSpectrum, Band, BlackbodyStellarSpectrum};
     use approx::assert_relative_eq;
 
     #[test]
@@ -221,18 +271,16 @@ mod tests {
         let spectrum = crate::photometry::spectrum::FlatSpectrum::unit();
 
         // Get effective PSF for narrow band - should be close to monochromatic
-        let (photons, photoelectrons) = psf_photons_photoelectrons(
-            &achromatic_disk,
-            &spectrum,
-            &qe,
-            1.0,
-            &Duration::from_secs(1),
-        );
+        let fluxes = photon_electron_fluxes(&achromatic_disk, &spectrum, &qe);
 
         // The effective scale should be very close to the input disk's FWHM for narrow band at reference wavelength
-        assert_relative_eq!(photons.disk.fwhm(), achromatic_disk.fwhm(), epsilon = 1e-2);
         assert_relative_eq!(
-            photoelectrons.disk.fwhm(),
+            fluxes.photons.disk.fwhm(),
+            achromatic_disk.fwhm(),
+            epsilon = 1e-2
+        );
+        assert_relative_eq!(
+            fluxes.electrons.disk.fwhm(),
             achromatic_disk.fwhm(),
             epsilon = 1e-2
         );
@@ -251,8 +299,10 @@ mod tests {
         let spectrum = crate::photometry::spectrum::FlatSpectrum::unit();
 
         // Get effective PSF
-        let (e_spot, pe_spot) =
-            psf_photons_photoelectrons(&airy, &spectrum, &qe, 1.0, &Duration::from_secs(1));
+        let fluxes = photon_electron_fluxes(&airy, &spectrum, &qe);
+
+        let e_spot = fluxes.electrons;
+        let pe_spot = fluxes.photons;
 
         println!(
             "Chromatic PSF FWHM: {:.3}, Photoelectron FWHM: {:.3}",
@@ -291,26 +341,24 @@ mod tests {
         let ir_qe = QuantumEfficiency::from_table(ir_wavelengths, ir_efficiencies).unwrap();
 
         // Get PSFs for both detectors
-        let (visible_photons, visible_pe) =
-            psf_photons_photoelectrons(&airy, &spectrum, &visible_qe, 1.0, &Duration::from_secs(1));
+        let vis_flux = photon_electron_fluxes(&airy, &spectrum, &visible_qe);
 
-        let (ir_photons, ir_pe) =
-            psf_photons_photoelectrons(&airy, &spectrum, &ir_qe, 1.0, &Duration::from_secs(1));
+        let ir_flux = photon_electron_fluxes(&airy, &spectrum, &ir_qe);
 
         // IR-sensitive detector should see wider PSF due to longer wavelengths
         assert!(
-            ir_pe.disk.fwhm() > visible_pe.disk.fwhm(),
+            ir_flux.electrons.disk.fwhm() > vis_flux.electrons.disk.fwhm(),
             "IR-sensitive detector PSF ({:.3}) should be wider than visible-only PSF ({:.3})",
-            ir_pe.disk.fwhm(),
-            visible_pe.disk.fwhm()
+            ir_flux.electrons.disk.fwhm(),
+            vis_flux.electrons.disk.fwhm()
         );
 
         // The photon-weighted PSF should also be wider for IR
         assert!(
-            ir_photons.disk.fwhm() > visible_photons.disk.fwhm(),
+            ir_flux.photons.disk.fwhm() > vis_flux.photons.disk.fwhm(),
             "IR photon PSF ({:.3}) should be wider than visible photon PSF ({:.3})",
-            ir_photons.disk.fwhm(),
-            visible_photons.disk.fwhm()
+            ir_flux.photons.disk.fwhm(),
+            vis_flux.photons.disk.fwhm()
         );
 
         // For IR-sensitive detector, the photoelectron PSF may be narrower than photon PSF
@@ -319,13 +367,13 @@ mod tests {
 
         println!(
             "Visible detector - Photon FWHM: {:.3}, PE FWHM: {:.3}",
-            visible_photons.disk.fwhm(),
-            visible_pe.disk.fwhm()
+            vis_flux.photons.disk.fwhm(),
+            vis_flux.electrons.disk.fwhm()
         );
         println!(
             "IR-sensitive detector - Photon FWHM: {:.3}, PE FWHM: {:.3}",
-            ir_photons.disk.fwhm(),
-            ir_pe.disk.fwhm()
+            ir_flux.photons.disk.fwhm(),
+            ir_flux.electrons.disk.fwhm()
         );
     }
 
@@ -374,5 +422,37 @@ mod tests {
         let ratio = electrons_count / photons_count;
 
         assert_relative_eq!(ratio, 0.5, epsilon = 0.01);
+    }
+
+    #[test]
+    fn test_photoelectron_math_vega() {
+        let aperture_cm2 = 1.0; // 1 cm² aperture
+        let duration = std::time::Duration::from_secs(1); // 1 second observation
+
+        let v_band = Band::from_nm_bounds(551.0 - 44.0, 551.0 + 44.0);
+        // Make a pretend QE with 50% efficiency in the 400-600nm range
+        let qe = QuantumEfficiency::from_notch(&v_band, 1.0).unwrap();
+
+        // Create a flat spectrum with a known flux density
+        let spectrum = BlackbodyStellarSpectrum::from_gaia_bv_magnitude(0.0, 0.0);
+
+        let disk = PixelScaledAiryDisk::with_fwhm(1.0, 550.0);
+
+        let fluxes = photon_electron_fluxes(&disk, &spectrum, &qe);
+        let photons_count = fluxes.photons.integrated_over(&duration, aperture_cm2);
+        let electrons_count = fluxes.electrons.integrated_over(&duration, aperture_cm2);
+
+        // Rule of thumb for vega is 1000 photons per second per cm² per second per angstrom
+        let angs = v_band.width() * 10.0; // Convert nm to angstroms
+        let expected_photons = 1000.0 * angs * aperture_cm2;
+
+        println!("Photons: {}, Electrons: {}", photons_count, electrons_count);
+        let err = f64::abs(photons_count - expected_photons) / photons_count;
+        assert!(
+            err < 0.05,
+            "Expected {} photons, got {}",
+            expected_photons,
+            photons_count
+        );
     }
 }

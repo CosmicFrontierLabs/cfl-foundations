@@ -181,6 +181,11 @@ impl TelescopeConfig {
         outer_area - obscured_area
     }
 
+    pub fn collecting_area_cm2(&self) -> f64 {
+        // Convert m² to cm²
+        self.collecting_area_m2() * 10_000.0
+    }
+
     /// Create a new telescope configuration with modified focal length
     pub fn with_focal_length(&self, focal_length_m: f64) -> TelescopeConfig {
         TelescopeConfig {
@@ -265,8 +270,7 @@ mod tests {
         let mut telescope = TelescopeConfig::new("Test Obscured", 0.5, 4.0, 1.0);
         telescope.obscuration_ratio = 0.42;
 
-        let area_m2 = telescope.collecting_area_m2();
-        let area_cm2 = area_m2 * 10000.0; // Convert m² to cm²
+        let area_cm2 = telescope.collecting_area_cm2();
 
         // Expected: 1617 cm²
         assert!(
