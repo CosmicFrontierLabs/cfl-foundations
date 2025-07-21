@@ -14,11 +14,10 @@ use ndarray::{Array1, Array2};
 use plotters::prelude::*;
 use simulator::algo::MinMaxScan;
 use simulator::hardware::sensor::models::ALL_SENSORS;
-use simulator::hardware::telescope::models::DEMO_50CM;
 use simulator::hardware::SatelliteConfig;
 use simulator::image_proc::render::quantize_image;
 use simulator::photometry::{spectrum::Spectrum, zodical::SolarAngularCoordinates, ZodicalLight};
-use simulator::shared_args::DurationArg;
+use simulator::shared_args::{DurationArg, TelescopeModel};
 
 /// Command line arguments for zodiacal background computation
 #[derive(Parser, Debug)]
@@ -43,6 +42,10 @@ struct Args {
     /// Exposure time for averaging (e.g., "1s", "500ms", "0.1s", "10m")
     #[arg(long, default_value = "1000s")]
     exposure: DurationArg,
+
+    /// Telescope model to use for simulations
+    #[arg(long, default_value_t = TelescopeModel::Demo50cm)]
+    telescope: TelescopeModel,
 }
 
 /// Parses a range specification string into an array of evenly spaced values.
@@ -253,16 +256,61 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|sensor| sensor.with_dimensions(args.domain, args.domain))
         .collect();
 
-    let telescope = DEMO_50CM.clone();
+    let telescope = args.telescope.to_config().clone();
     let exposure = args.exposure.0;
 
     println!("Zodiacal Background Analysis (DN/second & electrons/second)");
     println!("===========================================================");
+    println!();
+    println!("SETTINGS:");
+    println!("---------");
+    println!("Telescope Configuration:");
+    println!("  Model Selected: {}", args.telescope);
+    println!("  Name: {}", telescope.name);
+    println!("  Aperture: {:.2} m", telescope.aperture_m);
+    println!("  Focal Length: {:.2} m", telescope.focal_length_m);
+    println!("  F-number: f/{:.1}", telescope.f_number());
     println!(
-        "Telescope: {} (aperture: {:.2}m)",
-        telescope.name, telescope.aperture_m
+        "  Plate Scale: {:.2} arcsec/mm",
+        telescope.plate_scale_arcsec_per_mm()
     );
-    println!("Domain Size: {}x{} pixels", args.domain, args.domain);
+    println!();
+    println!("Analysis Parameters:");
+    println!("  Domain Size: {}x{} pixels", args.domain, args.domain);
+    println!(
+        "  Exposure Time: {} ({:.2} seconds)",
+        args.exposure,
+        exposure.as_secs_f64()
+    );
+    println!(
+        "  Elongation Range: {} ({} values)",
+        args.elongation_range,
+        elongations.len()
+    );
+    println!(
+        "  Latitude Range: {} ({} values)",
+        args.latitude_range,
+        latitudes.len()
+    );
+    println!(
+        "  Total Grid Points: {}",
+        elongations.len() * latitudes.len()
+    );
+    println!();
+    println!("Sensors to Analyze:");
+    for sensor in &sensors {
+        println!(
+            "  - {} ({:.1}μm pitch, {}x{} pixels)",
+            sensor.name, sensor.pixel_size_um, sensor.width_px, sensor.height_px
+        );
+    }
+    println!();
+    println!("Output Information:");
+    println!("  Spectrum Plot: plots/zodiacal_spectrum.png");
+    println!("  Reference Coordinates: 120° elongation, 15° latitude");
+    println!("  Units: DN/second and electrons/second");
+    println!();
+    println!("===========================================================");
     println!();
 
     let z_light = ZodicalLight::new();
