@@ -49,8 +49,8 @@ impl TelescopeModel {
     fn to_config(&self) -> &'static TelescopeConfig {
         match self {
             TelescopeModel::Small50mm => &models::SMALL_50MM,
-            TelescopeModel::Demo50cm => &models::DEMO_50CM,
-            TelescopeModel::Final1m => &models::FINAL_1M,
+            TelescopeModel::Demo50cm => &models::IDEAL_50CM,
+            TelescopeModel::Final1m => &models::IDEAL_100CM,
             TelescopeModel::Weasel => &models::WEASEL,
         }
     }

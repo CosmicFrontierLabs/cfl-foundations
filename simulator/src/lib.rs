@@ -31,7 +31,7 @@
 //! // NOTE: This doctest is ignored due to API changes in detection module
 //! use simulator::{
 //!     Scene,
-//!     hardware::{SatelliteConfig, telescope::models::DEMO_50CM, sensor::models::GSENSE6510BSI},
+//!     hardware::{SatelliteConfig, telescope::models::IDEAL_50CM, sensor::models::GSENSE6510BSI},
 //!     image_proc::{detect_stars_unified, StarFinder},
 //!     photometry::zodical::SolarAngularCoordinates
 //! };
@@ -40,7 +40,7 @@
 //!
 //! // 1. Create satellite configuration
 //! let satellite_config = SatelliteConfig::new(
-//!     DEMO_50CM.clone(),
+//!     IDEAL_50CM.clone(),
 //!     GSENSE6510BSI.clone(),
 //!     -10.0,  // Sensor temperature
 //!     550.0   // Orbit altitude

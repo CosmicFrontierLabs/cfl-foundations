@@ -1,6 +1,6 @@
 use clap::Parser;
 use simulator::hardware::sensor::models as sensor_models;
-use simulator::hardware::telescope::models::DEMO_50CM;
+use simulator::hardware::telescope::models::IDEAL_50CM;
 use simulator::hardware::SatelliteConfig;
 
 #[derive(Parser, Debug)]
@@ -39,7 +39,7 @@ fn main() {
     for sensor in sensor_models::ALL_SENSORS.iter() {
         // Create base satellite config
         let base_satellite = SatelliteConfig::new(
-            DEMO_50CM.clone(),
+            IDEAL_50CM.clone(),
             sensor.clone(),
             0.0, // Temperature doesn't affect optical calculations
             args.wavelength,

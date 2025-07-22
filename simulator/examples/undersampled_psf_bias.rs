@@ -9,7 +9,7 @@ use ndarray::Array2;
 use plotters::prelude::*;
 use rayon::prelude::*;
 use simulator::hardware::sensor::models::IMX455;
-use simulator::hardware::telescope::models::DEMO_50CM;
+use simulator::hardware::telescope::models::IDEAL_50CM;
 use simulator::hardware::SatelliteConfig;
 use simulator::image_proc::detection::{detect_stars_unified, StarFinder};
 use simulator::image_proc::render::StarInFrame;
@@ -196,8 +196,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let image_size = 16;
     let center = image_size as f64 / 2.0;
 
-    // Telescope and sensor setup - use DEMO_50CM from models
-    let telescope = DEMO_50CM.clone();
+    // Telescope and sensor setup - use IDEAL_50CM from models
+    let telescope = IDEAL_50CM.clone();
     let sensor = IMX455.with_dimensions(image_size, image_size);
     let wavelength = 550.0; // nm (green light)
     let temperature = 0.0; // 0°C in sensor's expected range

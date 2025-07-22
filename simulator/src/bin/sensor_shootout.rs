@@ -32,7 +32,7 @@ use simulator::algo::{
     MinMaxScan,
 };
 use simulator::hardware::sensor::models as sensor_models;
-use simulator::hardware::telescope::models::DEMO_50CM;
+use simulator::hardware::telescope::models::IDEAL_50CM;
 use simulator::hardware::SatelliteConfig;
 use simulator::image_proc::airy::PixelScaledAiryDisk;
 use simulator::image_proc::detection::{detect_stars_unified, StarFinder};
@@ -160,7 +160,7 @@ struct Args {
     #[arg(long, default_value_t = false)]
     serial: bool,
 
-    /// Match FWHM sampling across all sensors using this value (pixels per FWHM). If not specified, uses base DEMO_50CM telescope with each sensor
+    /// Match FWHM sampling across all sensors using this value (pixels per FWHM). If not specified, uses base IDEAL_50CM telescope with each sensor
     #[arg(long)]
     match_pixel_sampling: Option<f64>,
 
@@ -501,7 +501,7 @@ fn write_results_to_csv(
     } else {
         writeln!(
             csv_file,
-            "FWHM Sampling Mode: Individual telescopes (DEMO_50CM base with each sensor)"
+            "FWHM Sampling Mode: Individual telescopes (IDEAL_50CM base with each sensor)"
         )?;
     }
 
@@ -777,9 +777,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         all_sensors
             .iter()
             .map(|sensor| {
-                // Create base satellite with DEMO_50CM telescope
+                // Create base satellite with IDEAL_50CM telescope
                 let base_satellite = SatelliteConfig::new(
-                    DEMO_50CM.clone(),
+                    IDEAL_50CM.clone(),
                     sensor.clone(),
                     args.shared.temperature,
                     args.shared.wavelength,
@@ -790,12 +790,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
             .collect()
     } else {
-        // Use base DEMO_50CM telescope with each sensor (no resampling)
+        // Use base IDEAL_50CM telescope with each sensor (no resampling)
         all_sensors
             .iter()
             .map(|sensor| {
                 SatelliteConfig::new(
-                    DEMO_50CM.clone(),
+                    IDEAL_50CM.clone(),
                     sensor.clone(),
                     args.shared.temperature,
                     args.shared.wavelength,

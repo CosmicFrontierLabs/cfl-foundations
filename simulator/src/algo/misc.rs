@@ -324,7 +324,7 @@ pub fn generate_wwt_overlay_url(
 #[cfg(test)]
 mod wwt_tests {
     use super::*;
-    use crate::hardware::{sensor::models::GSENSE6510BSI, telescope::models::DEMO_50CM};
+    use crate::hardware::{sensor::models::GSENSE6510BSI, telescope::models::IDEAL_50CM};
 
     #[test]
     fn test_ra_hms_to_deg() {
@@ -349,7 +349,7 @@ mod wwt_tests {
         // Test basic overlay without text
         let coordinates = Equatorial::from_degrees(10.6845833, 41.2691667); // Andromeda
         let satellite = SatelliteConfig::new(
-            DEMO_50CM.clone(),
+            IDEAL_50CM.clone(),
             GSENSE6510BSI.clone(),
             -10.0, // temperature
             550.0, // wavelength
@@ -378,7 +378,7 @@ mod wwt_tests {
         // Test overlay with text
         let coordinates = Equatorial::from_degrees(56.871, 24.105); // Pleiades
         let satellite = SatelliteConfig::new(
-            DEMO_50CM.clone(),
+            IDEAL_50CM.clone(),
             GSENSE6510BSI.clone(),
             -10.0, // temperature
             550.0, // wavelength

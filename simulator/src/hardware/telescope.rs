@@ -30,8 +30,8 @@
 //!
 //! The module includes several representative configurations:
 //! - **SMALL_50MM**: Compact finder scope or guide telescope
-//! - **DEMO_50CM**: Medium aperture space telescope prototype  
-//! - **FINAL_1M**: Large aperture survey telescope
+//! - **IDEAL_50CM**: Medium aperture space telescope prototype  
+//! - **IDEAL_1M**: Large aperture survey telescope
 //! - **WEASEL**: Multi-spectral Earth observation system
 //!
 
@@ -293,9 +293,9 @@ pub mod models {
     });
 
     /// 50cm Demo telescope
-    pub static DEMO_50CM: Lazy<TelescopeConfig> = Lazy::new(|| {
+    pub static IDEAL_50CM: Lazy<TelescopeConfig> = Lazy::new(|| {
         TelescopeConfig::new(
-            "50cm Demo",
+            "Ideal 50cm",
             0.5,   // 50cm aperture
             10.0,  // 1m focal length
             0.815, // light efficiency
@@ -303,9 +303,10 @@ pub mod models {
     });
 
     /// 1m Final telescope
-    pub static FINAL_1M: Lazy<TelescopeConfig> = Lazy::new(|| {
+    pub static IDEAL_100CM: Lazy<TelescopeConfig> = Lazy::new(|| {
         TelescopeConfig::new(
-            "1m Final", 1.0,   // 1m aperture
+            "Ideal 100cm",
+            1.0,   // 1m aperture
             10.0,  // 10m focal length
             0.815, // light efficiency
         )
@@ -459,18 +460,18 @@ mod model_tests {
     #[test]
     fn test_predefined_telescopes() {
         // Test 50cm Demo telescope
-        assert_eq!(models::DEMO_50CM.name, "50cm Demo");
-        assert_eq!(models::DEMO_50CM.aperture_m, 0.5);
-        assert_eq!(models::DEMO_50CM.focal_length_m, 10.0);
-        assert_eq!(models::DEMO_50CM.quantum_efficiency.at(550.0), 0.815);
-        assert_eq!(models::DEMO_50CM.f_number(), 20.0);
+        assert_eq!(models::IDEAL_50CM.name, "Ideal 50cm");
+        assert_eq!(models::IDEAL_50CM.aperture_m, 0.5);
+        assert_eq!(models::IDEAL_50CM.focal_length_m, 10.0);
+        assert_eq!(models::IDEAL_50CM.quantum_efficiency.at(550.0), 0.815);
+        assert_eq!(models::IDEAL_50CM.f_number(), 20.0);
 
         // Test 1m Final telescope
-        assert_eq!(models::FINAL_1M.name, "1m Final");
-        assert_eq!(models::FINAL_1M.aperture_m, 1.0);
-        assert_eq!(models::FINAL_1M.focal_length_m, 10.0);
-        assert_eq!(models::FINAL_1M.quantum_efficiency.at(550.0), 0.815);
-        assert_eq!(models::FINAL_1M.f_number(), 10.0);
+        assert_eq!(models::IDEAL_100CM.name, "Ideal 100cm");
+        assert_eq!(models::IDEAL_100CM.aperture_m, 1.0);
+        assert_eq!(models::IDEAL_100CM.focal_length_m, 10.0);
+        assert_eq!(models::IDEAL_100CM.quantum_efficiency.at(550.0), 0.815);
+        assert_eq!(models::IDEAL_100CM.f_number(), 10.0);
     }
 
     #[test]

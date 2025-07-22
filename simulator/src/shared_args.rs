@@ -653,8 +653,8 @@ impl TelescopeModel {
         use crate::hardware::telescope::models::*;
         match self {
             TelescopeModel::Small50mm => &SMALL_50MM,
-            TelescopeModel::Demo50cm => &DEMO_50CM,
-            TelescopeModel::Final1m => &FINAL_1M,
+            TelescopeModel::Demo50cm => &IDEAL_50CM,
+            TelescopeModel::Final1m => &IDEAL_100CM,
             TelescopeModel::Weasel => &WEASEL,
         }
     }

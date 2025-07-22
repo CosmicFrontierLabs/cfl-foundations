@@ -248,7 +248,7 @@ pub fn run_single_experiment(params: &ExperimentParams) -> ExperimentResults {
 mod tests {
     use super::*;
     use crate::hardware::sensor::models::{ALL_SENSORS, GSENSE4040BSI, HWK4123};
-    use crate::hardware::telescope::models::DEMO_50CM;
+    use crate::hardware::telescope::models::IDEAL_50CM;
     use crate::photometry::zodical::SolarAngularCoordinates;
     use std::time::Duration;
 
@@ -262,8 +262,8 @@ mod tests {
         let experiment_count = 5; // Run multiple times to ensure consistency
 
         // Use the 50cm demo telescope from models
-        use crate::hardware::telescope::models::DEMO_50CM;
-        let telescope = DEMO_50CM.clone();
+        use crate::hardware::telescope::models::IDEAL_50CM;
+        let telescope = IDEAL_50CM.clone();
 
         // Solar coordinates (minimum zodiacal background)
         let coordinates = SolarAngularCoordinates::zodiacal_minimum();
@@ -343,7 +343,7 @@ mod tests {
         let faint_magnitude = 16.0; // Faint star
         let exposure = Duration::from_secs(1); // Longer exposure
 
-        let telescope = DEMO_50CM.clone();
+        let telescope = IDEAL_50CM.clone();
         let sensor = HWK4123.with_dimensions(domain, domain);
         let satellite = SatelliteConfig::new(telescope, sensor.clone(), 0.0, 550.0);
         let adjusted_satellite = satellite.with_fwhm_sampling(2.0);
@@ -382,7 +382,7 @@ mod tests {
     fn test_seed_reproducibility() {
         // Test that using the same seed produces identical results
         let domain = 64;
-        let telescope = DEMO_50CM.clone();
+        let telescope = IDEAL_50CM.clone();
         let sensor = GSENSE4040BSI.with_dimensions(domain, domain);
         let satellite = SatelliteConfig::new(telescope, sensor, 0.0, 550.0);
         let adjusted_satellite = satellite.with_fwhm_sampling(2.0);

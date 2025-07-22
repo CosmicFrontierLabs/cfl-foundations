@@ -55,8 +55,8 @@
 //! use simulator::photometry::zodical::SolarAngularCoordinates;
 //! use std::time::Duration;
 //!
-//! # use simulator::hardware::{telescope::models::DEMO_50CM, sensor::models::GSENSE6510BSI};
-//! # let satellite_config = SatelliteConfig::new(DEMO_50CM.clone(), GSENSE6510BSI.clone(), -10.0, 550.0);
+//! # use simulator::hardware::{telescope::models::IDEAL_50CM, sensor::models::GSENSE6510BSI};
+//! # let satellite_config = SatelliteConfig::new(IDEAL_50CM.clone(), GSENSE6510BSI.clone(), -10.0, 550.0);
 //! # let zodiacal_coords = SolarAngularCoordinates::zodiacal_minimum();
 //! # let scene = Scene::from_catalog(satellite_config, vec![], Equatorial::from_degrees(0.0, 0.0), Duration::from_secs(1), zodiacal_coords);
 //! // Create efficient renderer for multiple exposures

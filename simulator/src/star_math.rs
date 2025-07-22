@@ -921,7 +921,7 @@ mod tests {
 
     #[test]
     fn test_field_diameter() {
-        let telescope = telescope_models::FINAL_1M.clone();
+        let telescope = telescope_models::IDEAL_100CM.clone();
         let sensor = sensor_models::GSENSE4040BSI.clone();
 
         // Calculate expected field diameter
@@ -943,7 +943,7 @@ mod tests {
 
     #[test]
     fn test_pixel_scale() {
-        let telescope = telescope_models::FINAL_1M.clone();
+        let telescope = telescope_models::IDEAL_100CM.clone();
         let sensor = sensor_models::GSENSE4040BSI.clone();
 
         // Calculate expected pixel scale
@@ -1018,8 +1018,8 @@ mod tests {
 
     #[test]
     fn test_magnitude_to_electron_different_telescopes() {
-        let small_telescope = telescope_models::DEMO_50CM.clone();
-        let large_telescope = telescope_models::FINAL_1M.clone();
+        let small_telescope = telescope_models::IDEAL_50CM.clone();
+        let large_telescope = telescope_models::IDEAL_100CM.clone();
         let sensor = sensor_models::GSENSE4040BSI.clone();
 
         let small_satellite =
