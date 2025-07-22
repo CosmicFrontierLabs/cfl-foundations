@@ -104,12 +104,13 @@ impl TelescopeConfig {
         aperture_m: f64,
         focal_length_m: f64,
         quantum_efficiency: QuantumEfficiency,
+        obscuration_ratio: f64,
     ) -> Self {
         Self {
             name: name.into(),
             aperture_m,
             focal_length_m,
-            obscuration_ratio: 0.0,
+            obscuration_ratio,
             quantum_efficiency,
         }
     }
@@ -326,14 +327,13 @@ pub mod models {
         let quantum_efficiency = QuantumEfficiency::from_table(wavelengths, efficiencies)
             .expect("Failed to create Weasel QE curve");
 
-        let mut telescope = TelescopeConfig::new_with_qe(
+        TelescopeConfig::new_with_qe(
             "Officina Stellare Weasel",
             0.5,  // 50cm aperture
             3.45, // 345cm focal length (f/6.9)
             quantum_efficiency,
-        );
-        telescope.obscuration_ratio = 0.42; // 42% linear obscuration ratio
-        telescope
+            0.42, // 42% linear obscuration ratio
+        )
     });
 
     /// Optech/Lina LS50 - 50cm f/10 Catadioptric  
@@ -349,14 +349,13 @@ pub mod models {
         let quantum_efficiency = QuantumEfficiency::from_table(wavelengths, efficiencies)
             .expect("Failed to create LS50 QE curve");
 
-        let mut telescope = TelescopeConfig::new_with_qe(
+        TelescopeConfig::new_with_qe(
             "Optech/Lina LS50",
             0.5, // 50cm aperture
             5.0, // 500cm focal length (f/10)
             quantum_efficiency,
-        );
-        telescope.obscuration_ratio = 0.37; // 37% linear obscuration ratio
-        telescope
+            0.37, // 37% linear obscuration ratio
+        )
     });
 
     /// Optech/Lina LS35 - 35cm f/10 Catadioptric
@@ -372,14 +371,13 @@ pub mod models {
         let quantum_efficiency = QuantumEfficiency::from_table(wavelengths, efficiencies)
             .expect("Failed to create LS35 QE curve");
 
-        let mut telescope = TelescopeConfig::new_with_qe(
+        TelescopeConfig::new_with_qe(
             "Optech/Lina LS35",
             0.35, // 35cm aperture
             3.5,  // 350cm focal length (f/10)
             quantum_efficiency,
-        );
-        telescope.obscuration_ratio = 0.37; // 37% linear obscuration ratio
-        telescope
+            0.37, // 37% linear obscuration ratio
+        )
     });
 
     /// Cosmic Frontier JBT .5m - 48.5cm f/12.3 Reflective
@@ -399,6 +397,7 @@ pub mod models {
             0.485, // 48.5cm aperture
             5.987, // 598.7cm focal length (f/12.3)
             quantum_efficiency,
+            0.35, // 35% linear obscuration ratio
         )
     });
 
@@ -419,6 +418,7 @@ pub mod models {
             0.65,  // 65cm aperture
             8.024, // 802.4cm focal length (f/12.3)
             quantum_efficiency,
+            0.35, // 35% linear obscuration ratio
         )
     });
 
@@ -439,6 +439,7 @@ pub mod models {
             1.0,    // 100cm aperture
             12.344, // 1234.4cm focal length (f/12.3)
             quantum_efficiency,
+            0.35, // 35% linear obscuration ratio
         )
     });
 
@@ -525,7 +526,7 @@ mod model_tests {
         assert_eq!(jbt50.aperture_m, 0.485);
         assert!(approx_eq!(f64, jbt50.focal_length_m, 5.987, epsilon = 1e-6));
         assert!(approx_eq!(f64, jbt50.f_number(), 12.344, epsilon = 1e-2));
-        assert_eq!(jbt50.obscuration_ratio, 0.0); // Reflective, no central obscuration specified
+        assert_eq!(jbt50.obscuration_ratio, 0.35); // 35% linear obscuration ratio
         assert_eq!(jbt50.quantum_efficiency.at(550.0), 0.70);
 
         // Test Cosmic Frontier JBT MAX
@@ -539,6 +540,7 @@ mod model_tests {
             epsilon = 1e-6
         ));
         assert!(approx_eq!(f64, jbt_max.f_number(), 12.344, epsilon = 1e-2));
+        assert_eq!(jbt_max.obscuration_ratio, 0.35); // 35% linear obscuration ratio
 
         // Test Cosmic Frontier JBT 1.0m
         let jbt1m = &*models::COSMIC_FRONTIER_JBT_1M;
@@ -551,5 +553,6 @@ mod model_tests {
             epsilon = 1e-6
         ));
         assert!(approx_eq!(f64, jbt1m.f_number(), 12.344, epsilon = 1e-2));
+        assert_eq!(jbt1m.obscuration_ratio, 0.35); // 35% linear obscuration ratio
     }
 }
