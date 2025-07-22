@@ -484,7 +484,7 @@ pub mod models {
             qe,
             9568,
             6380,
-            3.75, // Pixel pitch in microns
+            3.76, // Pixel pitch in microns
             ReadNoiseEstimator::constant(1.58),
             DarkCurrentEstimator::from_curve(
                 vec![-20.0, -15.0, -10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 20.0],
@@ -594,7 +594,7 @@ mod model_tests {
         assert_eq!(models::IMX455.name, "IMX455");
         assert_eq!(models::IMX455.width_px, 9568);
         assert_eq!(models::IMX455.height_px, 6380);
-        assert_eq!(models::IMX455.pixel_size_um, 3.75);
+        assert_eq!(models::IMX455.pixel_size_um, 3.76);
         // Check read noise at room temperature with 0.2s exposure
         assert_eq!(
             models::IMX455
