@@ -289,7 +289,7 @@ fn run_experiment<T: StarCatalog>(
             );
 
             // Render the scene
-            let render_result = scene.render(&exposure_duration);
+            let render_result = scene.render(exposure_duration);
 
             let prefix = format!(
                 "{}_{}_{:.1}s_",

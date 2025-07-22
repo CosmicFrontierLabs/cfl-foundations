@@ -327,10 +327,7 @@ impl Renderer {
             z_light.generate_zodical_background(&self.satellite_config, exposure, zodiacal_coords);
 
         let zodiacal_image = if apply_poisson {
-            let new_seed = match rng_seed {
-                Some(val) => Some(val + 1),
-                None => None,
-            };
+            let new_seed = rng_seed.map(|val| val + 1);
             apply_poisson_photon_noise(&zodiacal_mean, new_seed)
         } else {
             zodiacal_mean
