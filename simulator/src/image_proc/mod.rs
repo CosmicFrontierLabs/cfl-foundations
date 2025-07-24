@@ -96,6 +96,7 @@ pub mod noise;
 pub mod overlay;
 pub mod render;
 pub mod smear;
+pub mod test_patterns;
 
 // Re-export key functionality for easier access
 pub use airy::AiryDisk;

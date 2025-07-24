@@ -36,7 +36,7 @@ use simulator::image_proc::airy::PixelScaledAiryDisk;
 use simulator::image_proc::detection::{detect_stars_unified, StarFinder};
 use simulator::image_proc::histogram_stretch::sigma_stretch;
 use simulator::image_proc::image::array2_to_gray_image;
-use simulator::image_proc::io::write_hashmap_to_fits;
+use simulator::image_proc::io::{write_typed_fits, FitsDataType};
 use simulator::image_proc::render::{RenderingResult, StarInFrame};
 use simulator::image_proc::{
     draw_stars_with_x_markers, save_u8_image, stretch_histogram, u16_to_u8_scaled, StarDetection,
@@ -377,11 +377,12 @@ fn run_experiment<T: StarCatalog>(
                 // Render the scene
                 let render_result = scene.render(exposure_duration);
 
+                let exposure_ms = exposure_duration.as_millis();
                 let prefix = format!(
-                    "{}_{}_{:.1}s_",
+                    "{:04}_{}_{:05}ms",
                     params.experiment_num,
                     satellite.sensor.name.replace(" ", "_"),
-                    exposure_duration.as_secs_f64(),
+                    exposure_ms
                 );
 
                 // Calculate background RMS using the new method
@@ -865,19 +866,21 @@ fn save_image_outputs(
     // Export FITS files for both regular image and electron image
     let mut fits_data = HashMap::new();
 
-    // Convert regular u16 image to f64 for FITS export
-    let image_f64 = render_result.quantized_image.mapv(|x| x as f64);
-    fits_data.insert("IMAGE".to_string(), image_f64);
+    // Keep u16 image in native format (no upcasting)
+    fits_data.insert(
+        "IMAGE".to_string(),
+        FitsDataType::UInt16(render_result.quantized_image.clone()),
+    );
 
-    // Add electron image (already f64)
+    // Add electron image as f64
     fits_data.insert(
         "ELECTRON_IMAGE".to_string(),
-        render_result.mean_electron_image(),
+        FitsDataType::Float64(render_result.mean_electron_image()),
     );
 
     // Save FITS file with both datasets
     let fits_path = output_path.join(format!("{prefix}_data.fits"));
-    write_hashmap_to_fits(&fits_data, &fits_path).expect("Failed to save FITS file");
+    write_typed_fits(&fits_data, &fits_path).expect("Failed to save FITS file");
 }
 
 /// Display debug statistics including electron counts, noise, match distances and histogram
