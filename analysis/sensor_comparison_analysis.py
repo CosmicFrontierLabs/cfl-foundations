@@ -17,7 +17,26 @@ from matplotlib.lines import Line2D
 # Shared Functions
 # ============================================================================
 
-def load_experiment_data(csv_path, aperture_m=0.485, mask_outliers=True):
+def get_f_number_color(f_number, cmap):
+    """Get consistent color for f-number across all plots.
+    
+    Maps f-numbers to colors based on a fixed range of f/8 to f/18,
+    ensuring consistent colors across different datasets.
+    """
+    # Fixed range for consistent mapping
+    f_min = 8.0
+    f_max = 18.0
+    
+    # Clamp f_number to range
+    f_clamped = max(f_min, min(f_max, f_number))
+    
+    # Map to 0-1 range
+    normalized = (f_clamped - f_min) / (f_max - f_min)
+    
+    return cmap(normalized)
+
+
+def load_experiment_data(csv_path, aperture_m=0.485, mask_outliers=True, pixel_error_cutoff=2.0):
     """Load experiment CSV data with preprocessing and optional outlier masking"""
     df = pd.read_csv(csv_path)
     print(f"Loaded {len(df)} rows from {csv_path}")
@@ -43,12 +62,15 @@ def load_experiment_data(csv_path, aperture_m=0.485, mask_outliers=True):
     df['error_mas'] = df['pixel_error'] * df['plate_scale_mas_per_pixel']
     
     if mask_outliers:
-        # Mask out experiments with pixel error > 2 pixels
-        mask = df['pixel_error'] > 2.0
+        # Mask out experiments with pixel error > cutoff AND single star detection
+        # These are likely mismatched detections
+        mask = (df['pixel_error'] > pixel_error_cutoff) & (df['star_count'] == 1)
         num_masked = mask.sum()
         if num_masked > 0:
-            print(f"Masking {num_masked} rows with pixel_error > 2 pixels")
-            df.loc[mask, ['star_count', 'brightest_mag', 'faintest_mag', 'pixel_error', 'error_mas']] = np.nan
+            print(f"Masking {num_masked} rows with pixel_error > {pixel_error_cutoff} pixels and star_count = 1 (mismatched detections)")
+            # Set star_count to 0 and other values to NaN for these mismatches
+            df.loc[mask, 'star_count'] = 0
+            df.loc[mask, ['brightest_mag', 'faintest_mag', 'pixel_error', 'error_mas']] = np.nan
     
     return df
 
@@ -250,8 +272,6 @@ def plot_mean_pointing_error(df, output_path=None, show_error_bars=False):
     
     # Use a consistent colormap for both sensors
     cmap = cm.viridis  # Natural color gradient
-    n_f_numbers = len(f_numbers)
-    color_indices = np.linspace(0, 1, n_f_numbers)
     
     # First pass: collect all data to find global y-axis limits
     max_y_value = 0
@@ -289,7 +309,7 @@ def plot_mean_pointing_error(df, output_path=None, show_error_bars=False):
         
         # Plot for each f-number using pre-calculated data
         for i, (f_num, stats_data) in enumerate(all_plot_data[sensor_name]):
-            color = cmap(color_indices[f_numbers.index(f_num)])
+            color = get_f_number_color(f_num, cmap)
             
             # Convert exposure from ms to seconds for display
             exposure_s = stats_data['exposure_ms'] / 1000.0
@@ -364,8 +384,6 @@ def plot_mean_star_count(df, output_path=None, show_error_bars=False):
     
     # Use a consistent colormap for both sensors
     cmap = cm.viridis  # Natural color gradient
-    n_f_numbers = len(f_numbers)
-    color_indices = np.linspace(0, 1, n_f_numbers)
     
     # First pass: collect all data to find global y-axis limits
     max_y_value = 0
@@ -399,7 +417,7 @@ def plot_mean_star_count(df, output_path=None, show_error_bars=False):
         
         # Plot for each f-number using pre-calculated data
         for i, (f_num, stats_data) in enumerate(all_plot_data[sensor_name]):
-            color = cmap(color_indices[f_numbers.index(f_num)])
+            color = get_f_number_color(f_num, cmap)
             
             # Convert exposure from ms to seconds for display
             exposure_s = stats_data['exposure_ms'] / 1000.0
@@ -474,8 +492,6 @@ def plot_faintest_magnitude(df, output_path=None, show_error_bars=False):
     
     # Use a consistent colormap for both sensors
     cmap = cm.viridis  # Natural color gradient
-    n_f_numbers = len(f_numbers)
-    color_indices = np.linspace(0, 1, n_f_numbers)
     
     # First pass: collect all data to find global y-axis limits
     min_y_value = float('inf')
@@ -515,7 +531,7 @@ def plot_faintest_magnitude(df, output_path=None, show_error_bars=False):
         
         # Plot for each f-number using pre-calculated data
         for i, (f_num, stats_data) in enumerate(all_plot_data[sensor_name]):
-            color = cmap(color_indices[f_numbers.index(f_num)])
+            color = get_f_number_color(f_num, cmap)
             
             # Convert exposure from ms to seconds for display
             exposure_s = stats_data['exposure_ms'] / 1000.0
@@ -593,8 +609,6 @@ def plot_high_accuracy_percentage(df, output_path=None):
     
     # Use a consistent colormap for both sensors
     cmap = cm.viridis  # Natural color gradient
-    n_f_numbers = len(f_numbers)
-    color_indices = np.linspace(0, 1, n_f_numbers)
     
     # Plot data for each sensor
     for idx, (sensor_name, ax) in enumerate(zip(sensors, axes)):
@@ -606,7 +620,7 @@ def plot_high_accuracy_percentage(df, output_path=None):
         
         # Plot for each f-number
         for i, f_num in enumerate(f_numbers):
-            color = cmap(color_indices[i])
+            color = get_f_number_color(f_num, cmap)
             
             stats_data = calculate_high_accuracy_statistics(df, sensor_name, f_num)
             
@@ -683,8 +697,6 @@ def plot_field_closure_percentage(df, output_path=None):
     
     # Use a consistent colormap for both sensors
     cmap = cm.viridis  # Natural color gradient
-    n_f_numbers = len(f_numbers)
-    color_indices = np.linspace(0, 1, n_f_numbers)
     
     # Plot data for each sensor
     for idx, (sensor_name, ax) in enumerate(zip(sensors, axes)):
@@ -696,7 +708,7 @@ def plot_field_closure_percentage(df, output_path=None):
         
         # Plot for each f-number
         for i, f_num in enumerate(f_numbers):
-            color = cmap(color_indices[i])
+            color = get_f_number_color(f_num, cmap)
             
             stats_data = calculate_field_closure_statistics(df, sensor_name, f_num)
             
@@ -773,8 +785,6 @@ def plot_brightest_magnitude(df, output_path=None, show_error_bars=False):
     
     # Use a consistent colormap for both sensors
     cmap = cm.viridis  # Natural color gradient
-    n_f_numbers = len(f_numbers)
-    color_indices = np.linspace(0, 1, n_f_numbers)
     
     # First pass: collect all data to find global y-axis limits
     min_y_value = float('inf')
@@ -814,7 +824,7 @@ def plot_brightest_magnitude(df, output_path=None, show_error_bars=False):
         
         # Plot for each f-number using pre-calculated data
         for i, (f_num, stats_data) in enumerate(all_plot_data[sensor_name]):
-            color = cmap(color_indices[f_numbers.index(f_num)])
+            color = get_f_number_color(f_num, cmap)
             
             # Convert exposure from ms to seconds for display
             exposure_s = stats_data['exposure_ms'] / 1000.0
@@ -1033,12 +1043,10 @@ def plot_win_percentage(df, output_path=None):
     
     # Use viridis colormap for consistency
     cmap = cm.viridis
-    n_f_numbers = len(f_numbers)
-    color_indices = np.linspace(0, 1, n_f_numbers)
     
     # Plot for each f-number
     for i, f_num in enumerate(f_numbers):
-        color = cmap(color_indices[i])
+        color = get_f_number_color(f_num, cmap)
         
         # Calculate win percentage data
         win_data = calculate_win_percentage(df, f_num)
@@ -1109,12 +1117,10 @@ def plot_relative_performance(df, output_path=None):
     
     # Use viridis colormap for consistency
     cmap = cm.viridis
-    n_f_numbers = len(f_numbers)
-    color_indices = np.linspace(0, 1, n_f_numbers)
     
     # Plot for each f-number
     for i, f_num in enumerate(f_numbers):
-        color = cmap(color_indices[i])
+        color = get_f_number_color(f_num, cmap)
         
         # Calculate relative performance data
         perf_data = calculate_relative_performance(df, f_num)
@@ -1189,6 +1195,8 @@ def main():
     parser.add_argument('--output', type=str, help='Output plot filename (PNG/PDF/etc)')
     parser.add_argument('--error-bars', action='store_true',
                        help='Show error bars on mean pointing error and star count plots (default: off)')
+    parser.add_argument('--pixel-error-cutoff', type=float, default=2.0,
+                       help='Pixel error threshold for filtering mismatched detections (default: 2.0)')
     
     args = parser.parse_args()
     
@@ -1198,7 +1206,7 @@ def main():
         return 1
     
     # Load data once with preprocessing
-    df = load_experiment_data(args.csv_file, args.aperture)
+    df = load_experiment_data(args.csv_file, args.aperture, pixel_error_cutoff=args.pixel_error_cutoff)
     
     # Generate output filenames if multiple mode is selected
     if args.mode == 'all' and args.output:
