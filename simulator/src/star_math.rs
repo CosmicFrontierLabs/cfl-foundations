@@ -132,8 +132,6 @@ use starfield::framelib::inertial::InertialFrame;
 use starfield::Equatorial;
 
 use nalgebra::Vector3;
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
 
 use crate::hardware::{SatelliteConfig, SensorConfig, TelescopeConfig};
 use crate::photometry::photoconversion::SourceFlux;
@@ -289,89 +287,6 @@ where
             angular_distance <= field_radius_rad
         })
         .collect()
-}
-
-/// Seeded random generator for reproducible astronomical coordinate generation.
-///
-/// Provides deterministic generation of pseudo-random celestial coordinates
-/// for testing, validation, and Monte Carlo simulations. Uses high-quality
-/// random number generation with explicit seeding for reproducible results
-/// across test runs and simulation studies.
-///
-/// # Coordinate Distribution
-/// - **Right ascension**: Uniform distribution [0°, 360°)
-/// - **Declination**: Uniform distribution [-90°, +90°]
-/// - **Seed-based**: Identical sequences for identical seeds
-/// - **High quality**: Uses `StdRng` for cryptographically strong randomness
-///
-/// # Applications
-/// - **Unit testing**: Reproducible test cases with known random sequences
-/// - **Monte Carlo**: Statistical analysis of coordinate-dependent phenomena
-/// - **Field simulation**: Random star field generation for testing
-/// - **Coverage analysis**: Uniform sky sampling for survey validation
-///
-/// # Statistical Properties
-/// The generator produces uniform distributions in coordinate space, but note
-/// that uniform RA/Dec does NOT produce uniform distribution on the celestial
-/// sphere due to the coordinate system singularities at the poles.
-///
-/// For true uniform sphere sampling, use rejection sampling or inverse transform
-/// methods with appropriate Jacobian corrections.
-///
-/// # Usage
-/// Create seeded generators for reproducible coordinate sequences in testing
-/// and Monte Carlo simulations. Identical seeds produce identical sequences.
-pub struct EquatorialRandomizer {
-    rng: StdRng,
-}
-
-impl EquatorialRandomizer {
-    /// Create new seeded coordinate generator for reproducible randomness.
-    ///
-    /// Initializes a high-quality random number generator with the specified
-    /// seed value. Identical seeds will produce identical coordinate sequences,
-    /// enabling reproducible test cases and deterministic simulation studies.
-    ///
-    /// # Arguments
-    /// * `seed` - 64-bit seed value for random number generator initialization
-    ///
-    /// # Returns
-    /// New EquatorialRandomizer instance ready for coordinate generation
-    ///
-    /// # Usage
-    /// Different seeds produce different sequences, while identical seeds
-    /// produce identical sequences for reproducible testing.
-    pub fn new(seed: u64) -> Self {
-        Self {
-            rng: StdRng::seed_from_u64(seed),
-        }
-    }
-
-    /// Generate next random celestial coordinate from the sequence.
-    ///
-    /// Produces uniformly distributed coordinates in the RA/Dec coordinate
-    /// system. Note that this creates uniform distribution in coordinate
-    /// space, not uniform distribution on the celestial sphere surface.
-    ///
-    /// # Coordinate Ranges
-    /// - **Right ascension**: [0°, 360°) uniform distribution
-    /// - **Declination**: [-90°, +90°] uniform distribution
-    ///
-    /// # Returns
-    /// Random Equatorial coordinate with the specified distributions
-    ///
-    /// # Thread Safety
-    /// This method mutates internal RNG state and is not thread-safe.
-    /// Create separate generators for concurrent use.
-    ///
-    /// # Usage
-    /// Call repeatedly to generate coordinate sequences. Each call advances
-    /// the internal RNG state and returns the next coordinate in the sequence.
-    pub fn generate(&mut self) -> Equatorial {
-        let ra = self.rng.gen::<f64>() * 360.0; // Random RA in degrees [0, 360)
-        let dec = (self.rng.gen::<f64>() - 0.5) * 180.0; // Random Dec in degrees [-90, 90]
-        Equatorial::from_degrees(ra, dec)
-    }
 }
 
 /// High-precision celestial coordinate to pixel projection engine.
@@ -825,98 +740,6 @@ mod tests {
         // Should map to sensor center
         assert_relative_eq!(pixel_x, 960.0, epsilon = 0.1);
         assert_relative_eq!(pixel_y, 540.0, epsilon = 0.1);
-    }
-
-    #[test]
-    fn test_equatorial_randomizer_reproducible() {
-        // Test that the randomizer produces the same sequence with the same seed
-        let mut randomizer1 = EquatorialRandomizer::new(42);
-        let mut randomizer2 = EquatorialRandomizer::new(42);
-
-        for _ in 0..10 {
-            let coord1 = randomizer1.generate();
-            let coord2 = randomizer2.generate();
-
-            assert_relative_eq!(coord1.ra_degrees(), coord2.ra_degrees(), epsilon = 1e-10);
-            assert_relative_eq!(coord1.dec_degrees(), coord2.dec_degrees(), epsilon = 1e-10);
-        }
-    }
-
-    #[test]
-    fn test_equatorial_randomizer_different_seeds() {
-        // Test that different seeds produce different sequences
-        let mut randomizer1 = EquatorialRandomizer::new(42);
-        let mut randomizer2 = EquatorialRandomizer::new(43);
-
-        let coord1 = randomizer1.generate();
-        let coord2 = randomizer2.generate();
-
-        // Should be different (extremely unlikely to be the same)
-        assert!(
-            coord1.ra_degrees() != coord2.ra_degrees()
-                || coord1.dec_degrees() != coord2.dec_degrees()
-        );
-    }
-
-    #[test]
-    fn test_equatorial_randomizer_bounds() {
-        // Test that generated coordinates are within expected bounds
-        let mut randomizer = EquatorialRandomizer::new(123);
-
-        for _ in 0..100 {
-            let coord = randomizer.generate();
-            let ra = coord.ra_degrees();
-            let dec = coord.dec_degrees();
-
-            // RA should be in [0, 360)
-            assert!((0.0..360.0).contains(&ra), "RA out of bounds: {ra}");
-
-            // Dec should be in [-90, 90]
-            assert!((-90.0..=90.0).contains(&dec), "Dec out of bounds: {dec}");
-        }
-    }
-
-    #[test]
-    fn test_equatorial_randomizer_uniform_distribution() {
-        // Basic test for uniform distribution - not rigorous but catches obvious problems
-        let mut randomizer = EquatorialRandomizer::new(456);
-        let mut ra_values = Vec::new();
-        let mut dec_values = Vec::new();
-
-        for _ in 0..1000 {
-            let coord = randomizer.generate();
-            ra_values.push(coord.ra_degrees());
-            dec_values.push(coord.dec_degrees());
-        }
-
-        // Check that we get values across the full range
-        let ra_scan = MinMaxScan::new(&ra_values);
-        let dec_scan = MinMaxScan::new(&dec_values);
-        let (min_ra, max_ra) = ra_scan.min_max().unwrap();
-        let (min_dec, max_dec) = dec_scan.min_max().unwrap();
-
-        // Should span a significant portion of the range
-        assert!(
-            max_ra - min_ra > 200.0,
-            "RA range too narrow: {min_ra} - {max_ra}"
-        );
-        assert!(
-            max_dec - min_dec > 100.0,
-            "Dec range too narrow: {min_dec} - {max_dec}"
-        );
-
-        // Rough check of means (should be around 180 for RA, 0 for Dec)
-        let mean_ra: f64 = ra_values.iter().sum::<f64>() / ra_values.len() as f64;
-        let mean_dec: f64 = dec_values.iter().sum::<f64>() / dec_values.len() as f64;
-
-        assert!(
-            mean_ra > 150.0 && mean_ra < 210.0,
-            "RA mean suspicious: {mean_ra}"
-        );
-        assert!(
-            mean_dec > -10.0 && mean_dec < 10.0,
-            "Dec mean suspicious: {mean_dec}"
-        );
     }
 
     #[test]

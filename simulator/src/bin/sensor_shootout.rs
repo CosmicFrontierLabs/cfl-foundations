@@ -45,9 +45,9 @@ use simulator::image_proc::{
 use simulator::photometry::zodical::SolarAngularCoordinates;
 use simulator::scene::Scene;
 use simulator::shared_args::{RangeArg, SharedSimulationArgs};
-use simulator::star_math::EquatorialRandomizer;
 use simulator::{star_math::field_diameter, SensorConfig};
 use starfield::catalogs::{StarCatalog, StarData};
+use starfield::framelib::random::RandomEquatorial;
 use starfield::Equatorial;
 use std::collections::HashMap;
 use std::fs::File;
@@ -681,7 +681,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut all_experiments = Vec::new();
 
     // Create randomizer with fixed seed for reproducible results
-    let mut randomizer = EquatorialRandomizer::new(42);
+    let mut randomizer = RandomEquatorial::with_seed(42);
 
     for i in 0..args.experiments {
         // Generate coordinates based on mode
@@ -690,7 +690,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             fixed_coords
         } else {
             // Generate random RA/Dec coordinates for normal operation
-            randomizer.generate()
+            randomizer.next().unwrap()
         };
 
         // Create one experiment param per sky pointing (stars computed in run_experiment)

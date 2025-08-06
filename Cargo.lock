@@ -2362,9 +2362,9 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "starfield"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3e9a1a57a420c0d84886c574cb2e8ff94235331727ac128e4b192a59fdbf26c"
+checksum = "d02cd04d45eff38d12b01ee795bc5d43cbfd678a1389941d832f76864f964a4b"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
