@@ -164,8 +164,7 @@ impl SensorConfig {
     }
 
     /// Get dark current at a specific temperature in electrons/pixel/second
-    pub fn dark_current_at_temperature(&self, temp_c: f64) -> f64 {
-        let temperature = Temperature::from_celsius(temp_c);
+    pub fn dark_current_at_temperature(&self, temperature: Temperature) -> f64 {
         self.dark_current_estimator
             .estimate_at_temperature(temperature)
             .expect("Temperature out of interpolation range")
@@ -191,7 +190,7 @@ mod tests {
             1024,
             Length::from_micrometers(5.5),
             ReadNoiseEstimator::constant(2.0),
-            DarkCurrentEstimator::from_reference_point(0.01, 20.0),
+            DarkCurrentEstimator::from_reference_point(0.01, Temperature::from_celsius(20.0)),
             8,
             3.0,
             1e20,
@@ -222,7 +221,7 @@ mod tests {
             768,
             Length::from_micrometers(5.5),
             ReadNoiseEstimator::constant(2.0),
-            DarkCurrentEstimator::from_reference_point(0.01, 20.0),
+            DarkCurrentEstimator::from_reference_point(0.01, Temperature::from_celsius(20.0)),
             8,
             3.0,
             1e20,
@@ -245,7 +244,7 @@ mod tests {
             768,
             Length::from_micrometers(5.5),
             ReadNoiseEstimator::constant(2.0),
-            DarkCurrentEstimator::from_reference_point(0.01, 20.0),
+            DarkCurrentEstimator::from_reference_point(0.01, Temperature::from_celsius(20.0)),
             8,
             3.0,
             1e20,
@@ -361,7 +360,7 @@ pub mod models {
             4096,
             Length::from_micrometers(9.0),
             ReadNoiseEstimator::constant(2.3),
-            DarkCurrentEstimator::from_reference_point(0.04, -40.0), // 0.04 e-/px/s at -40°C
+            DarkCurrentEstimator::from_reference_point(0.04, Temperature::from_celsius(-40.0)), // 0.04 e-/px/s at -40°C
             12,
             0.35,
             39_200.0,
@@ -403,7 +402,7 @@ pub mod models {
             3200,
             Length::from_micrometers(6.5),
             ReadNoiseEstimator::constant(0.7),
-            DarkCurrentEstimator::from_reference_point(0.2, -10.0), // 0.2 e-/px/s at -10°C
+            DarkCurrentEstimator::from_reference_point(0.2, Temperature::from_celsius(-10.0)), // 0.2 e-/px/s at -10°C
             12,
             0.35,
             21_000.0,
@@ -445,7 +444,12 @@ pub mod models {
             2300,
             Length::from_micrometers(4.6),
             ReadNoiseEstimator::hwk4123(),
-            DarkCurrentEstimator::from_two_points(-20.0, 0.0198, 0.0, 0.1), // 0.0198 e-/px/s at -20°C, 0.1 e-/px/s at 0°C
+            DarkCurrentEstimator::from_two_points(
+                Temperature::from_celsius(-20.0),
+                0.0198,
+                Temperature::from_celsius(0.0),
+                0.1,
+            ), // 0.0198 e-/px/s at -20°C, 0.1 e-/px/s at 0°C
             12,
             7.42,
             7_500.0,
@@ -545,7 +549,7 @@ mod model_tests {
             2.3
         );
         assert_relative_eq!(
-            models::GSENSE4040BSI.dark_current_at_temperature(-40.0),
+            models::GSENSE4040BSI.dark_current_at_temperature(Temperature::from_celsius(-40.0)),
             0.04,
             epsilon = 1e-6
         );
@@ -570,7 +574,7 @@ mod model_tests {
             0.7
         );
         assert_relative_eq!(
-            models::GSENSE6510BSI.dark_current_at_temperature(-10.0),
+            models::GSENSE6510BSI.dark_current_at_temperature(Temperature::from_celsius(-10.0)),
             0.2,
             epsilon = 1e-6
         );
@@ -591,13 +595,14 @@ mod model_tests {
             .unwrap();
         assert!((hwk_read_noise - 0.301).abs() < 0.01);
         assert_relative_eq!(
-            models::HWK4123.dark_current_at_temperature(0.0),
+            models::HWK4123.dark_current_at_temperature(Temperature::from_celsius(0.0)),
             0.1,
             epsilon = 1e-6
         );
         // HWK4123 now uses different doubling rate from two reference points
         // Just verify it's in reasonable range
-        let hwk_dc_20 = models::HWK4123.dark_current_at_temperature(20.0);
+        let hwk_dc_20 =
+            models::HWK4123.dark_current_at_temperature(Temperature::from_celsius(20.0));
         assert!(
             hwk_dc_20 > 0.4 && hwk_dc_20 < 0.6,
             "HWK4123 dark current at 20°C: {hwk_dc_20}"
@@ -620,7 +625,7 @@ mod model_tests {
             1.58
         );
         assert_relative_eq!(
-            models::IMX455.dark_current_at_temperature(-20.0),
+            models::IMX455.dark_current_at_temperature(Temperature::from_celsius(-20.0)),
             0.0022,
             epsilon = 1e-6
         );

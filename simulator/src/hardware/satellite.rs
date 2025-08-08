@@ -1,7 +1,7 @@
 use super::{sensor::SensorConfig, telescope::TelescopeConfig};
 use crate::image_proc::airy::PixelScaledAiryDisk;
 use crate::photometry::QuantumEfficiency;
-use crate::units::{LengthExt, Wavelength};
+use crate::units::{LengthExt, Temperature, Wavelength};
 
 /// Complete satellite configuration combining telescope optics and sensor.
 ///
@@ -30,8 +30,8 @@ pub struct SatelliteConfig {
     pub telescope: TelescopeConfig,
     /// Sensor detector configuration (QE, noise, geometry)
     pub sensor: SensorConfig,
-    /// Operating temperature in degrees Celsius (affects dark current)
-    pub temperature_c: f64,
+    /// Operating temperature (affects dark current)
+    pub temperature: Temperature,
     /// Primary observing wavelength (affects PSF size)
     pub wavelength: Wavelength,
     /// Combined quantum efficiency of telescope optics and sensor
@@ -47,7 +47,7 @@ impl SatelliteConfig {
     /// # Arguments
     /// * `telescope` - Optical system configuration (aperture, focal length, etc.)
     /// * `sensor` - Detector configuration (QE, noise, pixel size, etc.)  
-    /// * `temperature_c` - Operating temperature in °C (affects thermal noise)
+    /// * `temperature` - Operating temperature (affects thermal noise)
     /// * `wavelength` - Primary observing wavelength (affects PSF)
     ///
     /// # Returns
@@ -56,7 +56,7 @@ impl SatelliteConfig {
     pub fn new(
         telescope: TelescopeConfig,
         sensor: SensorConfig,
-        temperature_c: f64,
+        temperature: Temperature,
         wavelength: Wavelength,
     ) -> Self {
         // Calculate combined QE from telescope and sensor
@@ -67,7 +67,7 @@ impl SatelliteConfig {
         Self {
             telescope,
             sensor,
-            temperature_c,
+            temperature,
             wavelength,
             combined_qe,
         }
@@ -189,7 +189,7 @@ impl SatelliteConfig {
         SatelliteConfig::new(
             self.telescope.with_focal_length(new_focal_length),
             self.sensor.clone(),
-            self.temperature_c,
+            self.temperature,
             self.wavelength,
         )
     }
@@ -229,16 +229,17 @@ impl SatelliteConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::units::TemperatureExt;
 
     #[test]
     fn test_satellite_config_creation() {
         let telescope = TelescopeConfig::new("Test Scope", 0.5, 2.5, 0.8);
         let sensor = crate::hardware::sensor::models::GSENSE4040BSI.clone();
-        let temp = -10.0;
+        let temp = Temperature::from_celsius(-10.0);
 
         let satellite =
             SatelliteConfig::new(telescope, sensor, temp, Wavelength::from_nanometers(550.0));
-        assert_eq!(satellite.temperature_c, -10.0);
+        assert_eq!(satellite.temperature, temp);
         assert!(satellite.telescope.collecting_area_m2() > 0.0);
         assert!(satellite.plate_scale_arcsec_per_pixel() > 0.0);
     }
@@ -248,8 +249,12 @@ mod tests {
         let telescope = TelescopeConfig::new("Test Scope", 0.5, 2.5, 0.8);
         let sensor = crate::hardware::sensor::models::GSENSE6510BSI.clone();
 
-        let satellite =
-            SatelliteConfig::new(telescope, sensor, -10.0, Wavelength::from_nanometers(550.0));
+        let satellite = SatelliteConfig::new(
+            telescope,
+            sensor,
+            Temperature::from_celsius(-10.0),
+            Wavelength::from_nanometers(550.0),
+        );
 
         let (width_arcmin, height_arcmin) = satellite.field_of_view_arcmin();
         assert!(width_arcmin > 0.0);
@@ -261,8 +266,12 @@ mod tests {
         let telescope = TelescopeConfig::new("Test Scope", 0.5, 2.5, 0.8);
         let sensor = crate::hardware::sensor::models::HWK4123.clone();
 
-        let satellite =
-            SatelliteConfig::new(telescope, sensor, -10.0, Wavelength::from_nanometers(550.0));
+        let satellite = SatelliteConfig::new(
+            telescope,
+            sensor,
+            Temperature::from_celsius(-10.0),
+            Wavelength::from_nanometers(550.0),
+        );
 
         let airy_disk = satellite.airy_disk_pixel_space();
 
@@ -276,8 +285,12 @@ mod tests {
         let telescope = TelescopeConfig::new("Test Scope", 0.5, 2.5, 0.8);
         let sensor = crate::hardware::sensor::models::GSENSE4040BSI.clone();
 
-        let satellite =
-            SatelliteConfig::new(telescope, sensor, -10.0, Wavelength::from_nanometers(550.0));
+        let satellite = SatelliteConfig::new(
+            telescope,
+            sensor,
+            Temperature::from_celsius(-10.0),
+            Wavelength::from_nanometers(550.0),
+        );
 
         // Get current sampling ratio
         let original_sampling = satellite.fwhm_sampling_ratio();
@@ -292,7 +305,7 @@ mod tests {
 
         // Check that other parameters remain unchanged
         assert_eq!(resampled.sensor.name, satellite.sensor.name);
-        assert_eq!(resampled.temperature_c, satellite.temperature_c);
+        assert_eq!(resampled.temperature, satellite.temperature);
         assert_eq!(resampled.wavelength, satellite.wavelength);
         assert_eq!(
             resampled.telescope.aperture_m,
@@ -313,7 +326,7 @@ mod tests {
         let satellite = SatelliteConfig::new(
             telescope.clone(),
             sensor.clone(),
-            -10.0,
+            Temperature::from_celsius(-10.0),
             Wavelength::from_nanometers(550.0),
         );
 
@@ -336,7 +349,7 @@ mod tests {
         let satellite = SatelliteConfig::new(
             telescope.clone(),
             sensor.clone(),
-            -10.0,
+            Temperature::from_celsius(-10.0),
             Wavelength::from_nanometers(550.0),
         );
 
@@ -366,7 +379,7 @@ mod tests {
         let satellite = SatelliteConfig::new(
             telescope.clone(),
             sensor.clone(),
-            -10.0,
+            Temperature::from_celsius(-10.0),
             Wavelength::from_nanometers(550.0),
         );
 

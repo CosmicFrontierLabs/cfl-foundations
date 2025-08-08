@@ -46,15 +46,19 @@ impl DarkCurrentEstimator {
     ///
     /// # Arguments
     /// * `reference_dark_current` - Dark current in electrons/pixel/second at reference temperature
-    /// * `reference_temp_c` - Reference temperature in degrees Celsius
+    /// * `reference_temperature` - Reference temperature
     ///
     /// # Example
     /// ```
     /// use simulator::hardware::dark_current::DarkCurrentEstimator;
+    /// use simulator::units::{Temperature, TemperatureExt};
     ///
-    /// let estimator = DarkCurrentEstimator::from_reference_point(0.1, 20.0);
+    /// let estimator = DarkCurrentEstimator::from_reference_point(0.1, Temperature::from_celsius(20.0));
     /// ```
-    pub fn from_reference_point(reference_dark_current: f64, reference_temp_c: f64) -> Self {
+    pub fn from_reference_point(
+        reference_dark_current: f64,
+        reference_temperature: Temperature,
+    ) -> Self {
         // Generate points from MIN_TEMP_C to MAX_TEMP_C
         let temperatures = Self::generate_temperature_points();
 
@@ -62,7 +66,7 @@ impl DarkCurrentEstimator {
         let dark_currents: Vec<f64> = temperatures
             .iter()
             .map(|&temp| {
-                let temp_diff = temp - reference_temp_c;
+                let temp_diff = temp - reference_temperature.as_celsius();
                 let doubling_periods = temp_diff / 8.0;
                 reference_dark_current * 2.0_f64.powf(doubling_periods)
             })
@@ -82,25 +86,26 @@ impl DarkCurrentEstimator {
     /// a full interpolation table from MIN_TEMP_C to MAX_TEMP_C.
     ///
     /// # Arguments
-    /// * `temp1_c` - First reference temperature in degrees Celsius
+    /// * `temp1` - First reference temperature
     /// * `dark_current1` - Dark current at first temperature (e⁻/pixel/second)
-    /// * `temp2_c` - Second reference temperature in degrees Celsius  
+    /// * `temp2` - Second reference temperature  
     /// * `dark_current2` - Dark current at second temperature (e⁻/pixel/second)
     ///
     /// # Example
     /// ```
     /// use simulator::hardware::dark_current::DarkCurrentEstimator;
+    /// use simulator::units::{Temperature, TemperatureExt};
     ///
     /// // Create from two measured points
     /// let estimator = DarkCurrentEstimator::from_two_points(
-    ///     -10.0, 0.01,  // 0.01 e⁻/px/s at -10°C
-    ///     20.0, 0.5     // 0.5 e⁻/px/s at 20°C
+    ///     Temperature::from_celsius(-10.0), 0.01,  // 0.01 e⁻/px/s at -10°C
+    ///     Temperature::from_celsius(20.0), 0.5     // 0.5 e⁻/px/s at 20°C
     /// );
     /// ```
     pub fn from_two_points(
-        temp1_c: f64,
+        temp1: Temperature,
         dark_current1: f64,
-        temp2_c: f64,
+        temp2: Temperature,
         dark_current2: f64,
     ) -> Self {
         // Calculate the doubling period from the two points
@@ -108,14 +113,14 @@ impl DarkCurrentEstimator {
         // log2(dark_current2 / dark_current1) = (temp2 - temp1) / doubling_period
         // doubling_period = (temp2 - temp1) / log2(dark_current2 / dark_current1)
 
-        let temp_diff = temp2_c - temp1_c;
+        let temp_diff = temp2.as_celsius() - temp1.as_celsius();
         let dark_ratio = dark_current2 / dark_current1;
         let doubling_period = temp_diff / dark_ratio.log2();
 
         // Now we can calculate the reference dark current at any temperature
         // Using the first point as reference
         let reference_dark_current = dark_current1;
-        let reference_temp_c = temp1_c;
+        let reference_temp = temp1;
 
         // Generate points from MIN_TEMP_C to MAX_TEMP_C
         let temperatures = Self::generate_temperature_points();
@@ -124,7 +129,7 @@ impl DarkCurrentEstimator {
         let dark_currents: Vec<f64> = temperatures
             .iter()
             .map(|&temp| {
-                let temp_diff = temp - reference_temp_c;
+                let temp_diff = temp - reference_temp.as_celsius();
                 let doubling_periods = temp_diff / doubling_period;
                 reference_dark_current * 2.0_f64.powf(doubling_periods)
             })
@@ -178,7 +183,7 @@ impl DarkCurrentEstimator {
     /// use simulator::hardware::dark_current::DarkCurrentEstimator;
     /// use simulator::units::{Temperature, TemperatureExt};
     ///
-    /// let estimator = DarkCurrentEstimator::from_reference_point(0.1, 20.0);
+    /// let estimator = DarkCurrentEstimator::from_reference_point(0.1, Temperature::from_celsius(20.0));
     /// let temp = Temperature::from_celsius(28.0);
     /// let dark_current = estimator.estimate_at_temperature(temp).expect("Temperature out of range");
     /// ```
@@ -200,7 +205,7 @@ impl DarkCurrentEstimator {
     /// ```
     /// use simulator::hardware::dark_current::DarkCurrentEstimator;
     ///
-    /// let estimator = DarkCurrentEstimator::from_reference_point(0.1, 20.0);
+    /// let estimator = DarkCurrentEstimator::from_reference_point(0.1, Temperature::from_celsius(20.0));
     /// let doubling_temp = estimator.calculate_doubling_temperature();
     /// println!("Dark current doubles every {:.1}°C", doubling_temp);
     /// ```
@@ -253,7 +258,8 @@ mod tests {
 
     #[test]
     fn test_same_temperature() {
-        let estimator = DarkCurrentEstimator::from_reference_point(0.1, 20.0);
+        let estimator =
+            DarkCurrentEstimator::from_reference_point(0.1, Temperature::from_celsius(20.0));
         let result = estimator
             .estimate_at_temperature(Temperature::from_celsius(20.0))
             .expect("Temperature should be in range");
@@ -263,7 +269,8 @@ mod tests {
 
     #[test]
     fn test_8_degree_increase_doubles() {
-        let estimator = DarkCurrentEstimator::from_reference_point(0.1, 20.0);
+        let estimator =
+            DarkCurrentEstimator::from_reference_point(0.1, Temperature::from_celsius(20.0));
         // 28°C is within our table range (-40 to +40)
         let result = estimator
             .estimate_at_temperature(Temperature::from_celsius(28.0))
@@ -273,7 +280,8 @@ mod tests {
 
     #[test]
     fn test_8_degree_decrease_halves() {
-        let estimator = DarkCurrentEstimator::from_reference_point(0.1, 20.0);
+        let estimator =
+            DarkCurrentEstimator::from_reference_point(0.1, Temperature::from_celsius(20.0));
         let result = estimator
             .estimate_at_temperature(Temperature::from_celsius(12.0))
             .expect("Temperature should be in range");
@@ -282,7 +290,8 @@ mod tests {
 
     #[test]
     fn test_16_degree_increase_quadruples() {
-        let estimator = DarkCurrentEstimator::from_reference_point(0.1, 20.0);
+        let estimator =
+            DarkCurrentEstimator::from_reference_point(0.1, Temperature::from_celsius(20.0));
         // 36°C is within our table range (-40 to +40)
         let result = estimator
             .estimate_at_temperature(Temperature::from_celsius(36.0))
@@ -292,7 +301,8 @@ mod tests {
 
     #[test]
     fn test_16_degree_decrease_quarters() {
-        let estimator = DarkCurrentEstimator::from_reference_point(0.1, 20.0);
+        let estimator =
+            DarkCurrentEstimator::from_reference_point(0.1, Temperature::from_celsius(20.0));
         let result = estimator
             .estimate_at_temperature(Temperature::from_celsius(4.0))
             .expect("Temperature should be in range");
@@ -301,7 +311,8 @@ mod tests {
 
     #[test]
     fn test_4_degree_increase_sqrt2() {
-        let estimator = DarkCurrentEstimator::from_reference_point(0.1, 20.0);
+        let estimator =
+            DarkCurrentEstimator::from_reference_point(0.1, Temperature::from_celsius(20.0));
         // 24°C is within our table range (-40 to +40)
         let result = estimator
             .estimate_at_temperature(Temperature::from_celsius(24.0))
@@ -312,7 +323,8 @@ mod tests {
 
     #[test]
     fn test_negative_reference_temperature() {
-        let estimator = DarkCurrentEstimator::from_reference_point(0.04, -40.0);
+        let estimator =
+            DarkCurrentEstimator::from_reference_point(0.04, Temperature::from_celsius(-40.0));
         // -40°C is at the edge of our table range (-40 to +40)
         let result = estimator
             .estimate_at_temperature(Temperature::from_celsius(-40.0))
@@ -327,7 +339,8 @@ mod tests {
 
     #[test]
     fn test_large_temperature_difference() {
-        let estimator = DarkCurrentEstimator::from_reference_point(0.001, -20.0);
+        let estimator =
+            DarkCurrentEstimator::from_reference_point(0.001, Temperature::from_celsius(-20.0));
         // 60°C is outside our table range (-40 to +40), should return Err
         assert!(estimator
             .estimate_at_temperature(Temperature::from_celsius(60.0))
@@ -343,7 +356,8 @@ mod tests {
 
     #[test]
     fn test_fractional_doubling_periods() {
-        let estimator = DarkCurrentEstimator::from_reference_point(1.0, 0.0);
+        let estimator =
+            DarkCurrentEstimator::from_reference_point(1.0, Temperature::from_celsius(0.0));
         // 6°C increase = 6/8 = 0.75 doubling periods
         // Should be 1.0 * 2^0.75 = 1.0 * 1.6817928... ≈ 1.6818
         let result = estimator
@@ -356,8 +370,10 @@ mod tests {
     #[test]
     fn test_different_reference_values() {
         // Test with different reference dark currents
-        let high_dc = DarkCurrentEstimator::from_reference_point(10.0, 25.0);
-        let low_dc = DarkCurrentEstimator::from_reference_point(0.001, 25.0);
+        let high_dc =
+            DarkCurrentEstimator::from_reference_point(10.0, Temperature::from_celsius(25.0));
+        let low_dc =
+            DarkCurrentEstimator::from_reference_point(0.001, Temperature::from_celsius(25.0));
 
         // Both should scale by same factor for same temperature change
         let temp_change = 33.0; // 8°C increase, should double
@@ -418,7 +434,8 @@ mod tests {
     #[test]
     fn test_within_table_range() {
         // Test that values within the table range work correctly
-        let estimator = DarkCurrentEstimator::from_reference_point(0.1, 0.0);
+        let estimator =
+            DarkCurrentEstimator::from_reference_point(0.1, Temperature::from_celsius(0.0));
 
         // Should work for temps between -40 and +40
         assert!(estimator
@@ -456,8 +473,10 @@ mod tests {
     fn test_from_two_points() {
         // Create estimator from two measured points
         let estimator = DarkCurrentEstimator::from_two_points(
-            0.0, 0.1, // 0.1 e⁻/px/s at 0°C
-            16.0, 0.4, // 0.4 e⁻/px/s at 16°C (should be 2x at 8°C, 4x at 16°C)
+            Temperature::from_celsius(0.0),
+            0.1, // 0.1 e⁻/px/s at 0°C
+            Temperature::from_celsius(16.0),
+            0.4, // 0.4 e⁻/px/s at 16°C (should be 2x at 8°C, 4x at 16°C)
         );
 
         // Check that it interpolates correctly at the reference points
@@ -483,7 +502,8 @@ mod tests {
     fn test_type_safe_temperature() {
         use crate::units::{Temperature, TemperatureExt};
 
-        let estimator = DarkCurrentEstimator::from_reference_point(0.1, 20.0);
+        let estimator =
+            DarkCurrentEstimator::from_reference_point(0.1, Temperature::from_celsius(20.0));
 
         // Test with Celsius
         let temp_c = Temperature::from_celsius(28.0);
@@ -512,8 +532,10 @@ mod tests {
         // Create estimator with different doubling period (not 8°C)
         // If dark current quadruples in 10°C, the doubling period is 5°C
         let estimator = DarkCurrentEstimator::from_two_points(
-            -10.0, 0.025, // 0.025 e⁻/px/s at -10°C
-            0.0, 0.1, // 0.1 e⁻/px/s at 0°C (4x in 10°C)
+            Temperature::from_celsius(-10.0),
+            0.025, // 0.025 e⁻/px/s at -10°C
+            Temperature::from_celsius(0.0),
+            0.1, // 0.1 e⁻/px/s at 0°C (4x in 10°C)
         );
 
         // Verify it fits through both points

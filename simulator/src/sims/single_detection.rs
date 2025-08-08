@@ -19,7 +19,7 @@ use crate::photometry::zodical::SolarAngularCoordinates;
 use crate::star_data_to_fluxes;
 #[allow(unused_imports)]
 // Wavelength is needed for type alias, even though trait provides the method
-use crate::units::{LengthExt, Wavelength};
+use crate::units::{LengthExt, Temperature, TemperatureExt, Wavelength};
 use crate::Scene;
 use core::f64;
 use rand::rngs::StdRng;
@@ -277,7 +277,7 @@ mod tests {
             let satellite = SatelliteConfig::new(
                 telescope.clone(),
                 sized_sensor,
-                0.0,                                // 0°C
+                Temperature::from_celsius(0.0),     // 0°C
                 Wavelength::from_nanometers(550.0), // 550nm wavelength
             );
 
@@ -351,7 +351,7 @@ mod tests {
         let satellite = SatelliteConfig::new(
             telescope,
             sensor.clone(),
-            0.0,
+            Temperature::from_celsius(0.0),
             Wavelength::from_nanometers(550.0),
         );
         let adjusted_satellite = satellite.with_fwhm_sampling(2.0);
@@ -392,8 +392,12 @@ mod tests {
         let domain = 64;
         let telescope = IDEAL_50CM.clone();
         let sensor = GSENSE4040BSI.with_dimensions(domain, domain);
-        let satellite =
-            SatelliteConfig::new(telescope, sensor, 0.0, Wavelength::from_nanometers(550.0));
+        let satellite = SatelliteConfig::new(
+            telescope,
+            sensor,
+            Temperature::from_celsius(0.0),
+            Wavelength::from_nanometers(550.0),
+        );
         let adjusted_satellite = satellite.with_fwhm_sampling(2.0);
 
         let params = ExperimentParams {

@@ -47,7 +47,7 @@ use simulator::scene::Scene;
 use simulator::shared_args::{RangeArg, SharedSimulationArgs};
 use simulator::{
     star_math::field_diameter,
-    units::{LengthExt, Wavelength},
+    units::{LengthExt, Temperature, TemperatureExt, Wavelength},
     SensorConfig,
 };
 use starfield::catalogs::{StarCatalog, StarData};
@@ -343,7 +343,7 @@ fn run_experiment<T: StarCatalog>(
                 "Running experiment for satellite: {} at f/{:.1} (T: {:.1}°C, λ: {:.0}nm)",
                 satellite.sensor.name,
                 f_number,
-                satellite.temperature_c,
+                satellite.temperature.as_celsius(),
                 satellite.wavelength.as_nanometers()
             );
 
@@ -355,7 +355,7 @@ fn run_experiment<T: StarCatalog>(
             let modified_satellite = SatelliteConfig::new(
                 modified_telescope,
                 satellite.sensor.clone(),
-                satellite.temperature_c,
+                satellite.temperature,
                 satellite.wavelength,
             );
 
@@ -622,7 +622,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let base_satellite = SatelliteConfig::new(
                     base_telescope.clone(),
                     (*sensor).clone(),
-                    args.shared.temperature,
+                    Temperature::from_celsius(args.shared.temperature),
                     Wavelength::from_nanometers(args.shared.wavelength),
                 );
 
@@ -638,7 +638,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SatelliteConfig::new(
                     base_telescope.clone(),
                     (*sensor).clone(),
-                    args.shared.temperature,
+                    Temperature::from_celsius(args.shared.temperature),
                     Wavelength::from_nanometers(args.shared.wavelength),
                 )
             })

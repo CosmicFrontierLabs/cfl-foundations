@@ -513,7 +513,7 @@ impl StarProjector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::units::{LengthExt, Wavelength};
+    use crate::units::{LengthExt, Temperature, TemperatureExt, Wavelength};
     use approx::assert_relative_eq;
     use float_cmp::approx_eq;
     use rand::rngs::StdRng;
@@ -850,13 +850,13 @@ mod tests {
         let small_satellite = SatelliteConfig::new(
             small_telescope.clone(),
             sensor.clone(),
-            -10.0,
+            Temperature::from_celsius(-10.0),
             Wavelength::from_nanometers(550.0),
         );
         let large_satellite = SatelliteConfig::new(
             large_telescope.clone(),
             sensor.clone(),
-            -10.0,
+            Temperature::from_celsius(-10.0),
             Wavelength::from_nanometers(550.0),
         );
 
@@ -902,7 +902,7 @@ mod tests {
         let satellite = SatelliteConfig::new(
             telescope.clone(),
             sensor.clone(),
-            -10.0,
+            Temperature::from_celsius(-10.0),
             Wavelength::from_nanometers(550.0),
         );
 

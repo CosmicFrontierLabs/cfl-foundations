@@ -19,7 +19,7 @@ use clap::{Parser, ValueEnum};
 use log::debug;
 use simulator::hardware::telescope::{models, TelescopeConfig};
 use simulator::shared_args::{DurationArg, SensorModel, SharedSimulationArgs};
-use simulator::units::{LengthExt, Wavelength};
+use simulator::units::{LengthExt, Temperature, TemperatureExt, Wavelength};
 
 /// Available telescope models for selection
 #[derive(Debug, Clone, ValueEnum)]
@@ -135,7 +135,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get read noise estimate at operating temperature with exposure time
     let read_noise = sensor
         .read_noise_estimator
-        .estimate(args.shared.temperature, args.shared.exposure.0)
+        .estimate(
+            Temperature::from_celsius(args.shared.temperature).as_celsius(),
+            args.shared.exposure.0,
+        )
         .unwrap_or(0.0);
     println!(
         "  Read noise: {:.1} e⁻ @ {}°C",
@@ -143,7 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!(
         "  Dark current: {:.3} e⁻/px/s @ {}°C",
-        sensor.dark_current_at_temperature(args.shared.temperature),
+        sensor.dark_current_at_temperature(Temperature::from_celsius(args.shared.temperature)),
         args.shared.temperature
     );
     println!(

@@ -16,7 +16,7 @@ use simulator::image_proc::render::{add_stars_to_image, quantize_image, StarInFr
 use simulator::photometry::ZodicalLight;
 use simulator::shared_args::SharedSimulationArgs;
 use simulator::star_data_to_fluxes;
-use simulator::units::{LengthExt, Wavelength};
+use simulator::units::{LengthExt, Temperature, TemperatureExt, Wavelength};
 use starfield::catalogs::StarData;
 use starfield::Equatorial;
 
@@ -124,7 +124,7 @@ fn test_algorithm(
         let sensor_noise = generate_sensor_noise(
             &satellite.sensor,
             &args.shared.exposure.0,
-            satellite.temperature_c,
+            satellite.temperature,
             None,
         );
 
@@ -244,7 +244,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut satellite = SatelliteConfig::new(
                 telescope_config.clone(),
                 sized_sensor,
-                args.shared.temperature,
+                Temperature::from_celsius(args.shared.temperature),
                 Wavelength::from_nanometers(args.shared.wavelength),
             );
             satellite = satellite.with_fwhm_sampling(args.disk_size);

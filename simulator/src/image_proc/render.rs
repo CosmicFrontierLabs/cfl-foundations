@@ -316,7 +316,7 @@ impl Renderer {
         let sensor_noise_image = generate_sensor_noise(
             &self.satellite_config.sensor,
             exposure,
-            self.satellite_config.temperature_c,
+            self.satellite_config.temperature,
             rng_seed,
         );
 
@@ -555,7 +555,7 @@ mod tests {
     use crate::image_proc::airy::PixelScaledAiryDisk;
     use crate::image_proc::noise::simple_normal_array;
     use crate::photometry::photoconversion::SpotFlux;
-    use crate::units::{Length, LengthExt};
+    use crate::units::{Length, LengthExt, Temperature, TemperatureExt};
 
     fn test_star_data() -> StarData {
         StarData {
@@ -593,7 +593,7 @@ mod tests {
             1024,
             Length::from_micrometers(5.5),
             ReadNoiseEstimator::constant(2.0),
-            DarkCurrentEstimator::from_reference_point(0.01, 20.0),
+            DarkCurrentEstimator::from_reference_point(0.01, Temperature::from_celsius(20.0)),
             bit_depth,
             dn_per_electron,
             max_well_depth_e,
