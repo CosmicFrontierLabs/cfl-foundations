@@ -581,8 +581,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         exposure_durations
     );
 
-    // Use only IMX455 and HWK4123 sensors
-    let selected_sensors = [&*sensor_models::IMX455, &*sensor_models::HWK4123];
+    // Use only HWK4123 sensor for testing
+    let selected_sensors = [&*sensor_models::HWK4123];
 
     // Get telescope from shared args
     let selected_telescope = args.shared.telescope.to_config();

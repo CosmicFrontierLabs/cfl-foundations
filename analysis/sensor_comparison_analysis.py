@@ -62,12 +62,12 @@ def load_experiment_data(csv_path, aperture_m=0.485, mask_outliers=True, pixel_e
     df['error_mas'] = df['pixel_error'] * df['plate_scale_mas_per_pixel']
     
     if mask_outliers:
-        # Mask out experiments with pixel error > cutoff AND single star detection
-        # These are likely mismatched detections
-        mask = (df['pixel_error'] > pixel_error_cutoff) & (df['star_count'] == 1)
+        # Mask out experiments with pixel error > cutoff AND 2 or fewer stars
+        # These are likely mismatched detections with insufficient stars for good matching
+        mask = (df['pixel_error'] > pixel_error_cutoff) & (df['star_count'] <= 2)
         num_masked = mask.sum()
         if num_masked > 0:
-            print(f"Masking {num_masked} rows with pixel_error > {pixel_error_cutoff} pixels and star_count = 1 (mismatched detections)")
+            print(f"Masking {num_masked} rows with pixel_error > {pixel_error_cutoff} pixels and star_count <= 2 (likely mismatched detections)")
             # Set star_count to 0 and other values to NaN for these mismatches
             df.loc[mask, 'star_count'] = 0
             df.loc[mask, ['brightest_mag', 'faintest_mag', 'pixel_error', 'error_mas']] = np.nan
@@ -1181,6 +1181,320 @@ def plot_relative_performance(df, output_path=None):
     return fig, ax
 
 
+def plot_error_variance(df, output_path=None):
+    """Plot error variance as a function of exposure time"""
+    # Get unique sensors
+    sensors = df['sensor'].unique()
+    
+    # Setup plot
+    fig, axes = plt.subplots(1, len(sensors), figsize=(7*len(sensors), 6))
+    if len(sensors) == 1:
+        axes = [axes]
+    
+    # Use consistent colormap for f-numbers
+    cmap = cm.get_cmap('viridis')
+    
+    for idx, sensor in enumerate(sensors):
+        ax = axes[idx]
+        sensor_data = df[df['sensor'] == sensor]
+        
+        # Get unique f-numbers for this sensor
+        f_numbers = sorted(sensor_data['f_number'].unique())
+        
+        for f_number in f_numbers:
+            mask = (sensor_data['f_number'] == f_number)
+            subset = sensor_data[mask].copy()
+            
+            if len(subset) == 0:
+                continue
+            
+            # Group by exposure time and calculate variance
+            grouped = subset.groupby('exposure_ms')['pixel_error'].agg(['var', 'std', 'count'])
+            grouped = grouped[grouped['count'] >= 5]  # Only show if we have enough samples
+            
+            if len(grouped) == 0:
+                continue
+            
+            # Plot variance
+            color = get_f_number_color(f_number, cmap)
+            ax.plot(grouped.index, grouped['var'], 
+                   marker='o', linewidth=2, markersize=8,
+                   label=f'f/{f_number:.0f}', color=color)
+        
+        ax.set_title(f'{sensor} - Error Variance vs Exposure Time')
+        ax.set_xlabel('Exposure Time (ms)')
+        ax.set_ylabel('Pixel Error Variance')
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+    
+    plt.suptitle('Pointing Error Variance Analysis', fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    
+    # Save or show
+    if output_path:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"Plot saved to: {output_path}")
+    else:
+        plt.show()
+    
+    return fig, axes
+
+
+def plot_error_histograms_separate(df, output_path=None):
+    """Plot error histograms as separate files for each exposure time"""
+    # Get unique sensors and exposure times
+    sensors = df['sensor'].unique()
+    exposure_times = sorted(df['exposure_ms'].unique())
+    
+    # Use consistent colormap for f-numbers
+    cmap = cm.get_cmap('viridis')
+    
+    # Generate base path for outputs
+    if output_path:
+        output_path = Path(output_path)
+        base_name = output_path.stem.replace('_histograms', '')
+        ext = output_path.suffix
+        parent_dir = output_path.parent
+    
+    saved_files = []
+    
+    for exposure_ms in exposure_times:
+        # Create figure for this exposure time
+        n_sensors = len(sensors)
+        fig, axes = plt.subplots(1, n_sensors, figsize=(7*n_sensors, 5))
+        
+        if n_sensors == 1:
+            axes = [axes]
+        
+        for sen_idx, sensor in enumerate(sensors):
+            ax = axes[sen_idx]
+            
+            # Filter data for this sensor and exposure
+            mask = (df['sensor'] == sensor) & (df['exposure_ms'] == exposure_ms)
+            subset = df[mask]
+            
+            if len(subset) == 0:
+                ax.text(0.5, 0.5, 'No Data', transform=ax.transAxes,
+                       ha='center', va='center')
+                ax.set_title(f'{sensor} - {exposure_ms}ms')
+                continue
+            
+            # Get f-numbers present in this subset
+            f_numbers = sorted(subset['f_number'].unique())
+            
+            # Plot histogram for each f-number
+            nan_counts = {}
+            outlier_counts = {}
+            
+            for f_number in f_numbers:
+                f_mask = subset['f_number'] == f_number
+                errors_all = subset[f_mask]['pixel_error']
+                
+                # Count NaN values (non-converged/no detection cases)
+                nan_count = errors_all.isna().sum()
+                total_count = len(errors_all)
+                
+                # Get only valid (non-NaN) errors
+                errors = errors_all.dropna()
+                
+                if len(errors) > 0:
+                    color = get_f_number_color(f_number, cmap)
+                    
+                    # Count outliers outside 0-1 range
+                    outliers_below = (errors < 0).sum()
+                    outliers_above = (errors > 1.0).sum()
+                    total_outliers = outliers_below + outliers_above
+                    
+                    if total_outliers > 0:
+                        outlier_counts[f_number] = (outliers_below, outliers_above)
+                    
+                    # Plot histogram with actual data but fixed x-axis range
+                    # This will show the real distribution but only display 0-1 range
+                    counts, bins, _ = ax.hist(errors, bins=30, 
+                                             range=(0, 1.0), alpha=0.6, 
+                                             label=f'f/{f_number:.0f} (n={len(errors)})',
+                                             color=color, edgecolor='black',
+                                             linewidth=0.5)
+                    
+                    # Add mean line if within range
+                    mean_err = errors.mean()
+                    if 0 <= mean_err <= 1.0:
+                        ax.axvline(mean_err, color=color, linestyle='--', 
+                                  linewidth=1.5, alpha=0.8)
+                    
+                    # Store NaN count for this f-number
+                    if nan_count > 0:
+                        nan_counts[f_number] = nan_count
+            
+            ax.set_title(f'{sensor}')
+            ax.set_xlabel('Pixel Error')
+            ax.set_ylabel('Count')
+            ax.set_xlim(0, 1.0)
+            ax.legend(loc='best', fontsize=8)
+            ax.grid(True, alpha=0.3)
+            
+            # Calculate overall statistics
+            valid_errors = subset['pixel_error'].dropna()
+            nan_total = subset['pixel_error'].isna().sum()
+            
+            # Add statistics box
+            stats_text = f'Detected: {len(valid_errors)}\nTotal: {len(subset)}'
+            if len(valid_errors) > 0:
+                stats_text += f'\n\nμ={valid_errors.mean():.3f}\nσ={valid_errors.std():.3f}'
+            
+            # Add outlier counts if any
+            if outlier_counts:
+                stats_text += '\n\nOutliers:'
+                for f_num, (below, above) in outlier_counts.items():
+                    outlier_str = f'\nf/{f_num:.0f}: '
+                    parts = []
+                    if below > 0:
+                        parts.append(f'{below} < 0')
+                    if above > 0:
+                        parts.append(f'{above} > 1')
+                    stats_text += outlier_str + ', '.join(parts)
+            
+            # Add NaN breakdown by f-number if needed
+            if nan_counts:
+                stats_text += '\n\nNo detection:'
+                for f_num, count in nan_counts.items():
+                    stats_text += f'\nf/{f_num:.0f}: {count}'
+            
+            ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
+                   fontsize=8, va='top', ha='right',
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        plt.suptitle(f'Error Distribution - {exposure_ms}ms Exposure', fontsize=14, fontweight='bold')
+        plt.tight_layout()
+        
+        # Save with exposure time in filename
+        if output_path:
+            specific_output = parent_dir / f"{base_name}_hist_{int(exposure_ms)}ms{ext}"
+            plt.savefig(specific_output, dpi=300, bbox_inches='tight')
+            saved_files.append(str(specific_output))
+            print(f"Plot saved to: {specific_output}")
+            plt.close(fig)
+        else:
+            plt.show()
+    
+    if saved_files:
+        print(f"Created {len(saved_files)} histogram plots")
+    
+    return saved_files
+
+
+def plot_error_histograms(df, output_path=None):
+    """Plot error histograms for each exposure time"""
+    # Get unique sensors and exposure times
+    sensors = df['sensor'].unique()
+    exposure_times = sorted(df['exposure_ms'].unique())
+    
+    # Create subplots grid
+    n_exposures = len(exposure_times)
+    n_sensors = len(sensors)
+    
+    fig, axes = plt.subplots(n_exposures, n_sensors, 
+                             figsize=(6*n_sensors, 4*n_exposures))
+    
+    # Handle single sensor or single exposure case
+    if n_exposures == 1:
+        axes = axes.reshape(1, -1)
+    if n_sensors == 1:
+        axes = axes.reshape(-1, 1)
+    
+    # Use consistent colormap for f-numbers
+    cmap = cm.get_cmap('viridis')
+    
+    for exp_idx, exposure_ms in enumerate(exposure_times):
+        for sen_idx, sensor in enumerate(sensors):
+            ax = axes[exp_idx, sen_idx]
+            
+            # Filter data for this sensor and exposure
+            mask = (df['sensor'] == sensor) & (df['exposure_ms'] == exposure_ms)
+            subset = df[mask]
+            
+            if len(subset) == 0:
+                ax.text(0.5, 0.5, 'No Data', transform=ax.transAxes,
+                       ha='center', va='center')
+                ax.set_title(f'{sensor} - {exposure_ms}ms')
+                continue
+            
+            # Get f-numbers present in this subset
+            f_numbers = sorted(subset['f_number'].unique())
+            
+            # Plot histogram for each f-number
+            outliers_text_lines = []
+            for f_number in f_numbers:
+                f_mask = subset['f_number'] == f_number
+                errors = subset[f_mask]['pixel_error']
+                
+                if len(errors) > 0:
+                    color = get_f_number_color(f_number, cmap)
+                    
+                    # Count outliers
+                    outliers_below = (errors < 0).sum()
+                    outliers_above = (errors > 1.0).sum()
+                    
+                    # Clamp errors to 0-1 range for histogram
+                    errors_clamped = errors.clip(0, 1.0)
+                    
+                    # Calculate histogram with fixed range
+                    counts, bins, _ = ax.hist(errors_clamped, bins=30, 
+                                             range=(0, 1.0), alpha=0.6, 
+                                             label=f'f/{f_number:.0f}',
+                                             color=color, edgecolor='black',
+                                             linewidth=0.5)
+                    
+                    # Add mean line (if within range)
+                    mean_err = errors.mean()
+                    if 0 <= mean_err <= 1.0:
+                        ax.axvline(mean_err, color=color, linestyle='--', 
+                                  linewidth=1.5, alpha=0.8)
+                    
+                    # Collect outlier info
+                    if outliers_below > 0 or outliers_above > 0:
+                        outlier_str = f'f/{f_number:.0f}: '
+                        if outliers_below > 0:
+                            outlier_str += f'{outliers_below} < 0'
+                        if outliers_above > 0:
+                            if outliers_below > 0:
+                                outlier_str += ', '
+                            outlier_str += f'{outliers_above} > 1'
+                        outliers_text_lines.append(outlier_str)
+            
+            ax.set_title(f'{sensor} - {exposure_ms}ms')
+            ax.set_xlabel('Pixel Error')
+            ax.set_ylabel('Count')
+            ax.set_xlim(0, 1.0)
+            ax.legend(loc='best', fontsize=8)
+            ax.grid(True, alpha=0.3)
+            
+            # Add statistics box
+            stats_text = f'n={len(subset)}\nμ={subset["pixel_error"].mean():.3f}\nσ={subset["pixel_error"].std():.3f}'
+            
+            # Add outlier counts if any
+            if outliers_text_lines:
+                stats_text += '\n\nOutliers:\n' + '\n'.join(outliers_text_lines)
+            
+            ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
+                   fontsize=8, va='top', ha='right',
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    
+    plt.suptitle('Error Distribution by Exposure Time', fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    
+    # Save or show
+    if output_path:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"Plot saved to: {output_path}")
+    else:
+        plt.show()
+    
+    return fig, axes
+
+
 # ============================================================================
 # Main Function
 # ============================================================================
@@ -1188,8 +1502,8 @@ def plot_relative_performance(df, output_path=None):
 def main():
     parser = argparse.ArgumentParser(description='Unified sensor comparison analysis')
     parser.add_argument('csv_file', type=str, help='Path to experiment CSV file')
-    parser.add_argument('--mode', type=str, choices=['mean', 'win', 'quotient', 'stars', 'brightest', 'faintest', 'closure', 'accuracy', 'all'], default='mean',
-                       help='Analysis mode: mean pointing error, win percentage, quotient, star count, brightest/faintest magnitude, field closure, high accuracy, or all')
+    parser.add_argument('--mode', type=str, choices=['mean', 'win', 'quotient', 'stars', 'brightest', 'faintest', 'closure', 'accuracy', 'variance', 'histograms', 'all'], default='mean',
+                       help='Analysis mode: mean pointing error, win percentage, quotient, star count, brightest/faintest magnitude, field closure, high accuracy, error variance, error histograms, or all')
     parser.add_argument('--aperture', type=float, default=0.485,
                        help='Telescope aperture in meters (default: 0.485m)')
     parser.add_argument('--output', type=str, help='Output plot filename (PNG/PDF/etc)')
@@ -1208,27 +1522,56 @@ def main():
     # Load data once with preprocessing
     df = load_experiment_data(args.csv_file, args.aperture, pixel_error_cutoff=args.pixel_error_cutoff)
     
-    # Generate output filenames if multiple mode is selected
-    if args.mode == 'all' and args.output:
-        base_name = Path(args.output).stem
-        ext = Path(args.output).suffix
-        mean_output = f"{base_name}_mean{ext}"
-        win_output = f"{base_name}_win{ext}"
-        quotient_output = f"{base_name}_quotient{ext}"
-        stars_output = f"{base_name}_stars{ext}"
-        brightest_output = f"{base_name}_brightest{ext}"
-        faintest_output = f"{base_name}_faintest{ext}"
-        closure_output = f"{base_name}_closure{ext}"
-        accuracy_output = f"{base_name}_accuracy{ext}"
+    # Set default output directory if no output specified
+    if not args.output:
+        # Create plots directory if it doesn't exist
+        plots_dir = Path("plots")
+        plots_dir.mkdir(exist_ok=True)
+        
+        # Use CSV filename as base for output names
+        csv_base = Path(args.csv_file).stem
+        default_output = plots_dir / f"{csv_base}.png"
+        args.output = str(default_output)
+    
+    # Generate output filenames
+    output_path = Path(args.output)
+    base_name = output_path.stem
+    ext = output_path.suffix
+    parent_dir = output_path.parent
+    
+    if args.mode == 'all':
+        # For 'all' mode, append suffix to each plot type
+        mean_output = str(parent_dir / f"{base_name}_mean{ext}")
+        win_output = str(parent_dir / f"{base_name}_win{ext}")
+        quotient_output = str(parent_dir / f"{base_name}_quotient{ext}")
+        stars_output = str(parent_dir / f"{base_name}_stars{ext}")
+        brightest_output = str(parent_dir / f"{base_name}_brightest{ext}")
+        faintest_output = str(parent_dir / f"{base_name}_faintest{ext}")
+        closure_output = str(parent_dir / f"{base_name}_closure{ext}")
+        accuracy_output = str(parent_dir / f"{base_name}_accuracy{ext}")
+        variance_output = str(parent_dir / f"{base_name}_variance{ext}")
+        histograms_output = str(parent_dir / f"{base_name}_histograms{ext}")
     else:
-        mean_output = args.output
-        win_output = args.output
-        quotient_output = args.output
-        stars_output = args.output
-        brightest_output = args.output
-        faintest_output = args.output
-        closure_output = args.output
-        accuracy_output = args.output
+        # For individual modes, append mode name if not already present
+        if args.mode == 'variance' and '_variance' not in base_name:
+            variance_output = str(parent_dir / f"{base_name}_variance{ext}")
+        else:
+            variance_output = args.output
+            
+        if args.mode == 'histograms' and '_histograms' not in base_name:
+            histograms_output = str(parent_dir / f"{base_name}_histograms{ext}")
+        else:
+            histograms_output = args.output
+            
+        # Keep other outputs same as args.output for single mode
+        mean_output = args.output if args.mode != 'mean' or '_mean' in base_name else str(parent_dir / f"{base_name}_mean{ext}")
+        win_output = args.output if args.mode != 'win' or '_win' in base_name else str(parent_dir / f"{base_name}_win{ext}")
+        quotient_output = args.output if args.mode != 'quotient' or '_quotient' in base_name else str(parent_dir / f"{base_name}_quotient{ext}")
+        stars_output = args.output if args.mode != 'stars' or '_stars' in base_name else str(parent_dir / f"{base_name}_stars{ext}")
+        brightest_output = args.output if args.mode != 'brightest' or '_brightest' in base_name else str(parent_dir / f"{base_name}_brightest{ext}")
+        faintest_output = args.output if args.mode != 'faintest' or '_faintest' in base_name else str(parent_dir / f"{base_name}_faintest{ext}")
+        closure_output = args.output if args.mode != 'closure' or '_closure' in base_name else str(parent_dir / f"{base_name}_closure{ext}")
+        accuracy_output = args.output if args.mode != 'accuracy' or '_accuracy' in base_name else str(parent_dir / f"{base_name}_accuracy{ext}")
     
     # Create requested plots
     if args.mode in ['mean', 'all']:
@@ -1254,6 +1597,12 @@ def main():
     
     if args.mode in ['accuracy', 'all']:
         plot_high_accuracy_percentage(df, accuracy_output)
+    
+    if args.mode in ['variance', 'all']:
+        plot_error_variance(df, variance_output)
+    
+    if args.mode in ['histograms', 'all']:
+        plot_error_histograms_separate(df, histograms_output)
     
     # Always print star count extremes at the end
     print_star_count_extremes(df, n=5)
