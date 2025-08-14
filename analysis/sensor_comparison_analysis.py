@@ -1002,6 +1002,173 @@ def calculate_relative_performance(df, f_number):
 # Star Count Analysis Functions
 # ============================================================================
 
+def plot_ra_dec_coverage(df, output_path=None, show=False, failed_exposure_ms=None):
+    """Create sky coverage plots with Mollweide and rectangular projections
+    
+    Args:
+        df: DataFrame with experiment data
+        output_path: Path to save the plot
+        show: Whether to display the plot
+        failed_exposure_ms: If specified, mark failed detections at this exposure time with red X
+    """
+    # Get unique experiments (each experiment tests all sensors at same position)
+    unique_experiments = df.drop_duplicates(subset=['experiment_num'])[['ra', 'dec', 'star_count']]
+    
+    # If exposure time specified, find failed detections
+    failed_detections = None
+    if failed_exposure_ms is not None:
+        # Get experiments at specific exposure time with no stars detected
+        exposure_mask = (df['exposure_ms'] == failed_exposure_ms) & (df['star_count'] == 0)
+        failed_detections = df[exposure_mask][['ra', 'dec']].drop_duplicates()
+    
+    # Convert RA/Dec to radians for Mollweide projection
+    ra_rad = np.radians(unique_experiments['ra'].values - 180)  # Center at 180 degrees
+    dec_rad = np.radians(unique_experiments['dec'].values)
+    
+    # Create figure with two subplots
+    fig = plt.figure(figsize=(20, 10))
+    
+    # Left plot: Mollweide projection
+    ax1 = plt.subplot(121, projection='mollweide')
+    
+    # Create 2D histogram for density in Mollweide
+    # Note: Mollweide expects longitude from -pi to pi, latitude from -pi/2 to pi/2
+    ra_bins = np.linspace(-np.pi, np.pi, 100)
+    dec_bins = np.linspace(-np.pi/2, np.pi/2, 50)
+    
+    # Calculate mean star count per bin
+    H, ra_edges, dec_edges = np.histogram2d(ra_rad, dec_rad, bins=[ra_bins, dec_bins])
+    
+    # For star counts, also bin the detected counts
+    star_counts = np.zeros_like(H)
+    for i in range(len(ra_bins)-1):
+        for j in range(len(dec_bins)-1):
+            mask = ((ra_rad >= ra_edges[i]) & (ra_rad < ra_edges[i+1]) &
+                    (dec_rad >= dec_edges[j]) & (dec_rad < dec_edges[j+1]))
+            if np.any(mask):
+                star_counts[i, j] = unique_experiments.loc[unique_experiments.index[mask], 'star_count'].mean()
+    
+    # Plot density map on Mollweide
+    ra_centers = (ra_edges[:-1] + ra_edges[1:]) / 2
+    dec_centers = (dec_edges[:-1] + dec_edges[1:]) / 2
+    RA, DEC = np.meshgrid(ra_centers, dec_centers)
+    
+    # Plot the density
+    im1 = ax1.pcolormesh(RA, DEC, star_counts.T, cmap='viridis', vmin=0, vmax=50)
+    
+    # Overlay scatter points
+    ax1.scatter(ra_rad, dec_rad, c='white', s=1, alpha=0.3, marker='.')
+    
+    # Add failed detection markers if specified
+    if failed_detections is not None and len(failed_detections) > 0:
+        failed_ra_rad = np.radians(failed_detections['ra'].values - 180)
+        failed_dec_rad = np.radians(failed_detections['dec'].values)
+        ax1.scatter(failed_ra_rad, failed_dec_rad, c='red', s=15, marker='x', 
+                   linewidth=1, alpha=0.8, label=f'Failed @ {failed_exposure_ms}ms')
+    
+    # Add grid and labels for Mollweide
+    ax1.grid(True, alpha=0.3, color='white', linewidth=0.5)
+    ax1.set_title('Sky Coverage - Mollweide Projection', fontsize=14, pad=20)
+    
+    # Add RA labels
+    ax1.set_xticks(np.radians([-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150]))
+    ax1.set_xticklabels([f'{int((x+180)%360)}°' for x in [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150]])
+    
+    # Add Dec labels
+    ax1.set_yticks(np.radians([-75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75]))
+    ax1.set_yticklabels([f'{x}°' for x in [-75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75]])
+    
+    ax1.set_xlabel('Right Ascension', fontsize=12)
+    ax1.set_ylabel('Declination', fontsize=12)
+    
+    # Right plot: Rectangular projection
+    ax2 = plt.subplot(122)
+    
+    # Create 2D histogram for rectangular projection
+    ra_bins_rect = np.linspace(0, 360, 120)
+    dec_bins_rect = np.linspace(-90, 90, 60)
+    
+    H_rect, ra_edges_rect, dec_edges_rect = np.histogram2d(
+        unique_experiments['ra'].values, 
+        unique_experiments['dec'].values, 
+        bins=[ra_bins_rect, dec_bins_rect]
+    )
+    
+    # Calculate mean star counts for rectangular projection
+    star_counts_rect = np.zeros_like(H_rect)
+    for i in range(len(ra_bins_rect)-1):
+        for j in range(len(dec_bins_rect)-1):
+            mask = ((unique_experiments['ra'].values >= ra_edges_rect[i]) & 
+                   (unique_experiments['ra'].values < ra_edges_rect[i+1]) &
+                   (unique_experiments['dec'].values >= dec_edges_rect[j]) & 
+                   (unique_experiments['dec'].values < dec_edges_rect[j+1]))
+            if np.any(mask):
+                star_counts_rect[i, j] = unique_experiments.loc[unique_experiments.index[mask], 'star_count'].mean()
+    
+    # Plot density map
+    im2 = ax2.pcolormesh(ra_edges_rect, dec_edges_rect, star_counts_rect.T, cmap='viridis', vmin=0, vmax=50)
+    
+    # Overlay scatter points
+    ax2.scatter(unique_experiments['ra'], unique_experiments['dec'], 
+               c='white', s=1, alpha=0.3, marker='.')
+    
+    # Add failed detection markers if specified
+    if failed_detections is not None and len(failed_detections) > 0:
+        ax2.scatter(failed_detections['ra'], failed_detections['dec'], 
+                   c='red', s=15, marker='x', linewidth=1, alpha=0.8,
+                   label=f'Failed @ {failed_exposure_ms}ms')
+        ax2.legend(loc='upper right', fontsize=10)
+    
+    ax2.set_xlabel('Right Ascension (degrees)', fontsize=12)
+    ax2.set_ylabel('Declination (degrees)', fontsize=12)
+    ax2.set_title('Sky Coverage - Rectangular Projection', fontsize=14, pad=20)
+    ax2.grid(True, alpha=0.3, linestyle='--')
+    ax2.set_xlim(0, 360)
+    ax2.set_ylim(-90, 90)
+    
+    # Add colorbars
+    cbar1 = plt.colorbar(im1, ax=ax1, orientation='horizontal', pad=0.05, shrink=0.8)
+    cbar1.set_label('Mean Star Count', fontsize=10)
+    
+    cbar2 = plt.colorbar(im2, ax=ax2, orientation='vertical', pad=0.02)
+    cbar2.set_label('Number of Pointings', fontsize=10, rotation=270, labelpad=20)
+    
+    # Add overall title and statistics
+    n_experiments = len(unique_experiments)
+    n_observations = len(df)
+    mean_stars = unique_experiments['star_count'].mean()
+    max_stars = unique_experiments['star_count'].max()
+    no_star_pointings = (unique_experiments['star_count'] == 0).sum()
+    
+    fig.suptitle(f'Sky Coverage Map - {n_experiments} Unique Pointings', fontsize=16, y=0.98)
+    
+    # Add statistics box at bottom
+    stats_text = (f'Total unique pointings: {n_experiments}\n'
+                 f'Total observations: {n_observations}\n'
+                 f'Mean stars per pointing: {mean_stars:.1f}\n'
+                 f'Max stars: {max_stars}\n'
+                 f'Pointings with no stars: {no_star_pointings}')
+    
+    if failed_detections is not None and len(failed_detections) > 0:
+        stats_text += f'\nFailed detections @ {failed_exposure_ms}ms: {len(failed_detections)}'
+    
+    fig.text(0.5, 0.02, stats_text, ha='center', fontsize=10,
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    plt.tight_layout(rect=[0, 0.08, 1, 0.96])
+    
+    if output_path:
+        plt.savefig(output_path, dpi=600, bbox_inches='tight')
+        print(f"Saved RA/Dec coverage plot to {output_path}")
+    
+    if show:
+        plt.show()
+    else:
+        plt.close()
+    
+    return fig
+
+
 def print_star_count_extremes(df, n=5):
     """Print the top and bottom N ra/dec locations by star count"""
     # Group by ra/dec and calculate mean star count across all experiments
@@ -1502,8 +1669,8 @@ def plot_error_histograms(df, output_path=None):
 def main():
     parser = argparse.ArgumentParser(description='Unified sensor comparison analysis')
     parser.add_argument('csv_file', type=str, help='Path to experiment CSV file')
-    parser.add_argument('--mode', type=str, choices=['mean', 'win', 'quotient', 'stars', 'brightest', 'faintest', 'closure', 'accuracy', 'variance', 'histograms', 'all'], default='mean',
-                       help='Analysis mode: mean pointing error, win percentage, quotient, star count, brightest/faintest magnitude, field closure, high accuracy, error variance, error histograms, or all')
+    parser.add_argument('--mode', type=str, choices=['mean', 'win', 'quotient', 'stars', 'brightest', 'faintest', 'closure', 'accuracy', 'variance', 'histograms', 'coverage', 'all'], default='mean',
+                       help='Analysis mode: mean pointing error, win percentage, quotient, star count, brightest/faintest magnitude, field closure, high accuracy, error variance, error histograms, sky coverage, or all')
     parser.add_argument('--aperture', type=float, default=0.485,
                        help='Telescope aperture in meters (default: 0.485m)')
     parser.add_argument('--output', type=str, help='Output plot filename (PNG/PDF/etc)')
@@ -1511,6 +1678,8 @@ def main():
                        help='Show error bars on mean pointing error and star count plots (default: off)')
     parser.add_argument('--pixel-error-cutoff', type=float, default=2.0,
                        help='Pixel error threshold for filtering mismatched detections (default: 2.0)')
+    parser.add_argument('--failed-exposure-ms', type=float, default=250,
+                       help='Exposure time in ms to highlight failed star detections in coverage plot (default: 250ms)')
     
     args = parser.parse_args()
     
@@ -1551,6 +1720,7 @@ def main():
         accuracy_output = str(parent_dir / f"{base_name}_accuracy{ext}")
         variance_output = str(parent_dir / f"{base_name}_variance{ext}")
         histograms_output = str(parent_dir / f"{base_name}_histograms{ext}")
+        coverage_output = str(parent_dir / f"{base_name}_coverage{ext}")
     else:
         # For individual modes, append mode name if not already present
         if args.mode == 'variance' and '_variance' not in base_name:
@@ -1562,6 +1732,11 @@ def main():
             histograms_output = str(parent_dir / f"{base_name}_histograms{ext}")
         else:
             histograms_output = args.output
+            
+        if args.mode == 'coverage' and '_coverage' not in base_name:
+            coverage_output = str(parent_dir / f"{base_name}_coverage{ext}")
+        else:
+            coverage_output = args.output
             
         # Keep other outputs same as args.output for single mode
         mean_output = args.output if args.mode != 'mean' or '_mean' in base_name else str(parent_dir / f"{base_name}_mean{ext}")
@@ -1603,6 +1778,9 @@ def main():
     
     if args.mode in ['histograms', 'all']:
         plot_error_histograms_separate(df, histograms_output)
+    
+    if args.mode in ['coverage', 'all']:
+        plot_ra_dec_coverage(df, coverage_output, failed_exposure_ms=args.failed_exposure_ms)
     
     # Always print star count extremes at the end
     print_star_count_extremes(df, n=5)
