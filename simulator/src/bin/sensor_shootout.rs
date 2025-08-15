@@ -61,6 +61,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use viz::histogram::{Histogram, HistogramConfig, Scale};
 
+/// Default filename for experiment results CSV
+/// Will be appended with timestamp in format: experiment_log_YYYYMMDD_HHMMSS.csv
+const DEFAULT_CSV_FILENAME: &str = "experiment_log_YYYYMMDD_HHMMSS.csv";
+
 /// Thread-safe CSV writer
 #[derive(Debug)]
 struct CsvWriter {
@@ -223,7 +227,7 @@ struct Args {
     output_dir: String,
 
     /// Output CSV file for experiment log
-    #[arg(long, default_value = "experiment_log.csv")]
+    #[arg(long, default_value = DEFAULT_CSV_FILENAME)]
     output_csv: String,
 
     /// Save image outputs (PNG, FITS files). Disabling this speeds up experiments significantly
@@ -245,11 +249,11 @@ struct Args {
     exposure_range_ms: RangeArg,
 
     /// Maximum iterations for ICP star matching algorithm
-    #[arg(long, default_value_t = 20)]
+    #[arg(long, default_value_t = 40)]
     icp_max_iterations: usize,
 
     /// Convergence threshold for ICP star matching algorithm
-    #[arg(long, default_value_t = 0.05)]
+    #[arg(long, default_value_t = 0.00001)]
     icp_convergence_threshold: f64,
 
     /// Star detection algorithm to use (dao, iraf, naive)
@@ -479,6 +483,7 @@ fn run_experiment<T: StarCatalog>(
 
                         debug!("ICP match results:");
                         debug!("\tMatched stars: {}", matches.len());
+                        debug!("\tConverged in {} iterations", icp_result.iterations);
                         debug!("\tTranslation: {:?}", icp_result.translation);
                         debug!("\tRotation: {:?}", icp_result.rotation);
                         debug!("\tScale: {:?}", icp_result.rotation_quat);
@@ -678,7 +683,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output_dir_with_timestamp = format!("{}_{}", args.output_dir, timestamp);
 
     // Add timestamp to CSV filename only if default is being used (no override specified)
-    let output_csv_path = if args.output_csv == "experiment_log.csv" {
+    let output_csv_path = if args.output_csv == DEFAULT_CSV_FILENAME {
         format!("experiment_log_{timestamp}.csv")
     } else {
         args.output_csv.clone()
