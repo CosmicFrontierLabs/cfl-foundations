@@ -603,6 +603,52 @@ mod tests {
     }
 
     #[test]
+    fn test_add_stars_centering_is_very_correct() {
+        let psf =
+            PixelScaledAiryDisk::with_fwhm(2.5, crate::units::Wavelength::from_nanometers(550.0));
+        let source_flux = SourceFlux {
+            photons: SpotFlux {
+                disk: psf.clone(),
+                flux: 10000.0,
+            },
+            electrons: SpotFlux {
+                disk: psf.clone(),
+                flux: 10000.0,
+            },
+        };
+
+        let mut seeded_rng = StdRng::seed_from_u64(42);
+
+        for _ in 0..100 {
+            let x_loc = seeded_rng.gen_range(5.0..45.0);
+            let y_loc = seeded_rng.gen_range(5.0..45.0);
+
+            let stars = vec![StarInFrame {
+                x: x_loc,
+                y: y_loc,
+                spot: source_flux.clone(),
+                star: test_star_data(),
+            }];
+
+            let image = add_stars_to_image(50, 50, &stars, &Duration::from_secs(1), 1.0);
+            // Compute the weighted center of mass
+            let mut total_flux = 0.0;
+            let mut x_cm = 0.0;
+            let mut y_cm = 0.0;
+            for ((y, x), &value) in image.indexed_iter() {
+                total_flux += value;
+                x_cm += x as f64 * value;
+                y_cm += y as f64 * value;
+            }
+            x_cm /= total_flux;
+            y_cm /= total_flux;
+
+            assert_relative_eq!(x_cm, x_loc, epsilon = 1e-4);
+            assert_relative_eq!(y_cm, y_loc, epsilon = 1e-4);
+        }
+    }
+
+    #[test]
     fn test_add_star_total_flux() {
         for sigma_pix in [2.0, 4.0, 8.0] {
             let total_flux = 1000.0;
@@ -611,7 +657,7 @@ mod tests {
             let image = add_stars_to_image(50, 50, &stars, &Duration::from_secs(1), 1.0);
             let added_flux = image.sum();
             println!("Sigma: {sigma_pix}, Added Flux: {added_flux}");
-            // assert_relative_eq!(added_flux, total_flux, epsilon = 1.0);
+            assert_relative_eq!(added_flux, total_flux, epsilon = 1e-6 * total_flux);
         }
     }
 
