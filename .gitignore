@@ -26,3 +26,6 @@ cats/
 .vscode/
 experiment_output*/
 plots/
+
+# Manim animation output
+docs/presentation_scripts/media/
