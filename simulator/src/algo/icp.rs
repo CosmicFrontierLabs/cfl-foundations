@@ -1244,3 +1244,7 @@ mod tests {
         assert!(matches!(result, Err(ICPError::ArgumentError(_))));
     }
 }
+
+#[cfg(test)]
+#[path = "icp_bias_test.rs"]
+mod icp_bias_test;

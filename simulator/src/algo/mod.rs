@@ -12,6 +12,7 @@ pub mod parallel;
 pub mod psd;
 pub mod quaternion;
 pub mod spline;
+pub mod stats;
 
 pub use bilinear::{BilinearInterpolator, InterpolationError};
 pub use icp::{iterative_closest_point, ICPResult};
