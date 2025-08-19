@@ -151,25 +151,6 @@ pub struct Renderer {
     pub rendered_stars: Vec<StarInFrame>,
 }
 
-/// Output from a rendering operation with cleanly separated components
-#[derive(Clone)]
-pub struct RenderedImage {
-    /// Star contribution scaled for exposure duration (in electrons)
-    pub star_image: Array2<f64>,
-
-    /// Zodiacal light background for exposure duration (in electrons)  
-    pub zodiacal_image: Array2<f64>,
-
-    /// Sensor noise for exposure duration (in electrons)
-    pub sensor_noise_image: Array2<f64>,
-
-    /// Final quantized image (u16)
-    pub quantized_image: Array2<u16>,
-
-    /// Stars that were rendered in the image (not clipped)
-    pub rendered_stars: Vec<StarInFrame>,
-}
-
 impl Renderer {
     /// Create a new renderer from a star catalog and satellite configuration
     ///
@@ -251,12 +232,12 @@ impl Renderer {
     /// * `zodiacal_coords` - Solar position for background light calculation
     ///
     /// # Returns
-    /// Complete `RenderedImage` with separate star, background, and noise components
+    /// Complete `RenderingResult` with separate star, background, and noise components
     pub fn render(
         &self,
         exposure: &Duration,
         zodiacal_coords: &SolarAngularCoordinates,
-    ) -> RenderedImage {
+    ) -> RenderingResult {
         self.render_with_options(exposure, zodiacal_coords, true, None)
     }
 
@@ -266,7 +247,7 @@ impl Renderer {
         exposure: &Duration,
         zodiacal_coords: &SolarAngularCoordinates,
         seed: Option<u64>,
-    ) -> RenderedImage {
+    ) -> RenderingResult {
         self.render_with_options(exposure, zodiacal_coords, true, seed)
     }
 
@@ -300,7 +281,7 @@ impl Renderer {
         zodiacal_coords: &SolarAngularCoordinates,
         apply_poisson: bool,
         rng_seed: Option<u64>,
-    ) -> RenderedImage {
+    ) -> RenderingResult {
         let exposure_factor = exposure.as_secs_f64();
 
         // Scale star image by exposure duration
@@ -338,20 +319,14 @@ impl Renderer {
         let total_electrons = &star_image + &zodiacal_image + &sensor_noise_image;
         let quantized_image = quantize_image(&total_electrons, &self.satellite_config.sensor);
 
-        RenderedImage {
+        RenderingResult {
+            quantized_image,
             star_image,
             zodiacal_image,
             sensor_noise_image,
-            quantized_image,
             rendered_stars: self.rendered_stars.clone(),
+            sensor_config: self.satellite_config.sensor.clone(),
         }
-    }
-}
-
-impl RenderedImage {
-    /// Compute the total electron image from all components
-    pub fn mean_electron_image(&self) -> Array2<f64> {
-        &self.star_image + &self.zodiacal_image + &self.sensor_noise_image
     }
 }
 
