@@ -566,21 +566,59 @@ impl RangeArg {
         self.2
     }
 
-    /// Parse RangeArg of milliseconds into Vec<Duration>
-    ///
-    /// Converts a range specified in milliseconds to a vector of Duration objects.
-    /// Useful for exposure time sweeps and other time-based parameter scans.
+    /// Generate a vector of all values in the range.
     ///
     /// # Returns
-    /// Vector of Duration objects from start to stop (inclusive) by step
-    pub fn to_duration_vec_ms(&self) -> Vec<Duration> {
-        let mut durations = Vec::new();
-        let mut current_ms = self.0;
-        while current_ms <= self.1 {
-            durations.push(Duration::from_millis(current_ms as u64));
-            current_ms += self.2;
+    /// `Ok(Vec<f64>)` containing all values from start to stop (inclusive) by step
+    /// `Err(String)` if the range parameters are invalid
+    ///
+    /// # Errors
+    /// - Returns error if step is zero or negative when stop > start
+    /// - Returns error if step is positive when stop < start
+    ///
+    /// # Example
+    /// ```
+    /// use simulator::shared_args::RangeArg;
+    /// let range = RangeArg(0.0, 10.0, 2.0);
+    /// assert_eq!(range.to_vec().unwrap(), vec![0.0, 2.0, 4.0, 6.0, 8.0, 10.0]);
+    /// ```
+    pub fn to_vec(&self) -> Result<Vec<f64>, String> {
+        let (start, stop, step) = (self.0, self.1, self.2);
+
+        // Validate range parameters
+        if step == 0.0 {
+            return Err("Step size cannot be zero".to_string());
         }
-        durations
+
+        if stop > start && step <= 0.0 {
+            return Err(format!(
+                "Invalid range: stop ({stop}) > start ({start}) but step ({step}) is not positive"
+            ));
+        }
+
+        if stop < start && step >= 0.0 {
+            return Err(format!(
+                "Invalid range: stop ({stop}) < start ({start}) but step ({step}) is not negative"
+            ));
+        }
+
+        let mut values = Vec::new();
+        let mut current = start;
+
+        // Generate values based on step direction
+        if step > 0.0 {
+            while current <= stop {
+                values.push(current);
+                current += step;
+            }
+        } else {
+            while current >= stop {
+                values.push(current);
+                current += step;
+            }
+        }
+
+        Ok(values)
     }
 
     /// Convert to raw tuple for compatibility with legacy APIs.
@@ -922,6 +960,105 @@ mod tests {
         assert_eq!(range.step(), 0.5);
         assert_eq!(range.as_tuple(), (1.5, 10.0, 0.5));
         assert_eq!(range.to_string(), "1.5:10:0.5");
+    }
+
+    #[test]
+    fn test_range_arg_to_vec_ascending() {
+        let range = RangeArg(0.0, 2.0, 0.5);
+        let values = range.to_vec().unwrap();
+        assert_eq!(values, vec![0.0, 0.5, 1.0, 1.5, 2.0]);
+    }
+
+    #[test]
+    fn test_range_arg_to_vec_descending() {
+        let range = RangeArg(10.0, 8.0, -0.5);
+        let values = range.to_vec().unwrap();
+        assert_eq!(values, vec![10.0, 9.5, 9.0, 8.5, 8.0]);
+    }
+
+    #[test]
+    fn test_range_arg_to_vec_inexact_end() {
+        // Test range that doesn't hit stop exactly
+        let range = RangeArg(0.0, 2.1, 0.5);
+        let values = range.to_vec().unwrap();
+        assert_eq!(values, vec![0.0, 0.5, 1.0, 1.5, 2.0]);
+    }
+
+    #[test]
+    fn test_range_arg_to_vec_single_value() {
+        // Test single value range (start == stop)
+        let range = RangeArg(5.0, 5.0, 1.0);
+        let values = range.to_vec().unwrap();
+        assert_eq!(values, vec![5.0]);
+    }
+
+    #[test]
+    fn test_range_arg_to_vec_negative_values() {
+        let range = RangeArg(-2.0, 0.0, 0.5);
+        let values = range.to_vec().unwrap();
+        assert_eq!(values, vec![-2.0, -1.5, -1.0, -0.5, 0.0]);
+    }
+
+    #[test]
+    fn test_range_arg_to_vec_error_zero_step() {
+        let range = RangeArg(0.0, 10.0, 0.0);
+        let result = range.to_vec();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Step size cannot be zero"));
+    }
+
+    #[test]
+    fn test_range_arg_to_vec_error_positive_step_descending() {
+        // Test positive step with stop < start
+        let range = RangeArg(10.0, 5.0, 1.0);
+        let result = range.to_vec();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("stop (5) < start (10) but step (1) is not negative"));
+    }
+
+    #[test]
+    fn test_range_arg_to_vec_error_negative_step_ascending() {
+        // Test negative step with stop > start
+        let range = RangeArg(5.0, 10.0, -1.0);
+        let result = range.to_vec();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("stop (10) > start (5) but step (-1) is not positive"));
+    }
+
+    #[test]
+    fn test_range_arg_to_vec_error_small_negative_step_ascending() {
+        // Test edge case: very small negative step with stop > start
+        let range = RangeArg(0.0, 1.0, -0.001);
+        let result = range.to_vec();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("stop (1) > start (0) but step (-0.001) is not positive"));
+    }
+
+    #[test]
+    fn test_range_arg_to_vec_fractional_values() {
+        // Test with fractional values
+        let range = RangeArg(0.1, 0.5, 0.1);
+        let values = range.to_vec().unwrap();
+        assert_eq!(values.len(), 5);
+        assert!((values[0] - 0.1).abs() < 1e-10);
+        assert!((values[1] - 0.2).abs() < 1e-10);
+        assert!((values[2] - 0.3).abs() < 1e-10);
+        assert!((values[3] - 0.4).abs() < 1e-10);
+        assert!((values[4] - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_range_arg_to_vec_large_step() {
+        // Test with large step size
+        let range = RangeArg(0.0, 100.0, 25.0);
+        let values = range.to_vec().unwrap();
+        assert_eq!(values, vec![0.0, 25.0, 50.0, 75.0, 100.0]);
     }
 
     #[test]

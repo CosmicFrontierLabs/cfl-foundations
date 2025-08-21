@@ -626,7 +626,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wallclock_start = Instant::now();
 
     // Parse exposure durations from range in milliseconds
-    let exposure_durations_vec = args.exposure_range_ms.to_duration_vec_ms();
+    let exposure_durations_vec: Vec<Duration> = args
+        .exposure_range_ms
+        .to_vec()
+        .expect("Invalid exposure range")
+        .iter()
+        .map(|&ms| Duration::from_millis(ms as u64))
+        .collect();
     let exposure_durations: Vec<f64> = exposure_durations_vec
         .iter()
         .map(|d| d.as_secs_f64())
@@ -651,14 +657,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Parse f-number range
     let f_numbers: Vec<f64> = if let Some(f_range) = args.f_number_range {
-        let (start, stop, step) = f_range.as_tuple();
-        let mut values = Vec::new();
-        let mut current = start;
-        while current <= stop {
-            values.push(current);
-            current += step;
-        }
-        values
+        f_range.to_vec().expect("Invalid f-number range")
     } else {
         // Default to current telescope f-number
         vec![selected_telescope.f_number()]

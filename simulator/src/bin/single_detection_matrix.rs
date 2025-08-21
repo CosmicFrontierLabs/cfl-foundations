@@ -95,15 +95,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     // PSF disk sizes to test (in Airy disk FWHM units) - from CLI args
-    let (disk_start, disk_stop, disk_step) = args.disks.as_tuple();
-    let disks = Array1::range(disk_start, disk_stop, disk_step);
+    let disks = Array1::from_vec(args.disks.to_vec().expect("Invalid disk range"));
 
     // Star magnitudes to test - from CLI args
-    let (mag_start, mag_stop, mag_step) = args.mags.as_tuple();
-    let mags = Array1::range(mag_start, mag_stop, mag_step);
+    let mags = Array1::from_vec(args.mags.to_vec().expect("Invalid magnitude range"));
 
     // Exposure durations to test from CLI range (in milliseconds)
-    let exposures = args.exposures.to_duration_vec_ms();
+    let exposures: Vec<std::time::Duration> = args
+        .exposures
+        .to_vec()
+        .expect("Invalid exposure range")
+        .iter()
+        .map(|&ms| std::time::Duration::from_millis(ms as u64))
+        .collect();
 
     println!("Setting up experiments...");
 
