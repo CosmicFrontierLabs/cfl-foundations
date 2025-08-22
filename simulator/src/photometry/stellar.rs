@@ -66,8 +66,6 @@
 
 use std::time::Duration;
 
-use once_cell::sync::Lazy;
-
 use super::gaia::GAIA_PASSBAND;
 use super::spectrum::{Band, Spectrum, CGS};
 use crate::units::{LengthExt, Wavelength};
@@ -251,10 +249,10 @@ pub fn temperature_from_bv(b_v: f64) -> f64 {
     4600.0 * (1.0 / (0.92 * b_v + 1.7) + (1.0 / (0.92 * b_v + 0.62)))
 }
 
-fn compute_gaia_scaler() -> f64 {
+fn compute_gaia_scaler(b_v: f64) -> f64 {
     let flat_spectrum = FlatStellarSpectrum::from_gaia_magnitude(0.0);
 
-    let bv_0_temp = temperature_from_bv(0.0);
+    let bv_0_temp = temperature_from_bv(b_v);
     let bb_spect = BlackbodyStellarSpectrum::new(bv_0_temp, 1.0);
 
     // Gather the same passband, duration, and aperture
@@ -269,8 +267,6 @@ fn compute_gaia_scaler() -> f64 {
     // Compute the scaling factor
     gaia_gated_flat_flux / bb_gated_flux
 }
-
-static GAIA_SCALER: Lazy<f64> = Lazy::new(compute_gaia_scaler);
 
 impl BlackbodyStellarSpectrum {
     /// Create a new BlackbodyStellarSpectrum with a given temperature and scaling factor
@@ -306,11 +302,11 @@ impl BlackbodyStellarSpectrum {
     ///
     /// # Returns
     ///
-    /// A new BlackbodyStellarSpectrum with appropriate temperature and magnitude
+    /// A new BlackbodyStellarSpectrum with appropriate temperature and magnitudetemperature
     pub fn from_gaia_bv_magnitude(b_v: f64, gaia_mag: f64) -> Self {
         // First calculate temperature from B-V color index
         let temperature = temperature_from_bv(b_v);
-        let scalar = *GAIA_SCALER * 10f64.powf(-0.4 * gaia_mag);
+        let scalar = compute_gaia_scaler(b_v) * 10f64.powf(-0.4 * gaia_mag);
 
         // Create a new BlackbodyStellarSpectrum with the calculated temperature
         Self::new(temperature, scalar)
@@ -681,6 +677,42 @@ mod tests {
         println!("Flat spectrum photons: {flat_photons}");
         println!("Blackbody spectrum photons: {blackbody_photons}");
         println!("Ratio (flat/blackbody): {ratio}");
+    }
+
+    #[test]
+    fn test_photons_from_blackbody_bv_range() {
+        let mut failed: bool = false;
+
+        for bv in vec![-0.4, -0.2, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6] {
+            // Compare photon counts between flat and blackbody spectra
+            let flat = FlatStellarSpectrum::from_gaia_magnitude(12.0);
+            let blackbody = BlackbodyStellarSpectrum::from_gaia_bv_magnitude(bv, 12.0);
+
+            let band = Band::from_nm_bounds(400.0, 700.0);
+            let aperture_cm2 = 1.0;
+            let duration = Duration::from_secs(1);
+
+            let flat_photons = flat.photons(&band, aperture_cm2, duration);
+            let blackbody_photons = blackbody.photons(&band, aperture_cm2, duration);
+
+            // Both should produce positive photon counts
+            assert!(flat_photons > 0.0);
+            assert!(blackbody_photons > 0.0);
+
+            // They should be roughly in the same order of magnitude
+            // They won't be exactly equal, as the gaia passband will weight them differently
+            // based on spectral shape
+            let ratio = flat_photons / blackbody_photons;
+
+            let this_passed = ratio > 0.5 && ratio < 2.0;
+            if !this_passed {
+                failed = true;
+            }
+
+            println!("Flat: {flat_photons:8.2} BlackBody: {blackbody_photons:8.2} B-V: {bv}, Ratio: {ratio:8.2}: Pass: {this_passed}");
+        }
+
+        assert!(!failed, "Some B-V tests failed, see output for details");
     }
 
     #[test]
