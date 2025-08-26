@@ -12,6 +12,9 @@ from pathlib import Path
 import matplotlib.cm as cm
 from matplotlib.lines import Line2D
 
+# Histogram bounds for standard deviation charts (in pixels)
+HISTOGRAM_BOUND = 0.5
+
 
 # ============================================================================
 # Shared Functions
@@ -44,7 +47,7 @@ def load_experiment_data(csv_path, aperture_m=0.485, mask_outliers=True, pixel_e
     print(f"Sensors found: {df['sensor'].unique()}")
     
     # Calculate f-number and round to nearest integer
-    df['f_number'] = (df['focal_length_m'] / aperture_m).round()
+    df['f_number'] = (df['focal_length_m'] / aperture_m)
     print(f"F-numbers found: {sorted(df['f_number'].unique())}")
     
     # Get sensor pixel sizes
@@ -100,274 +103,29 @@ def calculate_plate_scale(f_number, aperture_m, pixel_size_um):
 # Mean Star Count Analysis
 # ============================================================================
 
-def calculate_star_count_statistics(df, sensor_name, f_number):
-    """Calculate mean and std dev of star count for given sensor/f-number"""
-    # Filter for specific sensor and f-number
-    mask = (df['sensor'] == sensor_name) & (df['f_number'] == f_number)
-    subset = df[mask].copy()
+def calculate_mean_star_statistics(df, sensor, f_number):
+    """Calculate mean, std, and median star count for each exposure time"""
+    mask = (df['sensor'] == sensor) & (df['f_number'] == f_number)
+    sensor_data = df[mask]
     
-    if len(subset) == 0:
+    if len(sensor_data) == 0:
         return pd.DataFrame()
     
-    # Group by exposure time and calculate statistics, ignoring NaN values
-    grouped = subset.groupby('exposure_ms')['star_count'].agg([
-        ('mean_star_count', lambda x: x.mean()),
-        ('std_star_count', lambda x: x.std()),
-        ('count', lambda x: x.notna().sum())  # Count non-NaN values
+    # Group by exposure and calculate statistics
+    stats = sensor_data.groupby('exposure_ms')['star_count'].agg([
+        ('mean', 'mean'),
+        ('std', 'std'),
+        ('median', 'median'),
+        ('count', 'size'),
     ]).reset_index()
     
-    # Calculate standard error of the mean
-    grouped['sem_star_count'] = grouped['std_star_count'] / np.sqrt(grouped['count'])
+    # Calculate standard error
+    stats['sem'] = stats['std'] / np.sqrt(stats['count'])
     
-    return grouped
-
-
-# ============================================================================
-# Brightest Star Magnitude Analysis
-# ============================================================================
-
-def calculate_brightest_magnitude_statistics(df, sensor_name, f_number):
-    """Calculate mean and std dev of brightest star magnitude for given sensor/f-number"""
-    # Filter for specific sensor and f-number
-    mask = (df['sensor'] == sensor_name) & (df['f_number'] == f_number)
-    subset = df[mask].copy()
+    # Sort by exposure time
+    stats = stats.sort_values('exposure_ms')
     
-    if len(subset) == 0:
-        return pd.DataFrame()
-    
-    # Group by exposure time and calculate statistics, ignoring NaN values
-    grouped = subset.groupby('exposure_ms')['brightest_mag'].agg([
-        ('mean_brightest_mag', lambda x: x.mean()),
-        ('std_brightest_mag', lambda x: x.std()),
-        ('count', lambda x: x.notna().sum())  # Count non-NaN values
-    ]).reset_index()
-    
-    # Calculate standard error of the mean
-    grouped['sem_brightest_mag'] = grouped['std_brightest_mag'] / np.sqrt(grouped['count'])
-    
-    return grouped
-
-
-# ============================================================================
-# High Accuracy Percentage Analysis
-# ============================================================================
-
-def calculate_high_accuracy_statistics(df, sensor_name, f_number):
-    """Calculate percentage of experiments with pixel error < 0.1"""
-    # Filter for specific sensor and f-number
-    mask = (df['sensor'] == sensor_name) & (df['f_number'] == f_number)
-    subset = df[mask].copy()
-    
-    if len(subset) == 0:
-        return pd.DataFrame()
-    
-    # Group by exposure time and calculate high accuracy percentage
-    grouped = subset.groupby('exposure_ms').agg({
-        'pixel_error': [
-            ('high_accuracy_pct', lambda x: ((x < 0.1) & x.notna()).sum() / len(x) * 100),
-            ('total_experiments', 'count'),
-            ('experiments_high_accuracy', lambda x: ((x < 0.1) & x.notna()).sum())
-        ]
-    })
-    
-    # Flatten column names
-    grouped.columns = ['high_accuracy_pct', 'total_experiments', 'experiments_high_accuracy']
-    grouped = grouped.reset_index()
-    
-    return grouped
-
-
-# ============================================================================
-# Field Closure Percentage Analysis
-# ============================================================================
-
-def calculate_field_closure_statistics(df, sensor_name, f_number):
-    """Calculate percentage of experiments that detected at least 1 star"""
-    # Filter for specific sensor and f-number
-    mask = (df['sensor'] == sensor_name) & (df['f_number'] == f_number)
-    subset = df[mask].copy()
-    
-    if len(subset) == 0:
-        return pd.DataFrame()
-    
-    # Group by exposure time and calculate field closure percentage
-    grouped = subset.groupby('exposure_ms').agg({
-        'star_count': [
-            ('field_closure_pct', lambda x: (x > 0).sum() / len(x) * 100),
-            ('total_experiments', 'count'),
-            ('experiments_with_stars', lambda x: (x > 0).sum())
-        ]
-    })
-    
-    # Flatten column names
-    grouped.columns = ['field_closure_pct', 'total_experiments', 'experiments_with_stars']
-    grouped = grouped.reset_index()
-    
-    return grouped
-
-
-# ============================================================================
-# Faintest Star Magnitude Analysis
-# ============================================================================
-
-def calculate_faintest_magnitude_statistics(df, sensor_name, f_number):
-    """Calculate mean and std dev of faintest star magnitude for given sensor/f-number"""
-    # Filter for specific sensor and f-number
-    mask = (df['sensor'] == sensor_name) & (df['f_number'] == f_number)
-    subset = df[mask].copy()
-    
-    if len(subset) == 0:
-        return pd.DataFrame()
-    
-    # Group by exposure time and calculate statistics, ignoring NaN values
-    grouped = subset.groupby('exposure_ms')['faintest_mag'].agg([
-        ('mean_faintest_mag', lambda x: x.mean()),
-        ('std_faintest_mag', lambda x: x.std()),
-        ('count', lambda x: x.notna().sum())  # Count non-NaN values
-    ]).reset_index()
-    
-    # Calculate standard error of the mean
-    grouped['sem_faintest_mag'] = grouped['std_faintest_mag'] / np.sqrt(grouped['count'])
-    
-    return grouped
-
-
-# ============================================================================
-# Mean Pointing Error Analysis
-# ============================================================================
-
-def calculate_pointing_statistics(df, sensor_name, f_number):
-    """Calculate mean and std dev of pointing error for given sensor/f-number"""
-    # Filter for specific sensor and f-number
-    mask = (df['sensor'] == sensor_name) & (df['f_number'] == f_number)
-    subset = df[mask].copy()
-    
-    if len(subset) == 0:
-        return pd.DataFrame()
-    
-    # Group by exposure time and calculate statistics, ignoring NaN values
-    grouped = subset.groupby('exposure_ms')['error_mas'].agg([
-        ('mean_error_mas', lambda x: x.mean()),
-        ('std_error_mas', lambda x: x.std()),
-        ('count', lambda x: x.notna().sum())  # Count non-NaN values
-    ]).reset_index()
-    
-    # Calculate standard error of the mean
-    grouped['sem_error_mas'] = grouped['std_error_mas'] / np.sqrt(grouped['count'])
-    
-    return grouped
-
-
-def plot_mean_pointing_error(df, output_path=None, show_error_bars=False):
-    """Create separate analysis plots for each sensor showing mean pointing error"""
-    # Get sensor pixel sizes
-    sensor_pixel_sizes = get_sensor_pixel_sizes()
-    
-    # Get unique sensors and f-numbers from the data
-    sensors = sorted(df['sensor'].unique())
-    f_numbers = sorted(df['f_number'].unique())
-    
-    # Create figure with subplots - one for each sensor
-    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
-    
-    # Use a consistent colormap for both sensors
-    cmap = cm.viridis  # Natural color gradient
-    
-    # First pass: collect all data to find global y-axis limits
-    max_y_value = 0
-    all_plot_data = {}
-    
-    for sensor_name in sensors:
-        pixel_size_um = sensor_pixel_sizes.get(sensor_name)
-        if pixel_size_um is None:
-            raise ValueError(f"Unknown sensor: {sensor_name}")
-        
-        sensor_data = []
-        for f_num in f_numbers:
-            stats_data = calculate_pointing_statistics(df, sensor_name, f_num)
-            if len(stats_data) > 0:
-                sensor_data.append((f_num, stats_data))
-                # Update max y value
-                if show_error_bars:
-                    max_val = (stats_data['mean_error_mas'] + stats_data['std_error_mas']).max()
-                else:
-                    max_val = stats_data['mean_error_mas'].max()
-                max_y_value = max(max_y_value, max_val)
-        
-        all_plot_data[sensor_name] = sensor_data
-    
-    # Add 10% padding to max value
-    y_limit = max_y_value * 1.1
-    
-    # Second pass: plot with consistent y-axis
-    for idx, (sensor_name, ax) in enumerate(zip(sensors, axes)):
-        # Get pixel size for this sensor
-        pixel_size_um = sensor_pixel_sizes.get(sensor_name)
-        
-        # Store handles for legend
-        legend_elements = []
-        
-        # Plot for each f-number using pre-calculated data
-        for i, (f_num, stats_data) in enumerate(all_plot_data[sensor_name]):
-            color = get_f_number_color(f_num, cmap)
-            
-            # Convert exposure from ms to seconds for display
-            exposure_s = stats_data['exposure_ms'] / 1000.0
-            
-            # Plot mean with optional error bars
-            if show_error_bars:
-                ax.errorbar(exposure_s, stats_data['mean_error_mas'], 
-                           yerr=stats_data['std_error_mas'],
-                           color=color, linewidth=2, marker='o', markersize=6,
-                           capsize=5, capthick=1.5, elinewidth=1.5,
-                           label=f"f/{f_num}")
-            else:
-                ax.plot(exposure_s, stats_data['mean_error_mas'], 
-                       color=color, linewidth=2, marker='o', markersize=6,
-                       label=f"f/{f_num}")
-            
-            legend_elements.append(Line2D([0], [0], color=color, lw=2, 
-                                        label=f"f/{f_num}"))
-        
-        # Formatting for each subplot
-        ax.set_xlabel('Exposure Time (seconds)', fontsize=12)
-        ax.set_ylabel('Mean Pointing Error (milliarcseconds)', fontsize=12)
-        ax.set_title(f'{sensor_name} Pointing Precision Analysis\n' + 
-                    f'(pixel size: {pixel_size_um} μm)', fontsize=14)
-        
-        # Grid
-        ax.grid(True, alpha=0.3, linestyle='--')
-        
-        # Legend
-        ax.legend(handles=legend_elements, loc='best', framealpha=0.9)
-        
-        # Set consistent Y-axis limits
-        ax.set_ylim(0, y_limit)
-        
-        # X-axis log scale if exposure range is large
-        if 'exposure_s' in locals() and len(exposure_s) > 0:
-            max_exp = df['exposure_ms'].max() / 1000.0
-            min_exp = df['exposure_ms'].min() / 1000.0
-            if max_exp / min_exp > 10:
-                ax.set_xscale('log')
-                ax.set_xlabel('Exposure Time (seconds, log scale)', fontsize=12)
-    
-    # Overall title
-    title = 'Sensor Mean Pointing Error Comparison'
-    if show_error_bars:
-        title += ' (with ±1σ error bars)'
-    fig.suptitle(title, fontsize=16, y=0.98)
-    
-    plt.tight_layout()
-    
-    # Save or show
-    if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"Plot saved to: {output_path}")
-    else:
-        plt.show()
-    
-    return fig, axes
+    return stats
 
 
 def plot_mean_star_count(df, output_path=None, show_error_bars=False):
@@ -380,34 +138,17 @@ def plot_mean_star_count(df, output_path=None, show_error_bars=False):
     f_numbers = sorted(df['f_number'].unique())
     
     # Create figure with subplots - one for each sensor
-    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+    n_sensors = len(sensors)
+    fig, axes = plt.subplots(1, n_sensors, figsize=(8*n_sensors, 8))
+    
+    # Make axes iterable even for single sensor
+    if n_sensors == 1:
+        axes = [axes]
     
     # Use a consistent colormap for both sensors
     cmap = cm.viridis  # Natural color gradient
     
-    # First pass: collect all data to find global y-axis limits
-    max_y_value = 0
-    all_plot_data = {}
-    
-    for sensor_name in sensors:
-        sensor_data = []
-        for f_num in f_numbers:
-            stats_data = calculate_star_count_statistics(df, sensor_name, f_num)
-            if len(stats_data) > 0:
-                sensor_data.append((f_num, stats_data))
-                # Update max y value
-                if show_error_bars:
-                    max_val = (stats_data['mean_star_count'] + stats_data['std_star_count']).max()
-                else:
-                    max_val = stats_data['mean_star_count'].max()
-                max_y_value = max(max_y_value, max_val)
-        
-        all_plot_data[sensor_name] = sensor_data
-    
-    # Add 10% padding to max value
-    y_limit = max_y_value * 1.1
-    
-    # Second pass: plot with consistent y-axis
+    # Plot data for each sensor
     for idx, (sensor_name, ax) in enumerate(zip(sensors, axes)):
         # Get pixel size for this sensor
         pixel_size_um = sensor_pixel_sizes.get(sensor_name)
@@ -415,32 +156,42 @@ def plot_mean_star_count(df, output_path=None, show_error_bars=False):
         # Store handles for legend
         legend_elements = []
         
-        # Plot for each f-number using pre-calculated data
-        for i, (f_num, stats_data) in enumerate(all_plot_data[sensor_name]):
+        # Plot for each f-number
+        for i, f_num in enumerate(f_numbers):
             color = get_f_number_color(f_num, cmap)
             
-            # Convert exposure from ms to seconds for display
-            exposure_s = stats_data['exposure_ms'] / 1000.0
+            stats_data = calculate_mean_star_statistics(df, sensor_name, f_num)
             
-            # Plot mean with optional error bars
-            if show_error_bars:
-                ax.errorbar(exposure_s, stats_data['mean_star_count'], 
-                           yerr=stats_data['std_star_count'],
+            if len(stats_data) > 0:
+                # Convert exposure from ms to seconds for display
+                exposure_s = stats_data['exposure_ms'] / 1000.0
+                
+                # Plot mean star count with optional error bars
+                if show_error_bars:
+                    ax.errorbar(exposure_s, stats_data['mean'], 
+                               yerr=stats_data['sem'], 
+                               color=color, linewidth=2, marker='o', markersize=6,
+                               capsize=4, capthick=1.5, alpha=0.8,
+                               label=f"f/{f_num:.1f}")
+                else:
+                    ax.plot(exposure_s, stats_data['mean'], 
                            color=color, linewidth=2, marker='o', markersize=6,
-                           capsize=5, capthick=1.5, elinewidth=1.5,
-                           label=f"f/{f_num}")
-            else:
-                ax.plot(exposure_s, stats_data['mean_star_count'], 
-                       color=color, linewidth=2, marker='o', markersize=6,
-                       label=f"f/{f_num}")
-            
-            legend_elements.append(Line2D([0], [0], color=color, lw=2, 
-                                        label=f"f/{f_num}"))
+                           label=f"f/{f_num:.1f}")
+                
+                # Add shaded confidence interval (±1 std)
+                if 'std' in stats_data.columns:
+                    ax.fill_between(exposure_s, 
+                                    stats_data['mean'] - stats_data['std'],
+                                    stats_data['mean'] + stats_data['std'],
+                                    color=color, alpha=0.2)
+                
+                legend_elements.append(Line2D([0], [0], color=color, lw=2, 
+                                            label=f"f/{f_num:.1f}"))
         
         # Formatting for each subplot
         ax.set_xlabel('Exposure Time (seconds)', fontsize=12)
         ax.set_ylabel('Mean Star Count', fontsize=12)
-        ax.set_title(f'{sensor_name} Star Detection Performance\n' + 
+        ax.set_title(f'{sensor_name} Mean Star Count\n' + 
                     f'(pixel size: {pixel_size_um} μm)', fontsize=14)
         
         # Grid
@@ -448,9 +199,6 @@ def plot_mean_star_count(df, output_path=None, show_error_bars=False):
         
         # Legend
         ax.legend(handles=legend_elements, loc='best', framealpha=0.9)
-        
-        # Set consistent Y-axis limits
-        ax.set_ylim(0, y_limit)
         
         # X-axis log scale if exposure range is large
         if 'exposure_s' in locals() and len(exposure_s) > 0:
@@ -461,214 +209,7 @@ def plot_mean_star_count(df, output_path=None, show_error_bars=False):
                 ax.set_xlabel('Exposure Time (seconds, log scale)', fontsize=12)
     
     # Overall title
-    title = 'Sensor Mean Star Count Comparison'
-    if show_error_bars:
-        title += ' (with ±1σ error bars)'
-    fig.suptitle(title, fontsize=16, y=0.98)
-    
-    plt.tight_layout()
-    
-    # Save or show
-    if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"Plot saved to: {output_path}")
-    else:
-        plt.show()
-    
-    return fig, axes
-
-
-def plot_faintest_magnitude(df, output_path=None, show_error_bars=False):
-    """Create separate analysis plots for each sensor showing faintest star magnitude"""
-    # Get sensor pixel sizes (not used here but keeping for consistency)
-    sensor_pixel_sizes = get_sensor_pixel_sizes()
-    
-    # Get unique sensors and f-numbers from the data
-    sensors = sorted(df['sensor'].unique())
-    f_numbers = sorted(df['f_number'].unique())
-    
-    # Create figure with subplots - one for each sensor
-    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
-    
-    # Use a consistent colormap for both sensors
-    cmap = cm.viridis  # Natural color gradient
-    
-    # First pass: collect all data to find global y-axis limits
-    min_y_value = float('inf')
-    max_y_value = 0
-    all_plot_data = {}
-    
-    for sensor_name in sensors:
-        sensor_data = []
-        for f_num in f_numbers:
-            stats_data = calculate_faintest_magnitude_statistics(df, sensor_name, f_num)
-            if len(stats_data) > 0:
-                sensor_data.append((f_num, stats_data))
-                # Update y value range (note: fainter stars have higher magnitude)
-                if show_error_bars:
-                    min_val = (stats_data['mean_faintest_mag'] - stats_data['std_faintest_mag']).min()
-                    max_val = (stats_data['mean_faintest_mag'] + stats_data['std_faintest_mag']).max()
-                else:
-                    min_val = stats_data['mean_faintest_mag'].min()
-                    max_val = stats_data['mean_faintest_mag'].max()
-                min_y_value = min(min_y_value, min_val)
-                max_y_value = max(max_y_value, max_val)
-        
-        all_plot_data[sensor_name] = sensor_data
-    
-    # Add padding
-    y_range = max_y_value - min_y_value
-    y_min = min_y_value - 0.1 * y_range
-    y_max = max_y_value + 0.1 * y_range
-    
-    # Second pass: plot with consistent y-axis
-    for idx, (sensor_name, ax) in enumerate(zip(sensors, axes)):
-        # Get pixel size for this sensor
-        pixel_size_um = sensor_pixel_sizes.get(sensor_name)
-        
-        # Store handles for legend
-        legend_elements = []
-        
-        # Plot for each f-number using pre-calculated data
-        for i, (f_num, stats_data) in enumerate(all_plot_data[sensor_name]):
-            color = get_f_number_color(f_num, cmap)
-            
-            # Convert exposure from ms to seconds for display
-            exposure_s = stats_data['exposure_ms'] / 1000.0
-            
-            # Plot mean with optional error bars
-            if show_error_bars:
-                ax.errorbar(exposure_s, stats_data['mean_faintest_mag'], 
-                           yerr=stats_data['std_faintest_mag'],
-                           color=color, linewidth=2, marker='o', markersize=6,
-                           capsize=5, capthick=1.5, elinewidth=1.5,
-                           label=f"f/{f_num}")
-            else:
-                ax.plot(exposure_s, stats_data['mean_faintest_mag'], 
-                       color=color, linewidth=2, marker='o', markersize=6,
-                       label=f"f/{f_num}")
-            
-            legend_elements.append(Line2D([0], [0], color=color, lw=2, 
-                                        label=f"f/{f_num}"))
-        
-        # Formatting for each subplot
-        ax.set_xlabel('Exposure Time (seconds)', fontsize=12)
-        ax.set_ylabel('Faintest Star Magnitude', fontsize=12)
-        ax.set_title(f'{sensor_name} Detection Depth\n' + 
-                    f'(pixel size: {pixel_size_um} μm)', fontsize=14)
-        
-        # Grid
-        ax.grid(True, alpha=0.3, linestyle='--')
-        
-        # Legend
-        ax.legend(handles=legend_elements, loc='best', framealpha=0.9)
-        
-        # Set consistent Y-axis limits
-        ax.set_ylim(y_min, y_max)
-        
-        # Invert y-axis (fainter stars have higher magnitude)
-        ax.invert_yaxis()
-        
-        # X-axis log scale if exposure range is large
-        if 'exposure_s' in locals() and len(exposure_s) > 0:
-            max_exp = df['exposure_ms'].max() / 1000.0
-            min_exp = df['exposure_ms'].min() / 1000.0
-            if max_exp / min_exp > 10:
-                ax.set_xscale('log')
-                ax.set_xlabel('Exposure Time (seconds, log scale)', fontsize=12)
-    
-    # Overall title
-    title = 'Sensor Faintest Star Detection Comparison'
-    if show_error_bars:
-        title += ' (with ±1σ error bars)'
-    fig.suptitle(title, fontsize=16, y=0.98)
-    
-    plt.tight_layout()
-    
-    # Save or show
-    if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"Plot saved to: {output_path}")
-    else:
-        plt.show()
-    
-    return fig, axes
-
-
-def plot_high_accuracy_percentage(df, output_path=None):
-    """Create separate analysis plots for each sensor showing high accuracy percentage"""
-    # Get sensor pixel sizes (not used here but keeping for consistency)
-    sensor_pixel_sizes = get_sensor_pixel_sizes()
-    
-    # Get unique sensors and f-numbers from the data
-    sensors = sorted(df['sensor'].unique())
-    f_numbers = sorted(df['f_number'].unique())
-    
-    # Create figure with subplots - one for each sensor
-    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
-    
-    # Use a consistent colormap for both sensors
-    cmap = cm.viridis  # Natural color gradient
-    
-    # Plot data for each sensor
-    for idx, (sensor_name, ax) in enumerate(zip(sensors, axes)):
-        # Get pixel size for this sensor
-        pixel_size_um = sensor_pixel_sizes.get(sensor_name)
-        
-        # Store handles for legend
-        legend_elements = []
-        
-        # Plot for each f-number
-        for i, f_num in enumerate(f_numbers):
-            color = get_f_number_color(f_num, cmap)
-            
-            stats_data = calculate_high_accuracy_statistics(df, sensor_name, f_num)
-            
-            if len(stats_data) > 0:
-                # Convert exposure from ms to seconds for display
-                exposure_s = stats_data['exposure_ms'] / 1000.0
-                
-                # Plot high accuracy percentage
-                ax.plot(exposure_s, stats_data['high_accuracy_pct'], 
-                       color=color, linewidth=2, marker='o', markersize=6,
-                       label=f"f/{f_num}")
-                
-                # Add text annotation for number of experiments at first point
-                if len(stats_data) > 0:
-                    first_row = stats_data.iloc[0]
-                    ax.annotate(f'n={first_row["total_experiments"]}', 
-                               xy=(exposure_s.iloc[0], first_row['high_accuracy_pct']),
-                               xytext=(5, 5), textcoords='offset points',
-                               fontsize=8, alpha=0.7)
-                
-                legend_elements.append(Line2D([0], [0], color=color, lw=2, 
-                                            label=f"f/{f_num}"))
-        
-        # Formatting for each subplot
-        ax.set_xlabel('Exposure Time (seconds)', fontsize=12)
-        ax.set_ylabel('High Accuracy Percentage (%)', fontsize=12)
-        ax.set_title(f'{sensor_name} High Accuracy Rate\n' + 
-                    f'(pixel size: {pixel_size_um} μm)', fontsize=14)
-        
-        # Grid
-        ax.grid(True, alpha=0.3, linestyle='--')
-        
-        # Legend
-        ax.legend(handles=legend_elements, loc='best', framealpha=0.9)
-        
-        # Set Y-axis limits 0-100%
-        ax.set_ylim(0, 105)
-        
-        # X-axis log scale if exposure range is large
-        if 'exposure_s' in locals() and len(exposure_s) > 0:
-            max_exp = df['exposure_ms'].max() / 1000.0
-            min_exp = df['exposure_ms'].min() / 1000.0
-            if max_exp / min_exp > 10:
-                ax.set_xscale('log')
-                ax.set_xlabel('Exposure Time (seconds, log scale)', fontsize=12)
-    
-    # Overall title
-    fig.suptitle('High Accuracy Percentage\n(Percentage of experiments with pixel error < 0.1)', 
+    fig.suptitle('Star Detection Performance\n(Mean detected stars per exposure)', 
                 fontsize=16, y=0.98)
     
     plt.tight_layout()
@@ -683,96 +224,40 @@ def plot_high_accuracy_percentage(df, output_path=None):
     return fig, axes
 
 
-def plot_field_closure_percentage(df, output_path=None):
-    """Create separate analysis plots for each sensor showing field closure percentage"""
-    # Get sensor pixel sizes (not used here but keeping for consistency)
-    sensor_pixel_sizes = get_sensor_pixel_sizes()
+# ============================================================================
+# Brightest Magnitude Analysis
+# ============================================================================
+
+def calculate_brightest_magnitude_statistics(df, sensor, f_number):
+    """Calculate mean, std, and median brightest magnitude for each exposure time"""
+    mask = (df['sensor'] == sensor) & (df['f_number'] == f_number)
+    sensor_data = df[mask]
     
-    # Get unique sensors and f-numbers from the data
-    sensors = sorted(df['sensor'].unique())
-    f_numbers = sorted(df['f_number'].unique())
+    if len(sensor_data) == 0:
+        return pd.DataFrame()
     
-    # Create figure with subplots - one for each sensor
-    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+    # Filter out NaN values for brightest magnitude
+    valid_data = sensor_data.dropna(subset=['brightest_mag'])
     
-    # Use a consistent colormap for both sensors
-    cmap = cm.viridis  # Natural color gradient
+    # Group by exposure and calculate statistics
+    stats = valid_data.groupby('exposure_ms')['brightest_mag'].agg([
+        ('mean', 'mean'),
+        ('std', 'std'),
+        ('median', 'median'),
+        ('count', 'size'),
+    ]).reset_index()
     
-    # Plot data for each sensor
-    for idx, (sensor_name, ax) in enumerate(zip(sensors, axes)):
-        # Get pixel size for this sensor
-        pixel_size_um = sensor_pixel_sizes.get(sensor_name)
-        
-        # Store handles for legend
-        legend_elements = []
-        
-        # Plot for each f-number
-        for i, f_num in enumerate(f_numbers):
-            color = get_f_number_color(f_num, cmap)
-            
-            stats_data = calculate_field_closure_statistics(df, sensor_name, f_num)
-            
-            if len(stats_data) > 0:
-                # Convert exposure from ms to seconds for display
-                exposure_s = stats_data['exposure_ms'] / 1000.0
-                
-                # Plot field closure percentage
-                ax.plot(exposure_s, stats_data['field_closure_pct'], 
-                       color=color, linewidth=2, marker='o', markersize=6,
-                       label=f"f/{f_num}")
-                
-                # Add text annotation for number of experiments at first point
-                if len(stats_data) > 0:
-                    first_row = stats_data.iloc[0]
-                    ax.annotate(f'n={first_row["total_experiments"]}', 
-                               xy=(exposure_s.iloc[0], first_row['field_closure_pct']),
-                               xytext=(5, 5), textcoords='offset points',
-                               fontsize=8, alpha=0.7)
-                
-                legend_elements.append(Line2D([0], [0], color=color, lw=2, 
-                                            label=f"f/{f_num}"))
-        
-        # Formatting for each subplot
-        ax.set_xlabel('Exposure Time (seconds)', fontsize=12)
-        ax.set_ylabel('Field Closure Percentage (%)', fontsize=12)
-        ax.set_title(f'{sensor_name} Field Closure Rate\n' + 
-                    f'(pixel size: {pixel_size_um} μm)', fontsize=14)
-        
-        # Grid
-        ax.grid(True, alpha=0.3, linestyle='--')
-        
-        # Legend
-        ax.legend(handles=legend_elements, loc='best', framealpha=0.9)
-        
-        # Set Y-axis limits 0-100%
-        ax.set_ylim(0, 105)
-        
-        # X-axis log scale if exposure range is large
-        if 'exposure_s' in locals() and len(exposure_s) > 0:
-            max_exp = df['exposure_ms'].max() / 1000.0
-            min_exp = df['exposure_ms'].min() / 1000.0
-            if max_exp / min_exp > 10:
-                ax.set_xscale('log')
-                ax.set_xlabel('Exposure Time (seconds, log scale)', fontsize=12)
+    # Calculate standard error
+    stats['sem'] = stats['std'] / np.sqrt(stats['count'])
     
-    # Overall title
-    fig.suptitle('Minimal Detection Percentage\n(Percentage of experiments detecting ≥1 star)', 
-                fontsize=16, y=0.98)
+    # Sort by exposure time
+    stats = stats.sort_values('exposure_ms')
     
-    plt.tight_layout()
-    
-    # Save or show
-    if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"Plot saved to: {output_path}")
-    else:
-        plt.show()
-    
-    return fig, axes
+    return stats
 
 
 def plot_brightest_magnitude(df, output_path=None, show_error_bars=False):
-    """Create separate analysis plots for each sensor showing brightest star magnitude"""
+    """Create separate analysis plots for each sensor showing brightest detected magnitude"""
     # Get sensor pixel sizes (not used here but keeping for consistency)
     sensor_pixel_sizes = get_sensor_pixel_sizes()
     
@@ -781,40 +266,17 @@ def plot_brightest_magnitude(df, output_path=None, show_error_bars=False):
     f_numbers = sorted(df['f_number'].unique())
     
     # Create figure with subplots - one for each sensor
-    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+    n_sensors = len(sensors)
+    fig, axes = plt.subplots(1, n_sensors, figsize=(8*n_sensors, 8))
+    
+    # Make axes iterable even for single sensor
+    if n_sensors == 1:
+        axes = [axes]
     
     # Use a consistent colormap for both sensors
     cmap = cm.viridis  # Natural color gradient
     
-    # First pass: collect all data to find global y-axis limits
-    min_y_value = float('inf')
-    max_y_value = 0
-    all_plot_data = {}
-    
-    for sensor_name in sensors:
-        sensor_data = []
-        for f_num in f_numbers:
-            stats_data = calculate_brightest_magnitude_statistics(df, sensor_name, f_num)
-            if len(stats_data) > 0:
-                sensor_data.append((f_num, stats_data))
-                # Update y value range
-                if show_error_bars:
-                    min_val = (stats_data['mean_brightest_mag'] - stats_data['std_brightest_mag']).min()
-                    max_val = (stats_data['mean_brightest_mag'] + stats_data['std_brightest_mag']).max()
-                else:
-                    min_val = stats_data['mean_brightest_mag'].min()
-                    max_val = stats_data['mean_brightest_mag'].max()
-                min_y_value = min(min_y_value, min_val)
-                max_y_value = max(max_y_value, max_val)
-        
-        all_plot_data[sensor_name] = sensor_data
-    
-    # Add padding
-    y_range = max_y_value - min_y_value
-    y_min = min_y_value - 0.1 * y_range
-    y_max = max_y_value + 0.1 * y_range
-    
-    # Second pass: plot with consistent y-axis
+    # Plot data for each sensor
     for idx, (sensor_name, ax) in enumerate(zip(sensors, axes)):
         # Get pixel size for this sensor
         pixel_size_um = sensor_pixel_sizes.get(sensor_name)
@@ -822,27 +284,37 @@ def plot_brightest_magnitude(df, output_path=None, show_error_bars=False):
         # Store handles for legend
         legend_elements = []
         
-        # Plot for each f-number using pre-calculated data
-        for i, (f_num, stats_data) in enumerate(all_plot_data[sensor_name]):
+        # Plot for each f-number
+        for i, f_num in enumerate(f_numbers):
             color = get_f_number_color(f_num, cmap)
             
-            # Convert exposure from ms to seconds for display
-            exposure_s = stats_data['exposure_ms'] / 1000.0
+            stats_data = calculate_brightest_magnitude_statistics(df, sensor_name, f_num)
             
-            # Plot mean with optional error bars
-            if show_error_bars:
-                ax.errorbar(exposure_s, stats_data['mean_brightest_mag'], 
-                           yerr=stats_data['std_brightest_mag'],
+            if len(stats_data) > 0:
+                # Convert exposure from ms to seconds for display
+                exposure_s = stats_data['exposure_ms'] / 1000.0
+                
+                # Plot mean brightest magnitude with optional error bars
+                if show_error_bars:
+                    ax.errorbar(exposure_s, stats_data['mean'], 
+                               yerr=stats_data['sem'], 
+                               color=color, linewidth=2, marker='o', markersize=6,
+                               capsize=4, capthick=1.5, alpha=0.8,
+                               label=f"f/{f_num:.1f}")
+                else:
+                    ax.plot(exposure_s, stats_data['mean'], 
                            color=color, linewidth=2, marker='o', markersize=6,
-                           capsize=5, capthick=1.5, elinewidth=1.5,
-                           label=f"f/{f_num}")
-            else:
-                ax.plot(exposure_s, stats_data['mean_brightest_mag'], 
-                       color=color, linewidth=2, marker='o', markersize=6,
-                       label=f"f/{f_num}")
-            
-            legend_elements.append(Line2D([0], [0], color=color, lw=2, 
-                                        label=f"f/{f_num}"))
+                           label=f"f/{f_num:.1f}")
+                
+                # Add shaded confidence interval (±1 std)
+                if 'std' in stats_data.columns:
+                    ax.fill_between(exposure_s, 
+                                    stats_data['mean'] - stats_data['std'],
+                                    stats_data['mean'] + stats_data['std'],
+                                    color=color, alpha=0.2)
+                
+                legend_elements.append(Line2D([0], [0], color=color, lw=2, 
+                                            label=f"f/{f_num:.1f}"))
         
         # Formatting for each subplot
         ax.set_xlabel('Exposure Time (seconds)', fontsize=12)
@@ -856,8 +328,8 @@ def plot_brightest_magnitude(df, output_path=None, show_error_bars=False):
         # Legend
         ax.legend(handles=legend_elements, loc='best', framealpha=0.9)
         
-        # Set consistent Y-axis limits
-        ax.set_ylim(y_min, y_max)
+        # Invert Y-axis (lower magnitude = brighter star)
+        ax.invert_yaxis()
         
         # X-axis log scale if exposure range is large
         if 'exposure_s' in locals() and len(exposure_s) > 0:
@@ -868,10 +340,8 @@ def plot_brightest_magnitude(df, output_path=None, show_error_bars=False):
                 ax.set_xlabel('Exposure Time (seconds, log scale)', fontsize=12)
     
     # Overall title
-    title = 'Sensor Brightest Star Detection Comparison'
-    if show_error_bars:
-        title += ' (with ±1σ error bars)'
-    fig.suptitle(title, fontsize=16, y=0.98)
+    fig.suptitle('Brightest Star Detection\n(Mean magnitude of brightest detected star)', 
+                fontsize=16, y=0.98)
     
     plt.tight_layout()
     
@@ -886,363 +356,578 @@ def plot_brightest_magnitude(df, output_path=None, show_error_bars=False):
 
 
 # ============================================================================
-# Win Percentage Analysis (Pointing Error Based)
+# Faintest Magnitude Analysis
 # ============================================================================
 
-def calculate_win_percentage(df, f_number):
-    """Calculate HWK win percentage for each exposure time at given f-number (based on pointing error)"""
-    # Filter for specific f-number
-    mask = df['f_number'] == f_number
-    subset = df[mask].copy()
+def calculate_faintest_magnitude_statistics(df, sensor, f_number):
+    """Calculate mean, std, and median faintest magnitude for each exposure time"""
+    mask = (df['sensor'] == sensor) & (df['f_number'] == f_number)
+    sensor_data = df[mask]
     
-    if len(subset) == 0:
+    if len(sensor_data) == 0:
         return pd.DataFrame()
     
-    # Separate by sensor (pointing errors already calculated)
-    hwk_data = subset[subset['sensor'] == 'HWK4123'].copy()
-    imx_data = subset[subset['sensor'] == 'IMX455'].copy()
+    # Filter out NaN values for faintest magnitude
+    valid_data = sensor_data.dropna(subset=['faintest_mag'])
     
-    # Merge on experiment_num and exposure_ms to compare same experiments
-    merged = pd.merge(
-        hwk_data[['experiment_num', 'exposure_ms', 'error_mas']],
-        imx_data[['experiment_num', 'exposure_ms', 'error_mas']],
-        on=['experiment_num', 'exposure_ms'],
-        suffixes=('_hwk', '_imx')
-    )
+    # Group by exposure and calculate statistics
+    stats = valid_data.groupby('exposure_ms')['faintest_mag'].agg([
+        ('mean', 'mean'),
+        ('std', 'std'),
+        ('median', 'median'),
+        ('count', 'size'),
+    ]).reset_index()
     
-    # Group by exposure time and calculate win percentage
-    results = []
-    for exposure_ms in sorted(merged['exposure_ms'].unique()):
-        exp_data = merged[merged['exposure_ms'] == exposure_ms]
-        
-        # Count wins: HWK wins if it has lower pointing error OR if IMX has NaN
-        hwk_wins = 0
-        total_comparisons = 0
-        
-        for _, row in exp_data.iterrows():
-            hwk_error = row['error_mas_hwk']
-            imx_error = row['error_mas_imx']
-            
-            # Skip if both are NaN (no winner)
-            if pd.isna(hwk_error) and pd.isna(imx_error):
-                continue
-            
-            total_comparisons += 1
-            
-            # HWK wins if IMX has NaN or HWK has lower error (and isn't NaN)
-            if pd.isna(imx_error) and not pd.isna(hwk_error):
-                hwk_wins += 1
-            elif not pd.isna(hwk_error) and not pd.isna(imx_error) and hwk_error < imx_error:
-                hwk_wins += 1
-        
-        if total_comparisons > 0:
-            win_percentage = (hwk_wins / total_comparisons) * 100
-            results.append({
-                'exposure_ms': exposure_ms,
-                'win_percentage': win_percentage,
-                'hwk_wins': hwk_wins,
-                'total_comparisons': total_comparisons
-            })
+    # Calculate standard error
+    stats['sem'] = stats['std'] / np.sqrt(stats['count'])
     
-    return pd.DataFrame(results)
+    # Sort by exposure time
+    stats = stats.sort_values('exposure_ms')
+    
+    return stats
 
 
-# ============================================================================
-# Relative Performance Analysis (Quotient)
-# ============================================================================
-
-def calculate_relative_performance(df, f_number):
-    """Calculate IMX/HWK performance quotient (how much better IMX is than HWK)"""
-    # Filter for specific f-number
-    mask = df['f_number'] == f_number
-    subset = df[mask].copy()
+def plot_faintest_magnitude(df, output_path=None, show_error_bars=False):
+    """Create separate analysis plots for each sensor showing faintest detected magnitude"""
+    # Get sensor pixel sizes (not used here but keeping for consistency)
+    sensor_pixel_sizes = get_sensor_pixel_sizes()
     
-    if len(subset) == 0:
-        return pd.DataFrame()
-    
-    # Separate by sensor (pointing errors already calculated)
-    hwk_data = subset[subset['sensor'] == 'HWK4123'].copy()
-    imx_data = subset[subset['sensor'] == 'IMX455'].copy()
-    
-    # Merge on experiment_num and exposure_ms to compare same experiments
-    merged = pd.merge(
-        hwk_data[['experiment_num', 'exposure_ms', 'error_mas']],
-        imx_data[['experiment_num', 'exposure_ms', 'error_mas']],
-        on=['experiment_num', 'exposure_ms'],
-        suffixes=('_hwk', '_imx')
-    )
-    
-    # Group by exposure time and calculate statistics
-    results = []
-    for exposure_ms in sorted(merged['exposure_ms'].unique()):
-        exp_data = merged[merged['exposure_ms'] == exposure_ms]
-        
-        # Calculate quotients for valid pairs (neither is NaN)
-        valid_mask = ~(exp_data['error_mas_hwk'].isna() | exp_data['error_mas_imx'].isna())
-        valid_data = exp_data[valid_mask]
-        
-        if len(valid_data) > 0:
-            # Calculate HWK/IMX quotient (>1 means HWK has worse performance)
-            quotients = valid_data['error_mas_hwk'] / valid_data['error_mas_imx']
-            
-            results.append({
-                'exposure_ms': exposure_ms,
-                'mean_quotient': quotients.mean(),
-                'median_quotient': quotients.median(),
-                'std_quotient': quotients.std(),
-                'min_quotient': quotients.min(),
-                'max_quotient': quotients.max(),
-                'count': len(quotients)
-            })
-    
-    return pd.DataFrame(results)
-
-
-# ============================================================================
-# Star Count Analysis Functions
-# ============================================================================
-
-def plot_ra_dec_coverage(df, output_path=None, show=False, failed_exposure_ms=None):
-    """Create sky coverage plots with Mollweide and rectangular projections
-    
-    Args:
-        df: DataFrame with experiment data
-        output_path: Path to save the plot
-        show: Whether to display the plot
-        failed_exposure_ms: If specified, mark failed detections at this exposure time with red X
-    """
-    # Get unique experiments (each experiment tests all sensors at same position)
-    unique_experiments = df.drop_duplicates(subset=['experiment_num'])[['ra', 'dec', 'star_count']]
-    
-    # If exposure time specified, find failed detections
-    failed_detections = None
-    if failed_exposure_ms is not None:
-        # Get experiments at specific exposure time with no stars detected
-        exposure_mask = (df['exposure_ms'] == failed_exposure_ms) & (df['star_count'] == 0)
-        failed_detections = df[exposure_mask][['ra', 'dec']].drop_duplicates()
-    
-    # Convert RA/Dec to radians for Mollweide projection
-    ra_rad = np.radians(unique_experiments['ra'].values - 180)  # Center at 180 degrees
-    dec_rad = np.radians(unique_experiments['dec'].values)
-    
-    # Create figure with two subplots
-    fig = plt.figure(figsize=(20, 10))
-    
-    # Left plot: Mollweide projection
-    ax1 = plt.subplot(121, projection='mollweide')
-    
-    # Create 2D histogram for density in Mollweide
-    # Note: Mollweide expects longitude from -pi to pi, latitude from -pi/2 to pi/2
-    ra_bins = np.linspace(-np.pi, np.pi, 100)
-    dec_bins = np.linspace(-np.pi/2, np.pi/2, 50)
-    
-    # Calculate mean star count per bin
-    H, ra_edges, dec_edges = np.histogram2d(ra_rad, dec_rad, bins=[ra_bins, dec_bins])
-    
-    # For star counts, also bin the detected counts
-    star_counts = np.zeros_like(H)
-    for i in range(len(ra_bins)-1):
-        for j in range(len(dec_bins)-1):
-            mask = ((ra_rad >= ra_edges[i]) & (ra_rad < ra_edges[i+1]) &
-                    (dec_rad >= dec_edges[j]) & (dec_rad < dec_edges[j+1]))
-            if np.any(mask):
-                star_counts[i, j] = unique_experiments.loc[unique_experiments.index[mask], 'star_count'].mean()
-    
-    # Plot density map on Mollweide
-    ra_centers = (ra_edges[:-1] + ra_edges[1:]) / 2
-    dec_centers = (dec_edges[:-1] + dec_edges[1:]) / 2
-    RA, DEC = np.meshgrid(ra_centers, dec_centers)
-    
-    # Plot the density
-    im1 = ax1.pcolormesh(RA, DEC, star_counts.T, cmap='viridis', vmin=0, vmax=50)
-    
-    # Overlay scatter points
-    ax1.scatter(ra_rad, dec_rad, c='white', s=1, alpha=0.3, marker='.')
-    
-    # Add failed detection markers if specified
-    if failed_detections is not None and len(failed_detections) > 0:
-        failed_ra_rad = np.radians(failed_detections['ra'].values - 180)
-        failed_dec_rad = np.radians(failed_detections['dec'].values)
-        ax1.scatter(failed_ra_rad, failed_dec_rad, c='red', s=15, marker='x', 
-                   linewidth=1, alpha=0.8, label=f'Failed @ {failed_exposure_ms}ms')
-    
-    # Add grid and labels for Mollweide
-    ax1.grid(True, alpha=0.3, color='white', linewidth=0.5)
-    ax1.set_title('Sky Coverage - Mollweide Projection', fontsize=14, pad=20)
-    
-    # Add RA labels
-    ax1.set_xticks(np.radians([-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150]))
-    ax1.set_xticklabels([f'{int((x+180)%360)}°' for x in [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150]])
-    
-    # Add Dec labels
-    ax1.set_yticks(np.radians([-75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75]))
-    ax1.set_yticklabels([f'{x}°' for x in [-75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75]])
-    
-    ax1.set_xlabel('Right Ascension', fontsize=12)
-    ax1.set_ylabel('Declination', fontsize=12)
-    
-    # Right plot: Rectangular projection
-    ax2 = plt.subplot(122)
-    
-    # Create 2D histogram for rectangular projection
-    ra_bins_rect = np.linspace(0, 360, 120)
-    dec_bins_rect = np.linspace(-90, 90, 60)
-    
-    H_rect, ra_edges_rect, dec_edges_rect = np.histogram2d(
-        unique_experiments['ra'].values, 
-        unique_experiments['dec'].values, 
-        bins=[ra_bins_rect, dec_bins_rect]
-    )
-    
-    # Calculate mean star counts for rectangular projection
-    star_counts_rect = np.zeros_like(H_rect)
-    for i in range(len(ra_bins_rect)-1):
-        for j in range(len(dec_bins_rect)-1):
-            mask = ((unique_experiments['ra'].values >= ra_edges_rect[i]) & 
-                   (unique_experiments['ra'].values < ra_edges_rect[i+1]) &
-                   (unique_experiments['dec'].values >= dec_edges_rect[j]) & 
-                   (unique_experiments['dec'].values < dec_edges_rect[j+1]))
-            if np.any(mask):
-                star_counts_rect[i, j] = unique_experiments.loc[unique_experiments.index[mask], 'star_count'].mean()
-    
-    # Plot density map
-    im2 = ax2.pcolormesh(ra_edges_rect, dec_edges_rect, star_counts_rect.T, cmap='viridis', vmin=0, vmax=50)
-    
-    # Overlay scatter points
-    ax2.scatter(unique_experiments['ra'], unique_experiments['dec'], 
-               c='white', s=1, alpha=0.3, marker='.')
-    
-    # Add failed detection markers if specified
-    if failed_detections is not None and len(failed_detections) > 0:
-        ax2.scatter(failed_detections['ra'], failed_detections['dec'], 
-                   c='red', s=15, marker='x', linewidth=1, alpha=0.8,
-                   label=f'Failed @ {failed_exposure_ms}ms')
-        ax2.legend(loc='upper right', fontsize=10)
-    
-    ax2.set_xlabel('Right Ascension (degrees)', fontsize=12)
-    ax2.set_ylabel('Declination (degrees)', fontsize=12)
-    ax2.set_title('Sky Coverage - Rectangular Projection', fontsize=14, pad=20)
-    ax2.grid(True, alpha=0.3, linestyle='--')
-    ax2.set_xlim(0, 360)
-    ax2.set_ylim(-90, 90)
-    
-    # Add colorbars
-    cbar1 = plt.colorbar(im1, ax=ax1, orientation='horizontal', pad=0.05, shrink=0.8)
-    cbar1.set_label('Mean Star Count', fontsize=10)
-    
-    cbar2 = plt.colorbar(im2, ax=ax2, orientation='vertical', pad=0.02)
-    cbar2.set_label('Number of Pointings', fontsize=10, rotation=270, labelpad=20)
-    
-    # Add overall title and statistics
-    n_experiments = len(unique_experiments)
-    n_observations = len(df)
-    mean_stars = unique_experiments['star_count'].mean()
-    max_stars = unique_experiments['star_count'].max()
-    no_star_pointings = (unique_experiments['star_count'] == 0).sum()
-    
-    fig.suptitle(f'Sky Coverage Map - {n_experiments} Unique Pointings', fontsize=16, y=0.98)
-    
-    # Add statistics box at bottom
-    stats_text = (f'Total unique pointings: {n_experiments}\n'
-                 f'Total observations: {n_observations}\n'
-                 f'Mean stars per pointing: {mean_stars:.1f}\n'
-                 f'Max stars: {max_stars}\n'
-                 f'Pointings with no stars: {no_star_pointings}')
-    
-    if failed_detections is not None and len(failed_detections) > 0:
-        stats_text += f'\nFailed detections @ {failed_exposure_ms}ms: {len(failed_detections)}'
-    
-    fig.text(0.5, 0.02, stats_text, ha='center', fontsize=10,
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-    
-    plt.tight_layout(rect=[0, 0.08, 1, 0.96])
-    
-    if output_path:
-        plt.savefig(output_path, dpi=600, bbox_inches='tight')
-        print(f"Saved RA/Dec coverage plot to {output_path}")
-    
-    if show:
-        plt.show()
-    else:
-        plt.close()
-    
-    return fig
-
-
-def print_star_count_extremes(df, n=5):
-    """Print the top and bottom N ra/dec locations by star count"""
-    # Group by ra/dec and calculate mean star count across all experiments
-    location_stats = df.groupby(['ra', 'dec'])['star_count'].agg(['mean', 'count']).reset_index()
-    location_stats = location_stats[location_stats['count'] > 0]  # Filter out NaN-only groups
-    
-    # Sort by mean star count
-    location_stats_sorted = location_stats.sort_values('mean', ascending=False)
-    
-    print(f"\n{'='*60}")
-    print(f"Top {n} sky locations with HIGHEST star counts:")
-    print(f"{'='*60}")
-    print(f"{'RA':>10} {'Dec':>10} {'Mean Stars':>12} {'N Obs':>8}")
-    print(f"{'-'*10} {'-'*10} {'-'*12} {'-'*8}")
-    
-    for _, row in location_stats_sorted.head(n).iterrows():
-        print(f"{row['ra']:10.4f} {row['dec']:10.4f} {row['mean']:12.2f} {int(row['count']):8d}")
-    
-    print(f"\n{'='*60}")
-    print(f"Top {n} sky locations with LOWEST star counts:")
-    print(f"{'='*60}")
-    print(f"{'RA':>10} {'Dec':>10} {'Mean Stars':>12} {'N Obs':>8}")
-    print(f"{'-'*10} {'-'*10} {'-'*12} {'-'*8}")
-    
-    for _, row in location_stats_sorted.tail(n).iterrows():
-        print(f"{row['ra']:10.4f} {row['dec']:10.4f} {row['mean']:12.2f} {int(row['count']):8d}")
-    
-    print(f"{'='*60}\n")
-
-
-def plot_win_percentage(df, output_path=None):
-    """Create win percentage plot for HWK4123 vs IMX455"""
-    # Get unique f-numbers from the data
+    # Get unique sensors and f-numbers from the data
+    sensors = sorted(df['sensor'].unique())
     f_numbers = sorted(df['f_number'].unique())
-    print(f"F-numbers in data: {f_numbers}")
     
-    # Create figure
+    # Create figure with subplots - one for each sensor
+    n_sensors = len(sensors)
+    fig, axes = plt.subplots(1, n_sensors, figsize=(8*n_sensors, 8))
+    
+    # Make axes iterable even for single sensor
+    if n_sensors == 1:
+        axes = [axes]
+    
+    # Use a consistent colormap for both sensors
+    cmap = cm.viridis  # Natural color gradient
+    
+    # Plot data for each sensor
+    for idx, (sensor_name, ax) in enumerate(zip(sensors, axes)):
+        # Get pixel size for this sensor
+        pixel_size_um = sensor_pixel_sizes.get(sensor_name)
+        
+        # Store handles for legend
+        legend_elements = []
+        
+        # Plot for each f-number
+        for i, f_num in enumerate(f_numbers):
+            color = get_f_number_color(f_num, cmap)
+            
+            stats_data = calculate_faintest_magnitude_statistics(df, sensor_name, f_num)
+            
+            if len(stats_data) > 0:
+                # Convert exposure from ms to seconds for display
+                exposure_s = stats_data['exposure_ms'] / 1000.0
+                
+                # Plot mean faintest magnitude with optional error bars
+                if show_error_bars:
+                    ax.errorbar(exposure_s, stats_data['mean'], 
+                               yerr=stats_data['sem'], 
+                               color=color, linewidth=2, marker='o', markersize=6,
+                               capsize=4, capthick=1.5, alpha=0.8,
+                               label=f"f/{f_num:.1f}")
+                else:
+                    ax.plot(exposure_s, stats_data['mean'], 
+                           color=color, linewidth=2, marker='o', markersize=6,
+                           label=f"f/{f_num:.1f}")
+                
+                # Add shaded confidence interval (±1 std)
+                if 'std' in stats_data.columns:
+                    ax.fill_between(exposure_s, 
+                                    stats_data['mean'] - stats_data['std'],
+                                    stats_data['mean'] + stats_data['std'],
+                                    color=color, alpha=0.2)
+                
+                legend_elements.append(Line2D([0], [0], color=color, lw=2, 
+                                            label=f"f/{f_num:.1f}"))
+        
+        # Formatting for each subplot
+        ax.set_xlabel('Exposure Time (seconds)', fontsize=12)
+        ax.set_ylabel('Faintest Star Magnitude', fontsize=12)
+        ax.set_title(f'{sensor_name} Faintest Star Detection\n' + 
+                    f'(pixel size: {pixel_size_um} μm)', fontsize=14)
+        
+        # Grid
+        ax.grid(True, alpha=0.3, linestyle='--')
+        
+        # Legend
+        ax.legend(handles=legend_elements, loc='best', framealpha=0.9)
+        
+        # X-axis log scale if exposure range is large
+        if 'exposure_s' in locals() and len(exposure_s) > 0:
+            max_exp = df['exposure_ms'].max() / 1000.0
+            min_exp = df['exposure_ms'].min() / 1000.0
+            if max_exp / min_exp > 10:
+                ax.set_xscale('log')
+                ax.set_xlabel('Exposure Time (seconds, log scale)', fontsize=12)
+    
+    # Overall title
+    fig.suptitle('Faintest Star Detection\n(Mean magnitude of faintest detected star)', 
+                fontsize=16, y=0.98)
+    
+    plt.tight_layout()
+    
+    # Save or show
+    if output_path:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"Plot saved to: {output_path}")
+    else:
+        plt.show()
+    
+    return fig, axes
+
+
+# ============================================================================
+# High Accuracy Percentage Analysis
+# ============================================================================
+
+def calculate_high_accuracy_statistics(df, sensor, f_number, threshold=0.1):
+    """Calculate percentage of experiments with pixel error < threshold"""
+    mask = (df['sensor'] == sensor) & (df['f_number'] == f_number)
+    sensor_data = df[mask]
+    
+    if len(sensor_data) == 0:
+        return pd.DataFrame()
+    
+    # Filter out NaN values for pixel_error
+    valid_data = sensor_data.dropna(subset=['pixel_error'])
+    
+    # Group by exposure and calculate high accuracy percentage
+    stats = []
+    for exposure_ms in sorted(valid_data['exposure_ms'].unique()):
+        exp_data = valid_data[valid_data['exposure_ms'] == exposure_ms]
+        
+        total_experiments = len(exp_data)
+        high_accuracy_count = (exp_data['pixel_error'] < threshold).sum()
+        high_accuracy_pct = (high_accuracy_count / total_experiments * 100) if total_experiments > 0 else 0
+        
+        stats.append({
+            'exposure_ms': exposure_ms,
+            'high_accuracy_pct': high_accuracy_pct,
+            'high_accuracy_count': high_accuracy_count,
+            'total_experiments': total_experiments
+        })
+    
+    return pd.DataFrame(stats)
+
+
+def plot_high_accuracy_percentage(df, output_path=None):
+    """Create analysis plot showing high accuracy percentage"""
+    # Get sensor info
+    sensor_name = df['sensor'].iloc[0]  # Assume single sensor
+    sensor_pixel_sizes = get_sensor_pixel_sizes()
+    pixel_size_um = sensor_pixel_sizes.get(sensor_name, 0)
+    
+    # Get f-numbers from the data
+    f_numbers = sorted(df['f_number'].unique())
+    
+    # Create single figure
     fig, ax = plt.subplots(figsize=(12, 8))
     
-    # Use viridis colormap for consistency
+    # Use a consistent colormap
     cmap = cm.viridis
+    
+    # Store handles for legend
+    legend_elements = []
     
     # Plot for each f-number
     for i, f_num in enumerate(f_numbers):
         color = get_f_number_color(f_num, cmap)
         
-        # Calculate win percentage data
-        win_data = calculate_win_percentage(df, f_num)
+        stats_data = calculate_high_accuracy_statistics(df, sensor_name, f_num)
         
-        if len(win_data) > 0:
+        if len(stats_data) > 0:
             # Convert exposure from ms to seconds for display
-            exposure_s = win_data['exposure_ms'] / 1000.0
+            exposure_s = stats_data['exposure_ms'] / 1000.0
             
-            # Plot line
-            ax.plot(exposure_s, win_data['win_percentage'], 
+            # Plot high accuracy percentage
+            ax.plot(exposure_s, stats_data['high_accuracy_pct'], 
                    color=color, linewidth=2, marker='o', markersize=6,
-                   label=f"f/{f_num}")
+                   label=f"f/{f_num:.1f}")
             
-            # Add text annotation for number of comparisons at first point
-            if len(win_data) > 0:
-                first_row = win_data.iloc[0]
-                ax.annotate(f'n={first_row["total_comparisons"]}', 
-                           xy=(exposure_s.iloc[0], first_row['win_percentage']),
+            # Add text annotation for number of experiments at first point
+            if len(stats_data) > 0:
+                first_row = stats_data.iloc[0]
+                ax.annotate(f'n={first_row["total_experiments"]}', 
+                           xy=(exposure_s.iloc[0], first_row['high_accuracy_pct']),
                            xytext=(5, 5), textcoords='offset points',
                            fontsize=8, alpha=0.7)
-    
-    # Add 50% reference line
-    ax.axhline(y=50, color='gray', linestyle='--', alpha=0.5, label='50% (Equal performance)')
+            
+            legend_elements.append(Line2D([0], [0], color=color, lw=2, 
+                                        label=f"f/{f_num:.1f}"))
     
     # Formatting
     ax.set_xlabel('Exposure Time (seconds)', fontsize=12)
-    ax.set_ylabel('HWK4123 Win Percentage (%)', fontsize=12)
-    ax.set_title('HWK4123 vs IMX455 Pointing Precision Comparison\n' + 
-                '(Lower pointing error wins; NaN always loses)', fontsize=14)
+    ax.set_ylabel('High Accuracy Percentage (%)', fontsize=12)
+    ax.set_title(f'{sensor_name} High Accuracy Rate\n' + 
+                f'(Percentage of experiments with pixel error < 0.1)', fontsize=14)
+    
+    # Grid
+    ax.grid(True, alpha=0.3, linestyle='--')
+    
+    # Legend
+    ax.legend(handles=legend_elements, loc='best', framealpha=0.9)
+    
+    # Set Y-axis limits 0-100%
+    ax.set_ylim(0, 105)
+    
+    # X-axis log scale if exposure range is large
+    if f_numbers and len(stats_data) > 0:
+        max_exp = df['exposure_ms'].max() / 1000.0
+        min_exp = df['exposure_ms'].min() / 1000.0
+        if max_exp / min_exp > 10:
+            ax.set_xscale('log')
+            ax.set_xlabel('Exposure Time (seconds, log scale)', fontsize=12)
+    
+    plt.tight_layout()
+    
+    # Save or show
+    if output_path:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"Plot saved to: {output_path}")
+    else:
+        plt.show()
+    
+    return fig, ax
+
+
+def plot_field_closure_percentage(df, output_path=None):
+    """Create separate analysis plots for each sensor showing field closure percentage"""
+    # Get sensor pixel sizes (not used here but keeping for consistency)
+    sensor_pixel_sizes = get_sensor_pixel_sizes()
+    
+    # Get unique sensors and f-numbers from the data
+    sensors = sorted(df['sensor'].unique())
+    f_numbers = sorted(df['f_number'].unique())
+    
+    # Create figure with subplots - one for each sensor
+    n_sensors = len(sensors)
+    fig, axes = plt.subplots(1, n_sensors, figsize=(8*n_sensors, 8))
+    
+    # Make axes iterable even for single sensor
+    if n_sensors == 1:
+        axes = [axes]
+    
+    # Use a consistent colormap for both sensors
+    cmap = cm.viridis  # Natural color gradient
+    
+    # Plot data for each sensor
+    for idx, (sensor_name, ax) in enumerate(zip(sensors, axes)):
+        # Get pixel size for this sensor
+        pixel_size_um = sensor_pixel_sizes.get(sensor_name)
+        
+        # Store handles for legend
+        legend_elements = []
+        
+        # Plot for each f-number
+        for i, f_num in enumerate(f_numbers):
+            color = get_f_number_color(f_num, cmap)
+            
+            # Calculate field closure percentage for this sensor and f-number
+            mask = (df['sensor'] == sensor_name) & (df['f_number'] == f_num)
+            sensor_data = df[mask]
+            
+            if len(sensor_data) > 0:
+                # Group by exposure and calculate closure percentage
+                closure_data = []
+                for exposure_ms in sorted(sensor_data['exposure_ms'].unique()):
+                    exp_data = sensor_data[sensor_data['exposure_ms'] == exposure_ms]
+                    
+                    total_experiments = len(exp_data)
+                    closed_experiments = (exp_data['star_count'] >= 1).sum()
+                    closure_pct = (closed_experiments / total_experiments * 100) if total_experiments > 0 else 0
+                    
+                    closure_data.append({
+                        'exposure_ms': exposure_ms,
+                        'closure_pct': closure_pct,
+                        'total': total_experiments
+                    })
+                
+                closure_df = pd.DataFrame(closure_data)
+                
+                # Convert exposure from ms to seconds for display
+                exposure_s = closure_df['exposure_ms'] / 1000.0
+                
+                # Plot closure percentage
+                ax.plot(exposure_s, closure_df['closure_pct'], 
+                       color=color, linewidth=2, marker='o', markersize=6,
+                       label=f"f/{f_num:.1f}")
+                
+                # Add text annotation for number of experiments at first point
+                if len(closure_df) > 0:
+                    first_row = closure_df.iloc[0]
+                    ax.annotate(f'n={first_row["total"]}', 
+                               xy=(exposure_s.iloc[0], first_row['closure_pct']),
+                               xytext=(5, 5), textcoords='offset points',
+                               fontsize=8, alpha=0.7)
+                
+                legend_elements.append(Line2D([0], [0], color=color, lw=2, 
+                                            label=f"f/{f_num:.1f}"))
+        
+        # Formatting for each subplot
+        ax.set_xlabel('Exposure Time (seconds)', fontsize=12)
+        ax.set_ylabel('Field Closure Percentage (%)', fontsize=12)
+        ax.set_title(f'{sensor_name} Field Closure Rate\n' + 
+                    f'(% detecting ≥1 star)', fontsize=14)
+        
+        # Grid
+        ax.grid(True, alpha=0.3, linestyle='--')
+        
+        # Legend
+        ax.legend(handles=legend_elements, loc='best', framealpha=0.9)
+        
+        # Set Y-axis limits 0-100%
+        ax.set_ylim(0, 105)
+        
+        # X-axis log scale if exposure range is large
+        if 'exposure_s' in locals() and len(exposure_s) > 0:
+            max_exp = df['exposure_ms'].max() / 1000.0
+            min_exp = df['exposure_ms'].min() / 1000.0
+            if max_exp / min_exp > 10:
+                ax.set_xscale('log')
+                ax.set_xlabel('Exposure Time (seconds, log scale)', fontsize=12)
+    
+    # Overall title
+    fig.suptitle('Field Closure Performance\n(Percentage of experiments detecting at least one star)', 
+                fontsize=16, y=0.98)
+    
+    plt.tight_layout()
+    
+    # Save or show
+    if output_path:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"Plot saved to: {output_path}")
+    else:
+        plt.show()
+    
+    return fig, axes
+
+
+# ============================================================================
+# Mean Pointing Error Analysis
+# ============================================================================
+
+def calculate_pointing_statistics(df, sensor, f_number):
+    """Calculate mean and std pointing error for each exposure time"""
+    mask = (df['sensor'] == sensor) & (df['f_number'] == f_number)
+    sensor_data = df[mask]
+    
+    if len(sensor_data) == 0:
+        return pd.DataFrame()
+    
+    # Filter out NaN values for error_mas
+    valid_data = sensor_data.dropna(subset=['error_mas'])
+    
+    # Group by exposure and calculate statistics
+    stats = valid_data.groupby('exposure_ms')['error_mas'].agg([
+        ('mean', 'mean'),
+        ('std', 'std'),
+        ('median', 'median'),
+        ('count', 'size'),
+    ]).reset_index()
+    
+    # Calculate standard error
+    stats['sem'] = stats['std'] / np.sqrt(stats['count'])
+    
+    # Sort by exposure time
+    stats = stats.sort_values('exposure_ms')
+    
+    return stats
+
+
+def plot_mean_pointing_error(df, output_path=None, show_error_bars=False):
+    """Create separate analysis plots for each sensor"""
+    # Get sensor pixel sizes
+    sensor_pixel_sizes = get_sensor_pixel_sizes()
+    
+    # Get unique sensors and f-numbers from the data
+    sensors = sorted(df['sensor'].unique())
+    f_numbers = sorted(df['f_number'].unique())
+    
+    # Create figure with subplots - one for each sensor
+    n_sensors = len(sensors)
+    fig, axes = plt.subplots(1, n_sensors, figsize=(8*n_sensors, 8))
+    
+    # Make axes iterable even for single sensor
+    if n_sensors == 1:
+        axes = [axes]
+    
+    # Use a consistent colormap for both sensors
+    cmap = cm.viridis  # Natural color gradient
+    
+    # Plot data for each sensor
+    for idx, (sensor_name, ax) in enumerate(zip(sensors, axes)):
+        # Get pixel size for this sensor
+        pixel_size_um = sensor_pixel_sizes.get(sensor_name)
+        
+        # Store handles for legend
+        legend_elements = []
+        
+        # Plot for each f-number
+        for i, f_num in enumerate(f_numbers):
+            color = get_f_number_color(f_num, cmap)
+            
+            stats_data = calculate_pointing_statistics(df, sensor_name, f_num)
+            
+            if len(stats_data) > 0:
+                # Convert exposure from ms to seconds for display
+                exposure_s = stats_data['exposure_ms'] / 1000.0
+                
+                # Plot mean pointing error with optional error bars
+                if show_error_bars:
+                    ax.errorbar(exposure_s, stats_data['mean'], 
+                               yerr=stats_data['sem'], 
+                               color=color, linewidth=2, marker='o', markersize=6,
+                               capsize=4, capthick=1.5, alpha=0.8,
+                               label=f"f/{f_num:.1f}")
+                else:
+                    ax.plot(exposure_s, stats_data['mean'], 
+                           color=color, linewidth=2, marker='o', markersize=6,
+                           label=f"f/{f_num:.1f}")
+                
+                # Add shaded confidence interval (±1 std)
+                if 'std' in stats_data.columns:
+                    ax.fill_between(exposure_s, 
+                                    stats_data['mean'] - stats_data['std'],
+                                    stats_data['mean'] + stats_data['std'],
+                                    color=color, alpha=0.2)
+                
+                legend_elements.append(Line2D([0], [0], color=color, lw=2, 
+                                            label=f"f/{f_num:.1f}"))
+        
+        # Formatting for each subplot
+        ax.set_xlabel('Exposure Time (seconds)', fontsize=12)
+        ax.set_ylabel('Mean Pointing Error (milliarcsec)', fontsize=12)
+        ax.set_title(f'{sensor_name} Pointing Performance\n' + 
+                    f'(pixel size: {pixel_size_um} μm)', fontsize=14)
+        
+        # Grid
+        ax.grid(True, alpha=0.3, linestyle='--')
+        
+        # Legend
+        ax.legend(handles=legend_elements, loc='best', framealpha=0.9)
+        
+        # X-axis log scale if exposure range is large  
+        if 'exposure_s' in locals() and len(exposure_s) > 0:
+            max_exp = df['exposure_ms'].max() / 1000.0
+            min_exp = df['exposure_ms'].min() / 1000.0
+            if max_exp / min_exp > 10:
+                ax.set_xscale('log')
+                ax.set_xlabel('Exposure Time (seconds, log scale)', fontsize=12)
+    
+    # Overall title
+    fig.suptitle('Mean Pointing Error Comparison\n(Lower is better)', 
+                fontsize=16, y=0.98)
+    
+    plt.tight_layout()
+    
+    # Save or show
+    if output_path:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"Plot saved to: {output_path}")
+    else:
+        plt.show()
+    
+    return fig, axes
+
+
+# ============================================================================
+# Win Percentage Analysis
+# ============================================================================
+
+def plot_win_percentage(df, output_path=None):
+    """Plot win percentage for IMX455 vs HWK4123 at each f-number"""
+    
+    # Get unique f-numbers
+    f_numbers = sorted(df['f_number'].unique())
+    print(f"F-numbers in data: {f_numbers}")
+    
+    # Filter for sensors
+    imx455_data = df[df['sensor'] == 'IMX455']
+    hwk4123_data = df[df['sensor'] == 'HWK4123']
+    
+    # Check if we have data for both sensors
+    if len(imx455_data) == 0 or len(hwk4123_data) == 0:
+        print("Warning: Need data for both IMX455 and HWK4123 sensors for win percentage analysis")
+        return None, None
+    
+    # Create figure
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Use consistent colormap
+    cmap = cm.viridis
+    
+    # Store data for each f-number
+    for f_num in f_numbers:
+        color = get_f_number_color(f_num, cmap)
+        
+        # Get data for this f-number
+        imx455_f = imx455_data[imx455_data['f_number'] == f_num]
+        hwk4123_f = hwk4123_data[hwk4123_data['f_number'] == f_num]
+        
+        if len(imx455_f) == 0 or len(hwk4123_f) == 0:
+            print(f"Skipping f/{f_num:.1f} - insufficient data")
+            continue
+        
+        # Get unique exposures that both sensors have
+        exposures = sorted(set(imx455_f['exposure_ms'].unique()) & 
+                          set(hwk4123_f['exposure_ms'].unique()))
+        
+        if len(exposures) == 0:
+            continue
+        
+        win_percentages = []
+        exposure_times_s = []
+        
+        for exp_ms in exposures:
+            # Get error data for each sensor at this exposure
+            imx455_errors = imx455_f[imx455_f['exposure_ms'] == exp_ms]['error_mas'].dropna()
+            hwk4123_errors = hwk4123_f[hwk4123_f['exposure_ms'] == exp_ms]['error_mas'].dropna()
+            
+            if len(imx455_errors) == 0 or len(hwk4123_errors) == 0:
+                continue
+            
+            # Calculate win percentage (IMX455 wins when it has lower error)
+            # We compare all combinations
+            total_comparisons = 0
+            imx455_wins = 0
+            
+            for imx_error in imx455_errors:
+                for hwk_error in hwk4123_errors:
+                    total_comparisons += 1
+                    if imx_error < hwk_error:
+                        imx455_wins += 1
+            
+            if total_comparisons > 0:
+                win_pct = (imx455_wins / total_comparisons) * 100
+                win_percentages.append(win_pct)
+                exposure_times_s.append(exp_ms / 1000.0)
+        
+        if len(win_percentages) > 0:
+            # Plot win percentage
+            ax.plot(exposure_times_s, win_percentages,
+                   color=color, linewidth=2, marker='o', markersize=6,
+                   label=f"f/{f_num:.1f}")
+    
+    # Add 50% reference line
+    ax.axhline(y=50, color='gray', linestyle='--', linewidth=1, alpha=0.5, 
+               label='Equal performance')
+    
+    # Add shaded regions
+    ax.axhspan(50, 100, alpha=0.1, color='blue', label='IMX455 better')
+    ax.axhspan(0, 50, alpha=0.1, color='red', label='HWK4123 better')
+    
+    # Formatting
+    ax.set_xlabel('Exposure Time (seconds)', fontsize=12)
+    ax.set_ylabel('IMX455 Win Percentage (%)', fontsize=12)
+    ax.set_title('Sensor Win Percentage\n(% of experiments where IMX455 has lower pointing error than HWK4123)',
+                fontsize=14)
     
     # Grid
     ax.grid(True, alpha=0.3, linestyle='--')
@@ -1250,13 +935,13 @@ def plot_win_percentage(df, output_path=None):
     # Legend
     ax.legend(loc='best', framealpha=0.9)
     
-    # Y-axis range
+    # Y-axis limits
     ax.set_ylim(0, 100)
     
     # X-axis log scale if exposure range is large
-    if len(win_data) > 0:
-        max_exp = df['exposure_ms'].max() / 1000.0
-        min_exp = df['exposure_ms'].min() / 1000.0
+    if len(exposures) > 0:
+        max_exp = max(exposures) / 1000.0
+        min_exp = min(exposures) / 1000.0
         if max_exp / min_exp > 10:
             ax.set_xscale('log')
             ax.set_xlabel('Exposure Time (seconds, log scale)', fontsize=12)
@@ -1273,51 +958,85 @@ def plot_win_percentage(df, output_path=None):
     return fig, ax
 
 
+# ============================================================================
+# Performance Quotient Analysis  
+# ============================================================================
+
 def plot_relative_performance(df, output_path=None):
-    """Create relative performance plot showing HWK/IMX quotient"""
-    # Get unique f-numbers from the data
+    """Plot relative performance quotient (HWK4123 / IMX455) for each f-number"""
+    
+    # Get unique f-numbers
     f_numbers = sorted(df['f_number'].unique())
     print(f"F-numbers in data: {f_numbers}")
+    
+    # Filter for sensors
+    imx455_data = df[df['sensor'] == 'IMX455']
+    hwk4123_data = df[df['sensor'] == 'HWK4123']
+    
+    # Check if we have data for both sensors
+    if len(imx455_data) == 0 or len(hwk4123_data) == 0:
+        print("Warning: Need data for both IMX455 and HWK4123 sensors for quotient analysis")
+        return None, None
     
     # Create figure
     fig, ax = plt.subplots(figsize=(12, 8))
     
-    # Use viridis colormap for consistency
+    # Use consistent colormap
     cmap = cm.viridis
     
-    # Plot for each f-number
-    for i, f_num in enumerate(f_numbers):
+    # Store data for each f-number
+    for f_num in f_numbers:
         color = get_f_number_color(f_num, cmap)
         
-        # Calculate relative performance data
-        perf_data = calculate_relative_performance(df, f_num)
+        # Get data for this f-number
+        imx455_f = imx455_data[imx455_data['f_number'] == f_num]
+        hwk4123_f = hwk4123_data[hwk4123_data['f_number'] == f_num]
         
-        if len(perf_data) > 0:
-            # Convert exposure from ms to seconds for display
-            exposure_s = perf_data['exposure_ms'] / 1000.0
+        if len(imx455_f) == 0 or len(hwk4123_f) == 0:
+            print(f"Skipping f/{f_num:.1f} - insufficient data")
+            continue
+        
+        # Calculate statistics for each exposure
+        imx455_stats = calculate_pointing_statistics(df, 'IMX455', f_num)
+        hwk4123_stats = calculate_pointing_statistics(df, 'HWK4123', f_num)
+        
+        # Merge on exposure_ms
+        merged = pd.merge(imx455_stats, hwk4123_stats, on='exposure_ms', 
+                         suffixes=('_imx', '_hwk'))
+        
+        if len(merged) > 0:
+            # Calculate quotient (HWK4123 / IMX455)
+            # Values > 1 mean IMX455 is better (lower error)
+            # Values < 1 mean HWK4123 is better
+            quotient = merged['mean_hwk'] / merged['mean_imx']
+            exposure_s = merged['exposure_ms'] / 1000.0
             
-            # Plot mean quotient without error bars
-            ax.plot(exposure_s, perf_data['mean_quotient'], 
+            # Plot quotient
+            ax.plot(exposure_s, quotient,
                    color=color, linewidth=2, marker='o', markersize=6,
-                   label=f"f/{f_num}")
-            
-            # Add text annotation for number of comparisons at first point
-            if len(perf_data) > 0:
-                first_row = perf_data.iloc[0]
-                ax.annotate(f'n={first_row["count"]}', 
-                           xy=(exposure_s.iloc[0], first_row['mean_quotient']),
-                           xytext=(5, 5), textcoords='offset points',
-                           fontsize=8, alpha=0.7)
+                   label=f"f/{f_num:.1f}")
     
-    # Add reference lines
-    ax.axhline(y=1.0, color='gray', linestyle='--', alpha=0.5, label='1.0 (Equal performance)')
-    ax.axhline(y=1.22, color='red', linestyle=':', alpha=0.3, label='1.22 (Pixel size ratio)')
+    # Add reference line at 1 (equal performance)
+    ax.axhline(y=1, color='gray', linestyle='--', linewidth=1.5, alpha=0.7, 
+               label='Equal performance')
+    
+    # Add shaded regions with labels
+    # Get y-axis limits for shading
+    ylim = ax.get_ylim()
+    ax.axhspan(1, ylim[1], alpha=0.1, color='blue')
+    ax.axhspan(ylim[0], 1, alpha=0.1, color='red')
+    
+    # Add text annotations for regions
+    ax.text(0.02, 0.98, 'IMX455 Better', transform=ax.transAxes,
+           fontsize=10, va='top', color='blue', alpha=0.7, weight='bold')
+    ax.text(0.02, 0.02, 'HWK4123 Better', transform=ax.transAxes,
+           fontsize=10, va='bottom', color='red', alpha=0.7, weight='bold')
     
     # Formatting
     ax.set_xlabel('Exposure Time (seconds)', fontsize=12)
-    ax.set_ylabel('HWK/IMX Pointing Error Quotient', fontsize=12)
-    ax.set_title('Relative Sensor Performance: HWK4123 vs IMX455\n' + 
-                '(Values > 1 indicate IMX455 performs better)', fontsize=14)
+    ax.set_ylabel('Performance Quotient (HWK4123 error / IMX455 error)', fontsize=12)
+    ax.set_title('Relative Sensor Performance\n(Values > 1 indicate IMX455 superiority)',
+                fontsize=14)
     
     # Grid
     ax.grid(True, alpha=0.3, linestyle='--')
@@ -1325,13 +1044,17 @@ def plot_relative_performance(df, output_path=None):
     # Legend
     ax.legend(loc='best', framealpha=0.9)
     
-    # Y-axis starts at 0
-    ax.set_ylim(bottom=0)
+    # Y-axis log scale for better visualization of quotients
+    ax.set_yscale('log')
+    ax.set_ylabel('Performance Quotient (log scale)\n(HWK4123 error / IMX455 error)', fontsize=12)
+    
+    # Set reasonable y-axis limits
+    ax.set_ylim(0.5, 2.0)
     
     # X-axis log scale if exposure range is large
-    if len(perf_data) > 0:
-        max_exp = df['exposure_ms'].max() / 1000.0
-        min_exp = df['exposure_ms'].min() / 1000.0
+    if len(exposure_s) > 0:
+        max_exp = exposure_s.max()
+        min_exp = exposure_s.min()
         if max_exp / min_exp > 10:
             ax.set_xscale('log')
             ax.set_xlabel('Exposure Time (seconds, log scale)', fontsize=12)
@@ -1348,55 +1071,87 @@ def plot_relative_performance(df, output_path=None):
     return fig, ax
 
 
+# ============================================================================
+# Error Variance Analysis
+# ============================================================================
+
 def plot_error_variance(df, output_path=None):
-    """Plot error variance as a function of exposure time"""
-    # Get unique sensors
-    sensors = df['sensor'].unique()
+    """Plot variance of pointing error for each sensor at different exposures"""
+    # Get sensor pixel sizes
+    sensor_pixel_sizes = get_sensor_pixel_sizes()
     
-    # Setup plot
-    fig, axes = plt.subplots(1, len(sensors), figsize=(7*len(sensors), 6))
-    if len(sensors) == 1:
+    # Get unique sensors and f-numbers from the data
+    sensors = sorted(df['sensor'].unique())
+    f_numbers = sorted(df['f_number'].unique())
+    
+    # Create figure with subplots - one for each sensor
+    n_sensors = len(sensors)
+    fig, axes = plt.subplots(1, n_sensors, figsize=(8*n_sensors, 8))
+    
+    # Make axes iterable even for single sensor
+    if n_sensors == 1:
         axes = [axes]
     
-    # Use consistent colormap for f-numbers
-    cmap = cm.get_cmap('viridis')
+    # Use a consistent colormap
+    cmap = cm.viridis
     
-    for idx, sensor in enumerate(sensors):
-        ax = axes[idx]
-        sensor_data = df[df['sensor'] == sensor]
+    # Plot data for each sensor
+    for idx, (sensor_name, ax) in enumerate(zip(sensors, axes)):
+        # Get pixel size for this sensor
+        pixel_size_um = sensor_pixel_sizes.get(sensor_name)
         
-        # Get unique f-numbers for this sensor
-        f_numbers = sorted(sensor_data['f_number'].unique())
+        # Store handles for legend
+        legend_elements = []
         
-        for f_number in f_numbers:
-            mask = (sensor_data['f_number'] == f_number)
-            subset = sensor_data[mask].copy()
+        # Plot for each f-number
+        for i, f_num in enumerate(f_numbers):
+            color = get_f_number_color(f_num, cmap)
             
-            if len(subset) == 0:
-                continue
+            # Get statistics
+            stats_data = calculate_pointing_statistics(df, sensor_name, f_num)
             
-            # Group by exposure time and calculate variance
-            grouped = subset.groupby('exposure_ms')['pixel_error'].agg(['var', 'std', 'count'])
-            grouped = grouped[grouped['count'] >= 5]  # Only show if we have enough samples
-            
-            if len(grouped) == 0:
-                continue
-            
-            # Plot variance
-            color = get_f_number_color(f_number, cmap)
-            ax.plot(grouped.index, grouped['var'], 
-                   marker='o', linewidth=2, markersize=8,
-                   label=f'f/{f_number:.0f}', color=color)
+            if len(stats_data) > 0 and 'std' in stats_data.columns:
+                # Convert exposure from ms to seconds for display
+                exposure_s = stats_data['exposure_ms'] / 1000.0
+                
+                # Plot variance (std squared)
+                variance = stats_data['std'] ** 2
+                
+                ax.plot(exposure_s, variance,
+                       color=color, linewidth=2, marker='o', markersize=6,
+                       label=f"f/{f_num:.1f}")
+                
+                legend_elements.append(Line2D([0], [0], color=color, lw=2,
+                                            label=f"f/{f_num:.1f}"))
         
-        ax.set_title(f'{sensor} - Error Variance vs Exposure Time')
-        ax.set_xlabel('Exposure Time (ms)')
-        ax.set_ylabel('Pixel Error Variance')
-        ax.set_xscale('log')
-        ax.set_yscale('log')
-        ax.grid(True, alpha=0.3)
-        ax.legend(loc='best')
+        # Formatting for each subplot
+        ax.set_xlabel('Exposure Time (seconds)', fontsize=12)
+        ax.set_ylabel('Error Variance (mas²)', fontsize=12)
+        ax.set_title(f'{sensor_name} Pointing Error Variance\n' +
+                    f'(pixel size: {pixel_size_um} μm)', fontsize=14)
+        
+        # Grid
+        ax.grid(True, alpha=0.3, linestyle='--')
+        
+        # Legend
+        ax.legend(handles=legend_elements, loc='best', framealpha=0.9)
+        
+        # Use log scale for both axes if range is large
+        if 'exposure_s' in locals() and len(exposure_s) > 0:
+            max_exp = df['exposure_ms'].max() / 1000.0
+            min_exp = df['exposure_ms'].min() / 1000.0
+            if max_exp / min_exp > 10:
+                ax.set_xscale('log')
+                ax.set_xlabel('Exposure Time (seconds, log scale)', fontsize=12)
+            
+            # Also use log scale for y-axis
+            ax.set_yscale('log')
+            ax.set_ylabel('Error Variance (mas², log scale)', fontsize=12)
     
-    plt.suptitle('Pointing Error Variance Analysis', fontsize=14, fontweight='bold')
+    # Overall title
+    fig.suptitle('Pointing Error Variance Analysis\n(Lower variance indicates more consistent performance)',
+                fontsize=16, y=0.98)
+    
     plt.tight_layout()
     
     # Save or show
@@ -1409,261 +1164,840 @@ def plot_error_variance(df, output_path=None):
     return fig, axes
 
 
-def plot_error_histograms_separate(df, output_path=None):
-    """Plot error histograms as separate files for each exposure time"""
-    # Get unique sensors and exposure times
-    sensors = df['sensor'].unique()
-    exposure_times = sorted(df['exposure_ms'].unique())
+# ============================================================================
+# Error Histogram Analysis
+# ============================================================================
+
+def plot_error_histograms_separate(df, output_base_path=None):
+    """Create separate histogram plots for each exposure time"""
+    # Get unique exposures and f-numbers
+    exposures = sorted(df['exposure_ms'].unique())
+    f_numbers = sorted(df['f_number'].unique())
+    sensors = sorted(df['sensor'].unique())
     
-    # Use consistent colormap for f-numbers
-    cmap = cm.get_cmap('viridis')
+    # Use consistent colormap
+    cmap = cm.viridis
     
-    # Generate base path for outputs
-    if output_path:
-        output_path = Path(output_path)
-        base_name = output_path.stem.replace('_histograms', '')
-        ext = output_path.suffix
-        parent_dir = output_path.parent
+    # Track outlier information for each f-number
+    outlier_summary = {}
     
-    saved_files = []
-    
-    for exposure_ms in exposure_times:
-        # Create figure for this exposure time
-        n_sensors = len(sensors)
-        fig, axes = plt.subplots(1, n_sensors, figsize=(7*n_sensors, 5))
+    # Create a plot for each exposure
+    plot_count = 0
+    for exp_ms in exposures:
+        exp_data = df[df['exposure_ms'] == exp_ms]
         
+        # Skip if no data for this exposure
+        if len(exp_data) == 0:
+            continue
+        
+        # Create figure with subplots for each sensor
+        n_sensors = len(sensors)
+        fig, axes = plt.subplots(1, n_sensors, figsize=(8*n_sensors, 6))
+        
+        # Make axes iterable even for single sensor
         if n_sensors == 1:
             axes = [axes]
         
-        for sen_idx, sensor in enumerate(sensors):
-            ax = axes[sen_idx]
+        for idx, (sensor_name, ax) in enumerate(zip(sensors, axes)):
+            sensor_data = exp_data[exp_data['sensor'] == sensor_name]
             
-            # Filter data for this sensor and exposure
-            mask = (df['sensor'] == sensor) & (df['exposure_ms'] == exposure_ms)
-            subset = df[mask]
-            
-            if len(subset) == 0:
-                ax.text(0.5, 0.5, 'No Data', transform=ax.transAxes,
-                       ha='center', va='center')
-                ax.set_title(f'{sensor} - {exposure_ms}ms')
-                continue
-            
-            # Get f-numbers present in this subset
-            f_numbers = sorted(subset['f_number'].unique())
-            
-            # Plot histogram for each f-number
-            nan_counts = {}
+            # Track outliers for this exposure/sensor
             outlier_counts = {}
             
-            for f_number in f_numbers:
-                f_mask = subset['f_number'] == f_number
-                errors_all = subset[f_mask]['pixel_error']
+            # Plot histogram for each f-number
+            for f_num in f_numbers:
+                color = get_f_number_color(f_num, cmap)
                 
-                # Count NaN values (non-converged/no detection cases)
-                nan_count = errors_all.isna().sum()
-                total_count = len(errors_all)
-                
-                # Get only valid (non-NaN) errors
-                errors = errors_all.dropna()
+                # Get errors for this f-number
+                f_data = sensor_data[sensor_data['f_number'] == f_num]
+                errors = f_data['pixel_error'].dropna()
                 
                 if len(errors) > 0:
-                    color = get_f_number_color(f_number, cmap)
-                    
-                    # Count outliers outside 0-1 range
-                    outliers_below = (errors < 0).sum()
+                    # Count outliers (errors > 1.0 pixel)
                     outliers_above = (errors > 1.0).sum()
-                    total_outliers = outliers_below + outliers_above
+                    outliers_below = (errors < 0.0).sum()  # Should be 0, but checking anyway
                     
-                    if total_outliers > 0:
-                        outlier_counts[f_number] = (outliers_below, outliers_above)
+                    # Store outlier counts
+                    if outliers_above > 0 or outliers_below > 0:
+                        outlier_counts[f_num] = (outliers_below, outliers_above)
                     
                     # Plot histogram with actual data but fixed x-axis range
                     # This will show the real distribution but only display 0-1 range
                     counts, bins, _ = ax.hist(errors, bins=30, 
                                              range=(0, 1.0), alpha=0.6, 
-                                             label=f'f/{f_number:.0f} (n={len(errors)})',
+                                             label=f"f/{f_num:.1f} (n={len(errors)})",
                                              color=color, edgecolor='black',
                                              linewidth=0.5)
                     
-                    print("Histogram Dump for Exposure: {exposure_ms}ms")
-                    for i, count in enumerate(counts):
-                        print(f"Bin: {bins[i]:.3f} to {bins[i+1]:.3f}, Count: {int(count)}")
-
                     # Add mean line if within range
                     mean_err = errors[errors < 1.0].mean()
                     if 0 <= mean_err <= 1.0:
                         ax.axvline(mean_err, color=color, linestyle='--', 
                                   linewidth=1.5, alpha=0.8)
-                    
-                    # Store NaN count for this f-number
-                    if nan_count > 0:
-                        nan_counts[f_number] = nan_count
             
-            ax.set_title(f'{sensor}')
-            ax.set_xlabel('Pixel Error')
-            ax.set_ylabel('Count')
+            # Formatting
+            ax.set_xlabel('Pixel Error', fontsize=11)
+            ax.set_ylabel('Count', fontsize=11)
+            ax.set_title(f'{sensor_name} @ {exp_ms}ms', fontsize=12)
+            ax.grid(True, alpha=0.3, linestyle='--')
+            ax.legend(loc='best', fontsize=9, framealpha=0.9)
             ax.set_xlim(0, 1.0)
-            ax.legend(loc='best', fontsize=8)
-            ax.grid(True, alpha=0.3)
             
-            # Calculate overall statistics
-            valid_errors = subset['pixel_error'].dropna()
-            nan_total = subset['pixel_error'].isna().sum()
-            
-            # Add statistics box
-            stats_text = f'Detected: {len(valid_errors)}\nTotal: {len(subset)}'
-            if len(valid_errors) > 0:
-                stats_text += f'\n\nμ={valid_errors.mean():.3f}\nσ={valid_errors.std():.3f}'
-            
-            # Add outlier counts if any
+            # Add outlier annotation if present
             if outlier_counts:
-                stats_text += '\n\nOutliers:'
+                outlier_text = "Outliers (>1px):\n"
                 for f_num, (below, above) in outlier_counts.items():
-                    outlier_str = f'\nf/{f_num:.0f}: '
-                    parts = []
-                    if below > 0:
-                        parts.append(f'{below} < 0')
                     if above > 0:
-                        parts.append(f'{above} > 1')
-                    stats_text += outlier_str + ', '.join(parts)
-            
-            # Add NaN breakdown by f-number if needed
-            if nan_counts:
-                stats_text += '\n\nNo detection:'
-                for f_num, count in nan_counts.items():
-                    stats_text += f'\nf/{f_num:.0f}: {count}'
-            
-            ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
-                   fontsize=8, va='top', ha='right',
-                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+                        outlier_text += f"f/{f_num:.1f}: {above}\n"
+                
+                ax.text(0.98, 0.98, outlier_text.strip(), 
+                       transform=ax.transAxes,
+                       fontsize=8, va='top', ha='right',
+                       bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.3))
         
-        plt.suptitle(f'Error Distribution - {exposure_ms}ms Exposure', fontsize=14, fontweight='bold')
+        # Overall title for this exposure
+        fig.suptitle(f'Pixel Error Distribution - {exp_ms}ms Exposure', fontsize=14)
         plt.tight_layout()
         
-        # Save with exposure time in filename
-        if output_path:
-            specific_output = parent_dir / f"{base_name}_hist_{int(exposure_ms)}ms{ext}"
-            plt.savefig(specific_output, dpi=300, bbox_inches='tight')
-            saved_files.append(str(specific_output))
-            print(f"Plot saved to: {specific_output}")
-            plt.close(fig)
+        # Save or show
+        if output_base_path:
+            # Generate unique filename for each exposure
+            output_path = Path(output_base_path)
+            parent_dir = output_path.parent
+            base_name = output_path.stem.replace('_histograms', '')
+            ext = output_path.suffix
+            
+            hist_output = str(parent_dir / f"{base_name}_hist_{int(exp_ms)}ms{ext}")
+            plt.savefig(hist_output, dpi=300, bbox_inches='tight')
+            print(f"Plot saved to: {hist_output}")
         else:
             plt.show()
+        
+        plt.close(fig)
+        plot_count += 1
     
-    if saved_files:
-        print(f"Created {len(saved_files)} histogram plots")
-    
-    return saved_files
+    print(f"Created {plot_count} histogram plots")
+    return None
 
 
-def plot_error_histograms(df, output_path=None):
-    """Plot error histograms for each exposure time"""
-    # Get unique sensors and exposure times
-    sensors = df['sensor'].unique()
-    exposure_times = sorted(df['exposure_ms'].unique())
+# ============================================================================
+# Sky Coverage Analysis
+# ============================================================================
+
+def plot_sky_coverage_mollweide(df, output_path=None, exposure_ms=None, precision_threshold=0.1):
+    """Plot sky coverage on Mollweide projection with color background"""
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from scipy.interpolate import griddata
     
-    # Create subplots grid
-    n_exposures = len(exposure_times)
-    n_sensors = len(sensors)
+    # Filter for specific exposure if requested
+    if exposure_ms is not None:
+        df_filtered = df[df['exposure_ms'] == exposure_ms].copy()
+        title_suffix = f" @ {exposure_ms}ms"
+        if len(df_filtered) == 0:
+            print(f"No data found for exposure {exposure_ms}ms")
+            print(f"Available exposures: {sorted(df['exposure_ms'].unique())}")
+            return None
+        df = df_filtered
+    else:
+        title_suffix = " (all exposures)"
     
-    fig, axes = plt.subplots(n_exposures, n_sensors, 
-                             figsize=(6*n_sensors, 4*n_exposures))
+    # Get unique pointings with their mean star counts and precision
+    grouped = df.groupby(['ra', 'dec']).agg({
+        'star_count': ['mean', 'count'],
+        'pixel_error': 'mean'
+    }).reset_index()
+    grouped.columns = ['ra', 'dec', 'star_mean', 'star_count', 'pixel_error_mean']
     
-    # Handle single sensor or single exposure case
-    if n_exposures == 1:
-        axes = axes.reshape(1, -1)
-    if n_sensors == 1:
-        axes = axes.reshape(-1, 1)
+    if len(grouped) == 0:
+        print("No grouped data available after filtering")
+        return None
     
-    # Use consistent colormap for f-numbers
-    cmap = cm.get_cmap('viridis')
+    # Create figure with Mollweide projection
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='mollweide')
     
-    for exp_idx, exposure_ms in enumerate(exposure_times):
-        for sen_idx, sensor in enumerate(sensors):
-            ax = axes[exp_idx, sen_idx]
-            
-            # Filter data for this sensor and exposure
-            mask = (df['sensor'] == sensor) & (df['exposure_ms'] == exposure_ms)
-            subset = df[mask]
-            
-            if len(subset) == 0:
-                ax.text(0.5, 0.5, 'No Data', transform=ax.transAxes,
-                       ha='center', va='center')
-                ax.set_title(f'{sensor} - {exposure_ms}ms')
-                continue
-            
-            # Get f-numbers present in this subset
-            f_numbers = sorted(subset['f_number'].unique())
-            
-            # Plot histogram for each f-number
-            outliers_text_lines = []
-            for f_number in f_numbers:
-                f_mask = subset['f_number'] == f_number
-                errors = subset[f_mask]['pixel_error']
-                
-                if len(errors) > 0:
-                    color = get_f_number_color(f_number, cmap)
-                    
-                    # Count outliers
-                    outliers_below = (errors < 0).sum()
-                    outliers_above = (errors > 1.0).sum()
-                    
-                    # Clamp errors to 0-1 range for histogram
-                    errors_clamped = errors.clip(0, 1.0)
-                    
-                    # Calculate histogram with fixed range
-                    counts, bins, _ = ax.hist(errors_clamped, bins=30, 
-                                             range=(0, 1.0), alpha=0.6, 
-                                             label=f'f/{f_number:.0f}',
-                                             color=color, edgecolor='black',
-                                             linewidth=0.5)
-                    
-                    # Add mean line (if within range)
-                    mean_err = errors.mean()
-                    if 0 <= mean_err <= 1.0:
-                        ax.axvline(mean_err, color=color, linestyle='--', 
-                                  linewidth=1.5, alpha=0.8)
-                    
-                    # Collect outlier info
-                    if outliers_below > 0 or outliers_above > 0:
-                        outlier_str = f'f/{f_number:.0f}: '
-                        if outliers_below > 0:
-                            outlier_str += f'{outliers_below} < 0'
-                        if outliers_above > 0:
-                            if outliers_below > 0:
-                                outlier_str += ', '
-                            outlier_str += f'{outliers_above} > 1'
-                        outliers_text_lines.append(outlier_str)
-            
-            ax.set_title(f'{sensor} - {exposure_ms}ms')
-            ax.set_xlabel('Pixel Error')
-            ax.set_ylabel('Count')
-            ax.set_xlim(0, 1.0)
-            ax.legend(loc='best', fontsize=8)
-            ax.grid(True, alpha=0.3)
-            
-            # Add statistics box
-            stats_text = f'n={len(subset)}\nμ={subset["pixel_error"].mean():.3f}\nσ={subset["pixel_error"].std():.3f}'
-            
-            # Add outlier counts if any
-            if outliers_text_lines:
-                stats_text += '\n\nOutliers:\n' + '\n'.join(outliers_text_lines)
-            
-            ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
-                   fontsize=8, va='top', ha='right',
-                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    # Create background interpolation
+    ra_grid = np.linspace(0, 360, 180)
+    dec_grid = np.linspace(-90, 90, 90)
+    ra_mesh, dec_mesh = np.meshgrid(ra_grid, dec_grid)
     
-    plt.suptitle('Error Distribution by Exposure Time', fontsize=14, fontweight='bold')
+    # Interpolate star counts to create smooth background
+    points = np.column_stack([grouped['ra'], grouped['dec']])
+    star_values = grouped['star_mean'].values
+    grid_stars = griddata(points, star_values, (ra_mesh, dec_mesh), method='linear', fill_value=0)
+    
+    # Define colormap parameters
+    vmin = 0
+    vmax = np.percentile(grouped['star_mean'], 95)
+    
+    # Convert grid to radians for Mollweide
+    ra_mesh_rad = np.radians(ra_mesh - 180)
+    dec_mesh_rad = np.radians(dec_mesh)
+    
+    # Plot background color mesh
+    mesh = ax.pcolormesh(ra_mesh_rad, dec_mesh_rad, grid_stars,
+                         cmap='viridis', shading='auto',
+                         vmin=vmin, vmax=vmax, alpha=0.8)
+    
+    # Convert pointing positions to radians
+    ra_rad = np.radians(grouped['ra'] - 180)
+    dec_rad = np.radians(grouped['dec'])
+    
+    # Add white dots for all pointings
+    ax.scatter(ra_rad, dec_rad, c='white', s=1, alpha=0.3, zorder=2)
+    
+    # Mark failed detections with red X
+    failed = grouped[grouped['star_mean'] == 0]
+    if len(failed) > 0:
+        ax.scatter(np.radians(failed['ra'] - 180), 
+                  np.radians(failed['dec']),
+                  c='red', s=8, marker='x', alpha=0.8, zorder=3, label='No stars')
+    
+    # Mark low precision with orange X
+    low_precision = grouped[(grouped['pixel_error_mean'] > precision_threshold) & (grouped['star_mean'] > 0)]
+    if len(low_precision) > 0:
+        ax.scatter(np.radians(low_precision['ra'] - 180),
+                  np.radians(low_precision['dec']),
+                  c='orange', s=8, marker='x', alpha=0.8, zorder=3, label=f'Error > {precision_threshold}px')
+    
+    ax.set_title(f'Sky Coverage - Mollweide Projection{title_suffix}\n{len(grouped)} Unique Pointings', fontsize=14)
+    ax.grid(True, alpha=0.3, color='white', linewidth=0.5)
+    ax.set_xlabel('Right Ascension')
+    ax.set_ylabel('Declination')
+    
+    # Add legend if there are marked points
+    if len(failed) > 0 or len(low_precision) > 0:
+        ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
+    
+    plt.tight_layout()
+    
+    if output_path:
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        print(f"Saved Mollweide sky coverage to {output_path}")
+    else:
+        plt.show()
+    
+    plt.close(fig)
+    return fig
+
+
+def plot_sky_coverage_rectangular(df, output_path=None, exposure_ms=None, precision_threshold=0.1):
+    """Plot sky coverage on rectangular projection with color background"""
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from scipy.interpolate import griddata
+    
+    # Filter for specific exposure if requested
+    if exposure_ms is not None:
+        df_filtered = df[df['exposure_ms'] == exposure_ms].copy()
+        title_suffix = f" @ {exposure_ms}ms"
+        if len(df_filtered) == 0:
+            print(f"No data found for exposure {exposure_ms}ms")
+            print(f"Available exposures: {sorted(df['exposure_ms'].unique())}")
+            return None
+        df = df_filtered
+    else:
+        title_suffix = " (all exposures)"
+    
+    # Get unique pointings with their mean star counts and precision
+    grouped = df.groupby(['ra', 'dec']).agg({
+        'star_count': ['mean', 'count'],
+        'pixel_error': 'mean'
+    }).reset_index()
+    grouped.columns = ['ra', 'dec', 'star_mean', 'star_count', 'pixel_error_mean']
+    
+    if len(grouped) == 0:
+        print("No grouped data available after filtering")
+        return None
+    
+    # Create figure
+    fig = plt.figure(figsize=(14, 8))
+    ax = fig.add_subplot(111)
+    
+    # Create background interpolation
+    ra_grid = np.linspace(0, 360, 180)
+    dec_grid = np.linspace(-90, 90, 90)
+    ra_mesh, dec_mesh = np.meshgrid(ra_grid, dec_grid)
+    
+    # Interpolate star counts to create smooth background
+    points = np.column_stack([grouped['ra'], grouped['dec']])
+    star_values = grouped['star_mean'].values
+    grid_stars = griddata(points, star_values, (ra_mesh, dec_mesh), method='linear', fill_value=0)
+    
+    # Define colormap parameters
+    vmin = 0
+    vmax = np.percentile(grouped['star_mean'], 95)
+    
+    # Plot background color mesh
+    im = ax.pcolormesh(ra_mesh, dec_mesh, grid_stars,
+                       cmap='viridis', shading='auto',
+                       vmin=vmin, vmax=vmax, alpha=0.8)
+    
+    # Add white dots for all pointings
+    ax.scatter(grouped['ra'], grouped['dec'], c='white', s=1, alpha=0.3, zorder=2)
+    
+    # Mark failed detections with red X
+    failed = grouped[grouped['star_mean'] == 0]
+    if len(failed) > 0:
+        ax.scatter(failed['ra'], failed['dec'], 
+                  c='red', s=8, marker='x', alpha=0.8, zorder=3)
+    
+    # Mark low precision with orange X
+    low_precision = grouped[(grouped['pixel_error_mean'] > precision_threshold) & (grouped['star_mean'] > 0)]
+    if len(low_precision) > 0:
+        ax.scatter(low_precision['ra'], low_precision['dec'],
+                  c='orange', s=8, marker='x', alpha=0.8, zorder=3)
+    
+    ax.set_title(f'Sky Coverage - Rectangular Projection{title_suffix}\n{len(grouped)} Unique Pointings', fontsize=14)
+    ax.set_xlabel('Right Ascension (degrees)')
+    ax.set_ylabel('Declination (degrees)')
+    ax.grid(True, alpha=0.3, color='white', linewidth=0.5)
+    ax.set_xlim(0, 360)
+    ax.set_ylim(-90, 90)
+    
+    # Add legend
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='white', markersize=6, label='Pointing', linestyle='None'),
+        Line2D([0], [0], marker='x', color='w', markerfacecolor='red', markersize=8, label='No stars detected', linestyle='None'),
+        Line2D([0], [0], marker='x', color='w', markerfacecolor='orange', markersize=8, label=f'Precision > {precision_threshold} px', linestyle='None')
+    ]
+    ax.legend(handles=legend_elements, loc='upper right', fontsize=10, framealpha=0.9)
+    
+    plt.tight_layout()
+    
+    if output_path:
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        print(f"Saved rectangular sky coverage to {output_path}")
+    else:
+        plt.show()
+    
+    plt.close(fig)
+    return fig
+
+
+def plot_sky_coverage_heatmap(df, output_path=None, exposure_ms=None, precision_threshold=0.1):
+    """Plot both sky coverage projections for each exposure value"""
+    from pathlib import Path
+    
+    # If exposure_ms is specified, generate just for that exposure
+    if exposure_ms is not None:
+        # Generate separate output paths if one is provided
+        if output_path:
+            path = Path(output_path)
+            base = path.stem
+            suffix = path.suffix
+            parent = path.parent
+            
+            moll_path = str(parent / f"{base}_mollweide{suffix}")
+            rect_path = str(parent / f"{base}_rectangular{suffix}")
+        else:
+            moll_path = None
+            rect_path = None
+        
+        # Generate both plots
+        fig_moll = plot_sky_coverage_mollweide(df, moll_path, exposure_ms, precision_threshold)
+        fig_rect = plot_sky_coverage_rectangular(df, rect_path, exposure_ms, precision_threshold)
+        
+        return fig_moll, fig_rect
+    
+    # Otherwise, generate for all exposures
+    exposures = sorted(df['exposure_ms'].unique())
+    print(f"Generating sky coverage plots for {len(exposures)} exposures: {exposures}")
+    
+    figures = []
+    
+    for exp_ms in exposures:
+        # Generate separate output paths if one is provided
+        if output_path:
+            path = Path(output_path)
+            base = path.stem.replace('_heatmap', '')
+            suffix = path.suffix
+            parent = path.parent
+            
+            moll_path = str(parent / f"{base}_{int(exp_ms)}ms_mollweide{suffix}")
+            rect_path = str(parent / f"{base}_{int(exp_ms)}ms_rectangular{suffix}")
+        else:
+            moll_path = None
+            rect_path = None
+        
+        # Generate both plots for this exposure
+        print(f"Processing exposure: {exp_ms}ms")
+        fig_moll = plot_sky_coverage_mollweide(df, moll_path, exp_ms, precision_threshold)
+        fig_rect = plot_sky_coverage_rectangular(df, rect_path, exp_ms, precision_threshold)
+        
+        figures.append((exp_ms, fig_moll, fig_rect))
+    
+    print(f"Created {len(exposures) * 2} sky coverage plots ({len(exposures)} exposures × 2 projections)")
+    
+    return figures
+
+
+def plot_ra_dec_coverage(df, output_path=None, failed_exposure_ms=250):
+    """Plot RA/Dec coverage map with star detection success"""
+    
+    # Create figure
+    fig, ax = plt.subplots(figsize=(14, 8))
+    
+    # Get data for specified exposure
+    exp_data = df[df['exposure_ms'] == failed_exposure_ms].copy()
+    
+    if len(exp_data) == 0:
+        print(f"No data found for exposure {failed_exposure_ms}ms")
+        # Try to use all data instead
+        exp_data = df.copy()
+        title_suffix = "(All exposures)"
+    else:
+        title_suffix = f"({failed_exposure_ms}ms exposure)"
+    
+    # Categorize experiments
+    exp_data['detection_category'] = 'Unknown'
+    exp_data.loc[exp_data['star_count'] == 0, 'detection_category'] = 'No stars detected'
+    exp_data.loc[exp_data['star_count'] >= 1, 'detection_category'] = 'Stars detected'
+    
+    # Plot different categories with different colors and markers
+    categories = {
+        'Stars detected': {'color': 'green', 'marker': 'o', 'size': 20, 'alpha': 0.6},
+        'No stars detected': {'color': 'red', 'marker': 'x', 'size': 40, 'alpha': 0.8},
+    }
+    
+    for category, style in categories.items():
+        cat_data = exp_data[exp_data['detection_category'] == category]
+        if len(cat_data) > 0:
+            ax.scatter(cat_data['ra'], cat_data['dec'], 
+                      c=style['color'], marker=style['marker'], 
+                      s=style['size'], alpha=style['alpha'],
+                      label=f'{category} (n={len(cat_data)})')
+    
+    # Add galactic plane approximation (simplified)
+    # This is a very rough approximation
+    ra_galactic = np.linspace(0, 360, 100)
+    dec_galactic = 5 * np.sin(np.radians(ra_galactic - 266))  # Rough galactic plane
+    ax.plot(ra_galactic, dec_galactic, 'b--', alpha=0.3, linewidth=1, label='Approx. Galactic Plane')
+    
+    # Formatting
+    ax.set_xlabel('Right Ascension (degrees)', fontsize=12)
+    ax.set_ylabel('Declination (degrees)', fontsize=12)
+    ax.set_title(f'Sky Coverage and Detection Success {title_suffix}', fontsize=14)
+    
+    # Set axis limits
+    ax.set_xlim(0, 360)
+    ax.set_ylim(-90, 90)
+    
+    # Add grid
+    ax.grid(True, alpha=0.3, linestyle='--')
+    
+    # Add reference lines
+    ax.axhline(y=0, color='gray', linestyle='-', linewidth=0.5, alpha=0.5)  # Celestial equator
+    ax.axhline(y=23.44, color='orange', linestyle=':', linewidth=0.5, alpha=0.5, label='Ecliptic bounds')
+    ax.axhline(y=-23.44, color='orange', linestyle=':', linewidth=0.5, alpha=0.5)
+    
+    # Legend
+    ax.legend(loc='upper right', framealpha=0.9, fontsize=10)
+    
+    # Add statistics text
+    total_experiments = len(exp_data)
+    failed_experiments = len(exp_data[exp_data['star_count'] == 0])
+    success_rate = ((total_experiments - failed_experiments) / total_experiments * 100) if total_experiments > 0 else 0
+    
+    stats_text = f"Total pointings: {total_experiments}\n"
+    stats_text += f"Failed detections: {failed_experiments}\n"
+    stats_text += f"Success rate: {success_rate:.1f}%"
+    
+    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+           fontsize=10, va='top',
+           bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
     plt.tight_layout()
     
     # Save or show
     if output_path:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"Plot saved to: {output_path}")
+        print(f"Saved RA/Dec coverage plot to {output_path}")
     else:
         plt.show()
     
-    return fig, axes
+    return fig, ax
+
+
+# ============================================================================
+# Star Count Extremes
+# ============================================================================
+
+def print_star_count_extremes(df, n=5):
+    """Print the top N and bottom N sky locations by mean star count"""
+    
+    # Group by unique sky position (RA, Dec)
+    # Round to avoid floating point comparison issues
+    df['ra_rounded'] = df['ra'].round(4)
+    df['dec_rounded'] = df['dec'].round(4)
+    
+    # Calculate mean star count for each position
+    position_stats = df.groupby(['ra_rounded', 'dec_rounded'])['star_count'].agg([
+        ('mean', 'mean'),
+        ('count', 'size')
+    ]).reset_index()
+    
+    # Sort by mean star count
+    position_stats = position_stats.sort_values('mean', ascending=False)
+    
+    print("\n" + "="*60)
+    print(f"Top {n} sky locations with HIGHEST star counts:")
+    print("="*60)
+    print(f"{'RA':>10} {'Dec':>10} {'Mean Stars':>12} {'N Obs':>8}")
+    print("-"*40)
+    
+    for idx, row in position_stats.head(n).iterrows():
+        print(f"{row['ra_rounded']:>10.4f} {row['dec_rounded']:>10.4f} {row['mean']:>12.2f} {row['count']:>8}")
+    
+    print("\n" + "="*60)
+    print(f"Top {n} sky locations with LOWEST star counts:")
+    print("="*60)
+    print(f"{'RA':>10} {'Dec':>10} {'Mean Stars':>12} {'N Obs':>8}")
+    print("-"*40)
+    
+    for idx, row in position_stats.tail(n).iterrows():
+        print(f"{row['ra_rounded']:>10.4f} {row['dec_rounded']:>10.4f} {row['mean']:>12.2f} {row['count']:>8}")
+    
+    print("="*60)
+
+
+# ============================================================================
+# ICP Translation and Brightest Star Offset Analysis
+# ============================================================================
+
+def plot_icp_translations(df, output_path=None):
+    """Plot histograms of ICP translation_x and translation_y for each exposure"""
+    # Filter out NaN values
+    valid_mask = ~(df['translation_x'].isna() | df['translation_y'].isna())
+    valid_data = df[valid_mask]
+    
+    # Get unique exposure values
+    exposures = sorted(valid_data['exposure_ms'].unique())
+    
+    # Generate output files for each exposure
+    if output_path:
+        base_path = Path(output_path)
+        parent = base_path.parent
+        stem = base_path.stem.replace('_icp', '')
+        suffix = base_path.suffix
+    
+    for exposure_ms in exposures:
+        exp_data = valid_data[valid_data['exposure_ms'] == exposure_ms]
+        
+        if len(exp_data) == 0:
+            continue
+            
+        fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+        
+        # Translation X histogram
+        ax = axes[0]
+        
+        # Count outliers outside ±0.5 pixel range
+        outliers_x_below = (exp_data['translation_x'] < -0.5).sum()
+        outliers_x_above = (exp_data['translation_x'] > 0.5).sum()
+        total_outliers_x = outliers_x_below + outliers_x_above
+        
+        n, bins, patches = ax.hist(exp_data['translation_x'], bins=50,
+                                   range=(-0.5, 0.5), color='steelblue', alpha=0.7, edgecolor='black')
+        ax.axvline(0, color='red', linestyle='--', linewidth=1, alpha=0.5, label='Zero')
+        ax.set_xlabel('Translation X (pixels)', fontsize=12)
+        ax.set_ylabel('Count', fontsize=12)
+        ax.set_title('ICP Translation X Distribution', fontsize=14)
+        ax.set_xlim(-0.5, 0.5)
+        ax.grid(True, alpha=0.3)
+        
+        # Add statistics (calculate on full data, not just visible range)
+        mean_x = exp_data['translation_x'].mean()
+        std_x = exp_data['translation_x'].std()
+        median_x = exp_data['translation_x'].median()
+        
+        # Only show lines if they're within the plot range
+        if -0.5 <= mean_x <= 0.5:
+            ax.axvline(mean_x, color='green', linestyle='-', linewidth=1.5, alpha=0.7, label=f'Mean: {mean_x:.4f}')
+        if -0.5 <= median_x <= 0.5:
+            ax.axvline(median_x, color='orange', linestyle='-', linewidth=1.5, alpha=0.7, label=f'Median: {median_x:.4f}')
+        
+        # Stats text with outlier info
+        stats_text = f'n={len(exp_data)}\nμ={mean_x:.4f}\nσ={std_x:.4f}\nmedian={median_x:.4f}'
+        if total_outliers_x > 0:
+            stats_text += f'\n\nOutliers: {total_outliers_x}'
+            if outliers_x_below > 0:
+                stats_text += f'\n  < -1: {outliers_x_below}'
+            if outliers_x_above > 0:
+                stats_text += f'\n  > 1: {outliers_x_above}'
+        
+        ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
+               fontsize=10, va='top', ha='right',
+               bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        ax.legend(loc='upper left', fontsize=10)
+        
+        # Translation Y histogram  
+        ax = axes[1]
+        
+        # Count outliers outside ±HISTOGRAM_BOUND pixel range
+        outliers_y_below = (exp_data['translation_y'] < -HISTOGRAM_BOUND).sum()
+        outliers_y_above = (exp_data['translation_y'] > HISTOGRAM_BOUND).sum()
+        total_outliers_y = outliers_y_below + outliers_y_above
+        
+        n, bins, patches = ax.hist(exp_data['translation_y'], bins=50,
+                                   range=(-HISTOGRAM_BOUND, HISTOGRAM_BOUND), color='darkgreen', alpha=0.7, edgecolor='black')
+        ax.axvline(0, color='red', linestyle='--', linewidth=1, alpha=0.5, label='Zero')
+        ax.set_xlabel('Translation Y (pixels)', fontsize=12)
+        ax.set_ylabel('Count', fontsize=12)
+        ax.set_title('ICP Translation Y Distribution', fontsize=14)
+        ax.set_xlim(-HISTOGRAM_BOUND, HISTOGRAM_BOUND)
+        ax.grid(True, alpha=0.3)
+        
+        # Add statistics (calculate on full data, not just visible range)
+        mean_y = exp_data['translation_y'].mean()
+        std_y = exp_data['translation_y'].std()
+        median_y = exp_data['translation_y'].median()
+        
+        # Only show lines if they're within the plot range
+        if -HISTOGRAM_BOUND <= mean_y <= HISTOGRAM_BOUND:
+            ax.axvline(mean_y, color='green', linestyle='-', linewidth=1.5, alpha=0.7, label=f'Mean: {mean_y:.4f}')
+        if -HISTOGRAM_BOUND <= median_y <= HISTOGRAM_BOUND:
+            ax.axvline(median_y, color='orange', linestyle='-', linewidth=1.5, alpha=0.7, label=f'Median: {median_y:.4f}')
+        
+        # Stats text with outlier info
+        stats_text = f'n={len(exp_data)}\nμ={mean_y:.4f}\nσ={std_y:.4f}\nmedian={median_y:.4f}'
+        if total_outliers_y > 0:
+            stats_text += f'\n\nOutliers: {total_outliers_y}'
+            if outliers_y_below > 0:
+                stats_text += f'\n  < -{HISTOGRAM_BOUND}: {outliers_y_below}'
+            if outliers_y_above > 0:
+                stats_text += f'\n  > {HISTOGRAM_BOUND}: {outliers_y_above}'
+        
+        ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
+               fontsize=10, va='top', ha='right',
+               bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        ax.legend(loc='upper left', fontsize=10)
+        
+        plt.suptitle(f'ICP Translation Components - {exposure_ms}ms Exposure', fontsize=16, y=1.02)
+        plt.tight_layout()
+        
+        if output_path:
+            exp_output = str(parent / f"{stem}_icp_{int(exposure_ms)}ms{suffix}")
+            plt.savefig(exp_output, dpi=300, bbox_inches='tight')
+            print(f"Plot saved to: {exp_output}")
+        else:
+            plt.show()
+        
+        plt.close(fig)
+    
+    print(f"Created {len(exposures)} ICP translation plots for exposures: {exposures}")
+    return None
+
+
+def plot_brightest_star_offsets(df, output_path=None):
+    """Plot histograms of brightest star dx and dy offsets for each exposure"""
+    # Filter out NaN values
+    valid_mask = ~(df['brightest_star_dx'].isna() | df['brightest_star_dy'].isna())
+    valid_data = df[valid_mask]
+    
+    # Get unique exposure values
+    exposures = sorted(valid_data['exposure_ms'].unique())
+    
+    # Generate output files for each exposure
+    if output_path:
+        base_path = Path(output_path)
+        parent = base_path.parent
+        stem = base_path.stem.replace('_brightest_star', '')
+        suffix = base_path.suffix
+    
+    for exposure_ms in exposures:
+        exp_data = valid_data[valid_data['exposure_ms'] == exposure_ms]
+        
+        if len(exp_data) == 0:
+            continue
+            
+        fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+        
+        # Brightest star dx histogram
+        ax = axes[0]
+        
+        # Count outliers outside ±HISTOGRAM_BOUND pixel range
+        outliers_dx_below = (exp_data['brightest_star_dx'] < -HISTOGRAM_BOUND).sum()
+        outliers_dx_above = (exp_data['brightest_star_dx'] > HISTOGRAM_BOUND).sum()
+        total_outliers_dx = outliers_dx_below + outliers_dx_above
+        
+        n, bins, patches = ax.hist(exp_data['brightest_star_dx'], bins=50,
+                                   range=(-HISTOGRAM_BOUND, HISTOGRAM_BOUND), color='coral', alpha=0.7, edgecolor='black')
+        ax.axvline(0, color='red', linestyle='--', linewidth=1, alpha=0.5, label='Zero')
+        ax.set_xlabel('Brightest Star ΔX (pixels)', fontsize=12)
+        ax.set_ylabel('Count', fontsize=12)
+        ax.set_title('Brightest Star X Offset Distribution', fontsize=14)
+        ax.set_xlim(-HISTOGRAM_BOUND, HISTOGRAM_BOUND)
+        ax.grid(True, alpha=0.3)
+        
+        # Add statistics (calculate on full data, not just visible range)
+        mean_dx = exp_data['brightest_star_dx'].mean()
+        std_dx = exp_data['brightest_star_dx'].std()
+        median_dx = exp_data['brightest_star_dx'].median()
+        
+        # Only show lines if they're within the plot range
+        if -HISTOGRAM_BOUND <= mean_dx <= HISTOGRAM_BOUND:
+            ax.axvline(mean_dx, color='green', linestyle='-', linewidth=1.5, alpha=0.7, label=f'Mean: {mean_dx:.4f}')
+        if -HISTOGRAM_BOUND <= median_dx <= HISTOGRAM_BOUND:
+            ax.axvline(median_dx, color='orange', linestyle='-', linewidth=1.5, alpha=0.7, label=f'Median: {median_dx:.4f}')
+        
+        # Stats text with outlier info
+        stats_text = f'n={len(exp_data)}\nμ={mean_dx:.4f}\nσ={std_dx:.4f}\nmedian={median_dx:.4f}'
+        if total_outliers_dx > 0:
+            stats_text += f'\n\nOutliers: {total_outliers_dx}'
+            if outliers_dx_below > 0:
+                stats_text += f'\n  < -{HISTOGRAM_BOUND}: {outliers_dx_below}'
+            if outliers_dx_above > 0:
+                stats_text += f'\n  > {HISTOGRAM_BOUND}: {outliers_dx_above}'
+        
+        ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
+               fontsize=10, va='top', ha='right',
+               bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        ax.legend(loc='upper left', fontsize=10)
+        
+        # Brightest star dy histogram
+        ax = axes[1]
+        
+        # Count outliers outside ±HISTOGRAM_BOUND pixel range
+        outliers_dy_below = (exp_data['brightest_star_dy'] < -HISTOGRAM_BOUND).sum()
+        outliers_dy_above = (exp_data['brightest_star_dy'] > HISTOGRAM_BOUND).sum()
+        total_outliers_dy = outliers_dy_below + outliers_dy_above
+        
+        n, bins, patches = ax.hist(exp_data['brightest_star_dy'], bins=50,
+                                   range=(-HISTOGRAM_BOUND, HISTOGRAM_BOUND), color='mediumpurple', alpha=0.7, edgecolor='black')
+        ax.axvline(0, color='red', linestyle='--', linewidth=1, alpha=0.5, label='Zero')
+        ax.set_xlabel('Brightest Star ΔY (pixels)', fontsize=12)
+        ax.set_ylabel('Count', fontsize=12)
+        ax.set_title('Brightest Star Y Offset Distribution', fontsize=14)
+        ax.set_xlim(-HISTOGRAM_BOUND, HISTOGRAM_BOUND)
+        ax.grid(True, alpha=0.3)
+        
+        # Add statistics (calculate on full data, not just visible range)
+        mean_dy = exp_data['brightest_star_dy'].mean()
+        std_dy = exp_data['brightest_star_dy'].std()
+        median_dy = exp_data['brightest_star_dy'].median()
+        
+        # Only show lines if they're within the plot range
+        if -HISTOGRAM_BOUND <= mean_dy <= HISTOGRAM_BOUND:
+            ax.axvline(mean_dy, color='green', linestyle='-', linewidth=1.5, alpha=0.7, label=f'Mean: {mean_dy:.4f}')
+        if -HISTOGRAM_BOUND <= median_dy <= HISTOGRAM_BOUND:
+            ax.axvline(median_dy, color='orange', linestyle='-', linewidth=1.5, alpha=0.7, label=f'Median: {median_dy:.4f}')
+        
+        # Stats text with outlier info
+        stats_text = f'n={len(exp_data)}\nμ={mean_dy:.4f}\nσ={std_dy:.4f}\nmedian={median_dy:.4f}'
+        if total_outliers_dy > 0:
+            stats_text += f'\n\nOutliers: {total_outliers_dy}'
+            if outliers_dy_below > 0:
+                stats_text += f'\n  < -{HISTOGRAM_BOUND}: {outliers_dy_below}'
+            if outliers_dy_above > 0:
+                stats_text += f'\n  > {HISTOGRAM_BOUND}: {outliers_dy_above}'
+        
+        ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
+               fontsize=10, va='top', ha='right',
+               bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        ax.legend(loc='upper left', fontsize=10)
+        
+        plt.suptitle(f'Brightest Star Offset Distribution - {exposure_ms}ms Exposure', fontsize=16, y=1.02)
+        plt.tight_layout()
+        
+        if output_path:
+            exp_output = str(parent / f"{stem}_brightest_star_{int(exposure_ms)}ms{suffix}")
+            plt.savefig(exp_output, dpi=300, bbox_inches='tight')
+            print(f"Plot saved to: {exp_output}")
+        else:
+            plt.show()
+        
+        plt.close(fig)
+    
+    print(f"Created {len(exposures)} brightest star offset plots for exposures: {exposures}")
+    return None
+
+
+# ============================================================================
+# Statistics Summary Table
+# ============================================================================
+
+def compute_statistics_table(df, output_path=None):
+    """Compute statistics table for ICP and brightest star offsets, excluding outliers"""
+    # Filter out NaN values
+    valid_icp = df[~(df['translation_x'].isna() | df['translation_y'].isna())].copy()
+    valid_bright = df[~(df['brightest_star_dx'].isna() | df['brightest_star_dy'].isna())].copy()
+    
+    # Get unique exposure values
+    exposures = sorted(df['exposure_ms'].unique())
+    
+    # Prepare results
+    results = []
+    
+    for exposure_ms in exposures:
+        # Get data for this exposure
+        icp_exp = valid_icp[valid_icp['exposure_ms'] == exposure_ms]
+        bright_exp = valid_bright[valid_bright['exposure_ms'] == exposure_ms]
+        
+        # Filter outliers (keep only data within ±HISTOGRAM_BOUND)
+        icp_x_filtered = icp_exp['translation_x'][
+            (icp_exp['translation_x'] >= -HISTOGRAM_BOUND) & 
+            (icp_exp['translation_x'] <= HISTOGRAM_BOUND)
+        ]
+        icp_y_filtered = icp_exp['translation_y'][
+            (icp_exp['translation_y'] >= -HISTOGRAM_BOUND) & 
+            (icp_exp['translation_y'] <= HISTOGRAM_BOUND)
+        ]
+        bright_x_filtered = bright_exp['brightest_star_dx'][
+            (bright_exp['brightest_star_dx'] >= -HISTOGRAM_BOUND) & 
+            (bright_exp['brightest_star_dx'] <= HISTOGRAM_BOUND)
+        ]
+        bright_y_filtered = bright_exp['brightest_star_dy'][
+            (bright_exp['brightest_star_dy'] >= -HISTOGRAM_BOUND) & 
+            (bright_exp['brightest_star_dy'] <= HISTOGRAM_BOUND)
+        ]
+        
+        # Compute statistics
+        row = {
+            'exposure_ms': exposure_ms,
+            'icp_x_mean': icp_x_filtered.mean() if len(icp_x_filtered) > 0 else np.nan,
+            'icp_x_std': icp_x_filtered.std() if len(icp_x_filtered) > 0 else np.nan,
+            'icp_x_n': len(icp_x_filtered),
+            'icp_y_mean': icp_y_filtered.mean() if len(icp_y_filtered) > 0 else np.nan,
+            'icp_y_std': icp_y_filtered.std() if len(icp_y_filtered) > 0 else np.nan,
+            'icp_y_n': len(icp_y_filtered),
+            'bright_x_mean': bright_x_filtered.mean() if len(bright_x_filtered) > 0 else np.nan,
+            'bright_x_std': bright_x_filtered.std() if len(bright_x_filtered) > 0 else np.nan,
+            'bright_x_n': len(bright_x_filtered),
+            'bright_y_mean': bright_y_filtered.mean() if len(bright_y_filtered) > 0 else np.nan,
+            'bright_y_std': bright_y_filtered.std() if len(bright_y_filtered) > 0 else np.nan,
+            'bright_y_n': len(bright_y_filtered),
+        }
+        results.append(row)
+    
+    # Create DataFrame
+    stats_df = pd.DataFrame(results)
+    
+    # Print formatted table
+    print("\n" + "="*120)
+    print(f"Statistics Summary (outliers beyond ±{HISTOGRAM_BOUND} pixels excluded)")
+    print("="*120)
+    print(f"{'Exposure':>8} | {'ICP Translation X':^25} | {'ICP Translation Y':^25} | {'Brightest Star X':^25} | {'Brightest Star Y':^25}")
+    print(f"{'(ms)':>8} | {'Mean':>8} {'StdDev':>8} {'N':>7} | {'Mean':>8} {'StdDev':>8} {'N':>7} | {'Mean':>8} {'StdDev':>8} {'N':>7} | {'Mean':>8} {'StdDev':>8} {'N':>7}")
+    print("-"*120)
+    
+    for _, row in stats_df.iterrows():
+        print(f"{row['exposure_ms']:>8.0f} | "
+              f"{row['icp_x_mean']:>8.4f} {row['icp_x_std']:>8.4f} {row['icp_x_n']:>7.0f} | "
+              f"{row['icp_y_mean']:>8.4f} {row['icp_y_std']:>8.4f} {row['icp_y_n']:>7.0f} | "
+              f"{row['bright_x_mean']:>8.4f} {row['bright_x_std']:>8.4f} {row['bright_x_n']:>7.0f} | "
+              f"{row['bright_y_mean']:>8.4f} {row['bright_y_std']:>8.4f} {row['bright_y_n']:>7.0f}")
+    
+    print("="*120)
+    
+    # Save to CSV if output path provided
+    if output_path:
+        stats_df.to_csv(output_path, index=False, float_format='%.4f')
+        print(f"\nStatistics table saved to: {output_path}")
+    
+    return stats_df
 
 
 # ============================================================================
@@ -1673,8 +2007,8 @@ def plot_error_histograms(df, output_path=None):
 def main():
     parser = argparse.ArgumentParser(description='Unified sensor comparison analysis')
     parser.add_argument('csv_file', type=str, help='Path to experiment CSV file')
-    parser.add_argument('--mode', type=str, choices=['mean', 'win', 'quotient', 'stars', 'brightest', 'faintest', 'closure', 'accuracy', 'variance', 'histograms', 'coverage', 'all'], default='mean',
-                       help='Analysis mode: mean pointing error, win percentage, quotient, star count, brightest/faintest magnitude, field closure, high accuracy, error variance, error histograms, sky coverage, or all')
+    parser.add_argument('--mode', type=str, choices=['mean', 'win', 'quotient', 'stars', 'brightest', 'faintest', 'closure', 'accuracy', 'variance', 'histograms', 'coverage', 'heatmap', 'icp', 'brightest_star', 'stats', 'all'], default='mean',
+                       help='Analysis mode: mean pointing error, win percentage, quotient, star count, brightest/faintest magnitude, field closure, high accuracy, error variance, error histograms, sky coverage, sky heatmap, ICP translations, brightest star offsets, statistics table, or all')
     parser.add_argument('--aperture', type=float, default=0.485,
                        help='Telescope aperture in meters (default: 0.485m)')
     parser.add_argument('--output', type=str, help='Output plot filename (PNG/PDF/etc)')
@@ -1725,6 +2059,9 @@ def main():
         variance_output = str(parent_dir / f"{base_name}_variance{ext}")
         histograms_output = str(parent_dir / f"{base_name}_histograms{ext}")
         coverage_output = str(parent_dir / f"{base_name}_coverage{ext}")
+        heatmap_output = str(parent_dir / f"{base_name}_heatmap{ext}")
+        icp_output = str(parent_dir / f"{base_name}_icp{ext}")
+        brightest_star_output = str(parent_dir / f"{base_name}_brightest_star{ext}")
     else:
         # For individual modes, append mode name if not already present
         if args.mode == 'variance' and '_variance' not in base_name:
@@ -1742,6 +2079,21 @@ def main():
         else:
             coverage_output = args.output
             
+        if args.mode == 'heatmap' and '_heatmap' not in base_name:
+            heatmap_output = str(parent_dir / f"{base_name}_heatmap{ext}")
+        else:
+            heatmap_output = args.output
+            
+        if args.mode == 'icp' and '_icp' not in base_name:
+            icp_output = str(parent_dir / f"{base_name}_icp{ext}")
+        else:
+            icp_output = args.output
+            
+        if args.mode == 'brightest_star' and '_brightest_star' not in base_name:
+            brightest_star_output = str(parent_dir / f"{base_name}_brightest_star{ext}")
+        else:
+            brightest_star_output = args.output
+            
         # Keep other outputs same as args.output for single mode
         mean_output = args.output if args.mode != 'mean' or '_mean' in base_name else str(parent_dir / f"{base_name}_mean{ext}")
         win_output = args.output if args.mode != 'win' or '_win' in base_name else str(parent_dir / f"{base_name}_win{ext}")
@@ -1751,6 +2103,7 @@ def main():
         faintest_output = args.output if args.mode != 'faintest' or '_faintest' in base_name else str(parent_dir / f"{base_name}_faintest{ext}")
         closure_output = args.output if args.mode != 'closure' or '_closure' in base_name else str(parent_dir / f"{base_name}_closure{ext}")
         accuracy_output = args.output if args.mode != 'accuracy' or '_accuracy' in base_name else str(parent_dir / f"{base_name}_accuracy{ext}")
+        # heatmap_output is already set above
     
     # Create requested plots
     if args.mode in ['mean', 'all']:
@@ -1785,6 +2138,25 @@ def main():
     
     if args.mode in ['coverage', 'all']:
         plot_ra_dec_coverage(df, coverage_output, failed_exposure_ms=args.failed_exposure_ms)
+    
+    if args.mode in ['heatmap', 'all']:
+        # For heatmap, only pass exposure_ms if user wants a specific exposure (not the default 250)
+        exposure_for_heatmap = None if args.failed_exposure_ms == 250 else args.failed_exposure_ms
+        plot_sky_coverage_heatmap(df, heatmap_output, exposure_ms=exposure_for_heatmap)
+    
+    if args.mode in ['icp', 'all']:
+        plot_icp_translations(df, icp_output)
+    
+    if args.mode in ['brightest_star', 'all']:
+        plot_brightest_star_offsets(df, brightest_star_output)
+    
+    if args.mode in ['stats', 'all']:
+        # Generate stats table output path
+        if args.mode == 'all':
+            stats_output = str(parent_dir / f"{base_name}_stats_table.csv")
+        else:
+            stats_output = str(parent_dir / f"{base_name}_stats_table.csv") if not args.output else args.output.replace('.png', '.csv').replace('.pdf', '.csv')
+        compute_statistics_table(df, stats_output)
     
     # Always print star count extremes at the end
     print_star_count_extremes(df, n=5)
