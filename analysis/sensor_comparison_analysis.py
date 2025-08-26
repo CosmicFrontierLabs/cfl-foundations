@@ -1694,39 +1694,44 @@ def plot_icp_translations(df, output_path=None):
         # Translation X histogram
         ax = axes[0]
         
-        # Count outliers outside ±0.5 pixel range
-        outliers_x_below = (exp_data['translation_x'] < -0.5).sum()
-        outliers_x_above = (exp_data['translation_x'] > 0.5).sum()
+        # Count outliers outside ±HISTOGRAM_BOUND pixel range
+        outliers_x_below = (exp_data['translation_x'] < -HISTOGRAM_BOUND).sum()
+        outliers_x_above = (exp_data['translation_x'] > HISTOGRAM_BOUND).sum()
         total_outliers_x = outliers_x_below + outliers_x_above
         
         n, bins, patches = ax.hist(exp_data['translation_x'], bins=50,
-                                   range=(-0.5, 0.5), color='steelblue', alpha=0.7, edgecolor='black')
+                                   range=(-HISTOGRAM_BOUND, HISTOGRAM_BOUND), color='steelblue', alpha=0.7, edgecolor='black')
         ax.axvline(0, color='red', linestyle='--', linewidth=1, alpha=0.5, label='Zero')
         ax.set_xlabel('Translation X (pixels)', fontsize=12)
         ax.set_ylabel('Count', fontsize=12)
         ax.set_title('ICP Translation X Distribution', fontsize=14)
-        ax.set_xlim(-0.5, 0.5)
+        ax.set_xlim(-HISTOGRAM_BOUND, HISTOGRAM_BOUND)
         ax.grid(True, alpha=0.3)
         
-        # Add statistics (calculate on full data, not just visible range)
-        mean_x = exp_data['translation_x'].mean()
-        std_x = exp_data['translation_x'].std()
-        median_x = exp_data['translation_x'].median()
+        # Calculate statistics excluding outliers (only data within ±HISTOGRAM_BOUND)
+        x_filtered = exp_data['translation_x'][
+            (exp_data['translation_x'] >= -HISTOGRAM_BOUND) & 
+            (exp_data['translation_x'] <= HISTOGRAM_BOUND)
+        ]
+        mean_x = x_filtered.mean() if len(x_filtered) > 0 else np.nan
+        std_x = x_filtered.std() if len(x_filtered) > 0 else np.nan
+        median_x = x_filtered.median() if len(x_filtered) > 0 else np.nan
         
         # Only show lines if they're within the plot range
-        if -0.5 <= mean_x <= 0.5:
+        if -HISTOGRAM_BOUND <= mean_x <= HISTOGRAM_BOUND:
             ax.axvline(mean_x, color='green', linestyle='-', linewidth=1.5, alpha=0.7, label=f'Mean: {mean_x:.4f}')
-        if -0.5 <= median_x <= 0.5:
+        if -HISTOGRAM_BOUND <= median_x <= HISTOGRAM_BOUND:
             ax.axvline(median_x, color='orange', linestyle='-', linewidth=1.5, alpha=0.7, label=f'Median: {median_x:.4f}')
         
-        # Stats text with outlier info
-        stats_text = f'n={len(exp_data)}\nμ={mean_x:.4f}\nσ={std_x:.4f}\nmedian={median_x:.4f}'
+        # Stats text with outlier info (stats computed without outliers)
+        n_filtered = len(x_filtered) if 'x_filtered' in locals() else 0
+        stats_text = f'n={len(exp_data)} ({n_filtered} shown)\nμ={mean_x:.4f}\nσ={std_x:.4f}\nmedian={median_x:.4f}'
         if total_outliers_x > 0:
             stats_text += f'\n\nOutliers: {total_outliers_x}'
             if outliers_x_below > 0:
-                stats_text += f'\n  < -1: {outliers_x_below}'
+                stats_text += f'\n  < -{HISTOGRAM_BOUND}: {outliers_x_below}'
             if outliers_x_above > 0:
-                stats_text += f'\n  > 1: {outliers_x_above}'
+                stats_text += f'\n  > {HISTOGRAM_BOUND}: {outliers_x_above}'
         
         ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
                fontsize=10, va='top', ha='right',
@@ -1750,10 +1755,14 @@ def plot_icp_translations(df, output_path=None):
         ax.set_xlim(-HISTOGRAM_BOUND, HISTOGRAM_BOUND)
         ax.grid(True, alpha=0.3)
         
-        # Add statistics (calculate on full data, not just visible range)
-        mean_y = exp_data['translation_y'].mean()
-        std_y = exp_data['translation_y'].std()
-        median_y = exp_data['translation_y'].median()
+        # Calculate statistics excluding outliers (only data within ±HISTOGRAM_BOUND)
+        y_filtered = exp_data['translation_y'][
+            (exp_data['translation_y'] >= -HISTOGRAM_BOUND) & 
+            (exp_data['translation_y'] <= HISTOGRAM_BOUND)
+        ]
+        mean_y = y_filtered.mean() if len(y_filtered) > 0 else np.nan
+        std_y = y_filtered.std() if len(y_filtered) > 0 else np.nan
+        median_y = y_filtered.median() if len(y_filtered) > 0 else np.nan
         
         # Only show lines if they're within the plot range
         if -HISTOGRAM_BOUND <= mean_y <= HISTOGRAM_BOUND:
@@ -1761,8 +1770,9 @@ def plot_icp_translations(df, output_path=None):
         if -HISTOGRAM_BOUND <= median_y <= HISTOGRAM_BOUND:
             ax.axvline(median_y, color='orange', linestyle='-', linewidth=1.5, alpha=0.7, label=f'Median: {median_y:.4f}')
         
-        # Stats text with outlier info
-        stats_text = f'n={len(exp_data)}\nμ={mean_y:.4f}\nσ={std_y:.4f}\nmedian={median_y:.4f}'
+        # Stats text with outlier info (stats computed without outliers)
+        n_filtered = len(y_filtered) if 'y_filtered' in locals() else 0
+        stats_text = f'n={len(exp_data)} ({n_filtered} shown)\nμ={mean_y:.4f}\nσ={std_y:.4f}\nmedian={median_y:.4f}'
         if total_outliers_y > 0:
             stats_text += f'\n\nOutliers: {total_outliers_y}'
             if outliers_y_below > 0:
@@ -1832,10 +1842,14 @@ def plot_brightest_star_offsets(df, output_path=None):
         ax.set_xlim(-HISTOGRAM_BOUND, HISTOGRAM_BOUND)
         ax.grid(True, alpha=0.3)
         
-        # Add statistics (calculate on full data, not just visible range)
-        mean_dx = exp_data['brightest_star_dx'].mean()
-        std_dx = exp_data['brightest_star_dx'].std()
-        median_dx = exp_data['brightest_star_dx'].median()
+        # Calculate statistics excluding outliers (only data within ±HISTOGRAM_BOUND)
+        dx_filtered = exp_data['brightest_star_dx'][
+            (exp_data['brightest_star_dx'] >= -HISTOGRAM_BOUND) & 
+            (exp_data['brightest_star_dx'] <= HISTOGRAM_BOUND)
+        ]
+        mean_dx = dx_filtered.mean() if len(dx_filtered) > 0 else np.nan
+        std_dx = dx_filtered.std() if len(dx_filtered) > 0 else np.nan
+        median_dx = dx_filtered.median() if len(dx_filtered) > 0 else np.nan
         
         # Only show lines if they're within the plot range
         if -HISTOGRAM_BOUND <= mean_dx <= HISTOGRAM_BOUND:
@@ -1843,8 +1857,9 @@ def plot_brightest_star_offsets(df, output_path=None):
         if -HISTOGRAM_BOUND <= median_dx <= HISTOGRAM_BOUND:
             ax.axvline(median_dx, color='orange', linestyle='-', linewidth=1.5, alpha=0.7, label=f'Median: {median_dx:.4f}')
         
-        # Stats text with outlier info
-        stats_text = f'n={len(exp_data)}\nμ={mean_dx:.4f}\nσ={std_dx:.4f}\nmedian={median_dx:.4f}'
+        # Stats text with outlier info (stats computed without outliers)
+        n_filtered = len(dx_filtered) if 'dx_filtered' in locals() else 0
+        stats_text = f'n={len(exp_data)} ({n_filtered} shown)\nμ={mean_dx:.4f}\nσ={std_dx:.4f}\nmedian={median_dx:.4f}'
         if total_outliers_dx > 0:
             stats_text += f'\n\nOutliers: {total_outliers_dx}'
             if outliers_dx_below > 0:
@@ -1874,10 +1889,14 @@ def plot_brightest_star_offsets(df, output_path=None):
         ax.set_xlim(-HISTOGRAM_BOUND, HISTOGRAM_BOUND)
         ax.grid(True, alpha=0.3)
         
-        # Add statistics (calculate on full data, not just visible range)
-        mean_dy = exp_data['brightest_star_dy'].mean()
-        std_dy = exp_data['brightest_star_dy'].std()
-        median_dy = exp_data['brightest_star_dy'].median()
+        # Calculate statistics excluding outliers (only data within ±HISTOGRAM_BOUND)
+        dy_filtered = exp_data['brightest_star_dy'][
+            (exp_data['brightest_star_dy'] >= -HISTOGRAM_BOUND) & 
+            (exp_data['brightest_star_dy'] <= HISTOGRAM_BOUND)
+        ]
+        mean_dy = dy_filtered.mean() if len(dy_filtered) > 0 else np.nan
+        std_dy = dy_filtered.std() if len(dy_filtered) > 0 else np.nan
+        median_dy = dy_filtered.median() if len(dy_filtered) > 0 else np.nan
         
         # Only show lines if they're within the plot range
         if -HISTOGRAM_BOUND <= mean_dy <= HISTOGRAM_BOUND:
@@ -1885,8 +1904,9 @@ def plot_brightest_star_offsets(df, output_path=None):
         if -HISTOGRAM_BOUND <= median_dy <= HISTOGRAM_BOUND:
             ax.axvline(median_dy, color='orange', linestyle='-', linewidth=1.5, alpha=0.7, label=f'Median: {median_dy:.4f}')
         
-        # Stats text with outlier info
-        stats_text = f'n={len(exp_data)}\nμ={mean_dy:.4f}\nσ={std_dy:.4f}\nmedian={median_dy:.4f}'
+        # Stats text with outlier info (stats computed without outliers)
+        n_filtered = len(dy_filtered) if 'dy_filtered' in locals() else 0
+        stats_text = f'n={len(exp_data)} ({n_filtered} shown)\nμ={mean_dy:.4f}\nσ={std_dy:.4f}\nmedian={median_dy:.4f}'
         if total_outliers_dy > 0:
             stats_text += f'\n\nOutliers: {total_outliers_dy}'
             if outliers_dy_below > 0:
