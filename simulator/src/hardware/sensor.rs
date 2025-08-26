@@ -295,6 +295,117 @@ mod tests {
     }
 
     #[test]
+    fn test_sensor_geometry_creation() {
+        let geometry = SensorGeometry::of_width_height(1920, 1080, Length::from_micrometers(3.45));
+
+        // Test basic accessors
+        assert_eq!(geometry.get_pixel_width_height(), (1920, 1080));
+        assert_eq!(geometry.pixel_size(), Length::from_micrometers(3.45));
+    }
+
+    #[test]
+    fn test_sensor_geometry_physical_dimensions() {
+        let pixel_size = Length::from_micrometers(5.5);
+        let geometry = SensorGeometry::of_width_height(2048, 1536, pixel_size);
+
+        let (width, height) = geometry.get_width_height();
+
+        // Expected physical dimensions
+        let expected_width = Length::from_micrometers(2048.0 * 5.5);
+        let expected_height = Length::from_micrometers(1536.0 * 5.5);
+
+        assert_relative_eq!(
+            width.as_micrometers(),
+            expected_width.as_micrometers(),
+            epsilon = 1e-10
+        );
+        assert_relative_eq!(
+            height.as_micrometers(),
+            expected_height.as_micrometers(),
+            epsilon = 1e-10
+        );
+    }
+
+    #[test]
+    fn test_sensor_geometry_pixel_count() {
+        let geometry = SensorGeometry::of_width_height(4096, 3072, Length::from_micrometers(9.0));
+        assert_eq!(geometry.pixel_count(), 4096 * 3072);
+
+        // Test small sensor
+        let small = SensorGeometry::of_width_height(640, 480, Length::from_micrometers(5.0));
+        assert_eq!(small.pixel_count(), 640 * 480);
+    }
+
+    #[test]
+    fn test_sensor_geometry_aspect_ratio() {
+        // 16:9 aspect ratio
+        let widescreen = SensorGeometry::of_width_height(1920, 1080, Length::from_micrometers(3.0));
+        assert_relative_eq!(widescreen.aspect_ratio(), 16.0 / 9.0, epsilon = 1e-10);
+
+        // 4:3 aspect ratio
+        let standard = SensorGeometry::of_width_height(1024, 768, Length::from_micrometers(5.0));
+        assert_relative_eq!(standard.aspect_ratio(), 4.0 / 3.0, epsilon = 1e-10);
+
+        // Square sensor
+        let square = SensorGeometry::of_width_height(2048, 2048, Length::from_micrometers(6.5));
+        assert_relative_eq!(square.aspect_ratio(), 1.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_sensor_geometry_total_area() {
+        let geometry = SensorGeometry::of_width_height(1000, 1000, Length::from_micrometers(10.0));
+
+        // Total area should be (1000 * 10μm) * (1000 * 10μm) = 10mm * 10mm = 100mm² = 1cm²
+        let area = geometry.total_area();
+        assert_relative_eq!(area.as_square_centimeters(), 1.0, epsilon = 1e-10);
+
+        // Test another case
+        let geometry2 = SensorGeometry::of_width_height(2000, 1500, Length::from_micrometers(5.0));
+        // Total area = (2000 * 5μm) * (1500 * 5μm) = 10mm * 7.5mm = 75mm² = 0.75cm²
+        let area2 = geometry2.total_area();
+        assert_relative_eq!(area2.as_square_centimeters(), 0.75, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_sensor_geometry_display() {
+        let geometry = SensorGeometry::of_width_height(4096, 2160, Length::from_micrometers(3.76));
+        let display_str = format!("{}", geometry);
+        assert_eq!(display_str, "4096×2160 pixels (3.8μm pitch)");
+
+        // Test with different precision
+        let geometry2 = SensorGeometry::of_width_height(1920, 1080, Length::from_micrometers(5.5));
+        let display_str2 = format!("{}", geometry2);
+        assert_eq!(display_str2, "1920×1080 pixels (5.5μm pitch)");
+    }
+
+    #[test]
+    fn test_sensor_geometry_equality() {
+        let geom1 = SensorGeometry::of_width_height(1024, 768, Length::from_micrometers(5.5));
+        let geom2 = SensorGeometry::of_width_height(1024, 768, Length::from_micrometers(5.5));
+        let geom3 = SensorGeometry::of_width_height(1024, 768, Length::from_micrometers(6.0));
+        let geom4 = SensorGeometry::of_width_height(2048, 768, Length::from_micrometers(5.5));
+
+        assert_eq!(geom1, geom2);
+        assert_ne!(geom1, geom3); // Different pixel size
+        assert_ne!(geom1, geom4); // Different width
+    }
+
+    #[test]
+    fn test_sensor_geometry_copy_clone() {
+        let original = SensorGeometry::of_width_height(3840, 2160, Length::from_micrometers(2.9));
+
+        // Test Copy
+        let copied = original;
+        assert_eq!(copied.get_pixel_width_height(), (3840, 2160));
+        assert_eq!(original.get_pixel_width_height(), (3840, 2160)); // Original still valid due to Copy
+
+        // Test Clone
+        let cloned = original.clone();
+        assert_eq!(cloned.get_pixel_width_height(), (3840, 2160));
+        assert_eq!(cloned.pixel_size(), Length::from_micrometers(2.9));
+    }
+
+    #[test]
     fn test_with_dimensions() {
         use std::time::Duration;
         let qe = create_flat_qe(0.5);
