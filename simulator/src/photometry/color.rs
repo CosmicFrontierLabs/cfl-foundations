@@ -41,6 +41,7 @@
 
 use super::human::HumanVision;
 use super::spectrum::Spectrum;
+use crate::units::{Area, AreaExt};
 use plotters::style::RGBColor;
 use std::fmt;
 use std::time::Duration;
@@ -197,7 +198,7 @@ pub fn temperature_to_spectral_class(temperature: f64) -> SpectralClass {
 pub fn spectrum_to_rgb_values(spectrum: &impl Spectrum) -> (f64, f64, f64) {
     // Set up duration and aperture for photo-electron calculations
     let duration = Duration::from_secs(1);
-    let aperture_cm2 = 1.0;
+    let aperture = Area::from_square_centimeters(1.0);
 
     // Get quantum efficiency curves for red, green, and blue photoreceptors
     let red_qe = HumanVision::red();
@@ -205,9 +206,9 @@ pub fn spectrum_to_rgb_values(spectrum: &impl Spectrum) -> (f64, f64, f64) {
     let blue_qe = HumanVision::blue();
 
     // Calculate photo-electrons for each channel
-    let red = spectrum.photo_electrons(&red_qe, aperture_cm2, &duration);
-    let green = spectrum.photo_electrons(&green_qe, aperture_cm2, &duration);
-    let blue = spectrum.photo_electrons(&blue_qe, aperture_cm2, &duration);
+    let red = spectrum.photo_electrons(&red_qe, aperture, &duration);
+    let green = spectrum.photo_electrons(&green_qe, aperture, &duration);
+    let blue = spectrum.photo_electrons(&blue_qe, aperture, &duration);
 
     // Normalize to the highest value to avoid clipping
     let max_value = red.max(green).max(blue);
@@ -282,15 +283,15 @@ pub fn rgb_values_to_color(r: f64, g: f64, b: f64) -> RGBColor {
 pub fn color_temperature_index(spectrum: &impl Spectrum) -> f64 {
     // Set up duration and aperture for photo-electron calculations
     let duration = Duration::from_secs(1);
-    let aperture_cm2 = 1.0;
+    let aperture = Area::from_square_centimeters(1.0);
 
     // Get quantum efficiency curves for red and blue
     let red_qe = HumanVision::red();
     let blue_qe = HumanVision::blue();
 
     // Calculate photo-electrons for red and blue
-    let red = spectrum.photo_electrons(&red_qe, aperture_cm2, &duration);
-    let blue = spectrum.photo_electrons(&blue_qe, aperture_cm2, &duration);
+    let red = spectrum.photo_electrons(&red_qe, aperture, &duration);
+    let blue = spectrum.photo_electrons(&blue_qe, aperture, &duration);
 
     // Color index as log ratio of blue to red
     if red > 0.0 && blue > 0.0 {

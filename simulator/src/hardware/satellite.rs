@@ -249,7 +249,7 @@ impl SatelliteConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::units::TemperatureExt;
+    use crate::units::{AreaExt, TemperatureExt};
 
     #[test]
     fn test_satellite_config_creation() {
@@ -265,7 +265,7 @@ mod tests {
         let satellite =
             SatelliteConfig::new(telescope, sensor, temp, Wavelength::from_nanometers(550.0));
         assert_eq!(satellite.temperature, temp);
-        assert!(satellite.telescope.collecting_area_m2() > 0.0);
+        assert!(satellite.telescope.clear_aperture_area().as_square_meters() > 0.0);
         assert!(satellite.plate_scale_arcsec_per_pixel() > 0.0);
     }
 

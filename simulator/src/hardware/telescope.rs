@@ -39,7 +39,7 @@ use once_cell::sync::Lazy;
 use std::f64::consts::PI;
 
 use crate::photometry::QuantumEfficiency;
-use crate::units::{Angle, AngleExt, Length, LengthExt, Wavelength};
+use crate::units::{Angle, AngleExt, Area, AreaExt, Length, LengthExt, Wavelength};
 
 /// Complete telescope optical system configuration.
 ///
@@ -196,18 +196,16 @@ impl TelescopeConfig {
         Angle::from_radians(plate_scale_rad_per_mm).as_arcseconds()
     }
 
-    /// Calculate the collecting area in square meters
-    pub fn collecting_area_m2(&self) -> f64 {
+    /// Calculate the clear aperture area accounting for central obscuration
+    ///
+    /// Returns the effective light-collecting area as a typed Area quantity
+    pub fn clear_aperture_area(&self) -> Area {
         let aperture_m = self.aperture.as_meters();
         let outer_area = PI * (aperture_m / 2.0).powi(2);
         let obscured_diameter = aperture_m * self.obscuration_ratio;
         let obscured_area = PI * (obscured_diameter / 2.0).powi(2);
-        outer_area - obscured_area
-    }
-
-    pub fn collecting_area_cm2(&self) -> f64 {
-        // Convert m² to cm²
-        self.collecting_area_m2() * 10_000.0
+        let area_m2 = outer_area - obscured_area;
+        Area::from_square_meters(area_m2)
     }
 
     /// Create a new telescope configuration with modified focal length
@@ -226,6 +224,7 @@ impl TelescopeConfig {
 mod tests {
     use super::*;
     use float_cmp::approx_eq;
+    use std::f64::consts::PI;
 
     #[test]
     fn test_f_number() {
@@ -321,7 +320,7 @@ mod tests {
         let expected_area = PI * radius * radius;
         assert!(approx_eq!(
             f64,
-            telescope.collecting_area_m2(),
+            telescope.clear_aperture_area().as_square_meters(),
             expected_area,
             epsilon = 1e-6
         ));
@@ -338,7 +337,7 @@ mod tests {
         );
         telescope.obscuration_ratio = 0.42;
 
-        let area_cm2 = telescope.collecting_area_cm2();
+        let area_cm2 = telescope.clear_aperture_area().as_square_centimeters();
 
         // Expected: 1617 cm²
         assert!(

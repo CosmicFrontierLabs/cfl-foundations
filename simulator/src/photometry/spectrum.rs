@@ -51,7 +51,7 @@ use std::time::Duration;
 use thiserror::Error;
 
 use super::QuantumEfficiency;
-use crate::units::{LengthExt, Wavelength};
+use crate::units::{Area, LengthExt, Wavelength};
 
 /// Physical constants in CGS units for astronomical calculations.
 ///
@@ -353,34 +353,34 @@ pub trait Spectrum: Send + Sync {
     /// # Arguments
     ///
     /// * `band` - The wavelength band to integrate over
-    /// * `aperture_cm2` - Collection aperture area in square centimeters
+    /// * `aperture` - Collection aperture area
     /// * `duration` - Duration of the observation
     ///
     /// # Returns
     ///
     /// The number of photons detected in the specified band
-    fn photons(&self, band: &Band, aperture_cm2: f64, duration: Duration) -> f64
+    fn photons(&self, band: &Band, aperture: Area, duration: Duration) -> f64
     where
         Self: Sized,
     {
-        crate::photometry::photoconversion::photons(self, band, aperture_cm2, &duration)
+        crate::photometry::photoconversion::photons(self, band, aperture, &duration)
     }
 
     /// Calculate the photo-electrons obtained from this spectrum when using a sensor with a given quantum efficiency
     ///
     /// # Arguments
     /// * `qe` - The quantum efficiency of the sensor as a function of wavelength
-    /// * `aperture_cm2` - Collection aperture area in square centimeters
+    /// * `aperture` - Collection aperture area
     /// * `duration` - Duration of the observation
     ///
     /// # Returns
     ///
     /// The number of electrons detected in the specified band
-    fn photo_electrons(&self, qe: &QuantumEfficiency, aperture_cm2: f64, duration: &Duration) -> f64
+    fn photo_electrons(&self, qe: &QuantumEfficiency, aperture: Area, duration: &Duration) -> f64
     where
         Self: Sized,
     {
-        crate::photometry::photoconversion::photo_electrons(self, qe, aperture_cm2, duration)
+        crate::photometry::photoconversion::photo_electrons(self, qe, aperture, duration)
     }
 }
 
@@ -420,7 +420,7 @@ impl Spectrum for FlatSpectrum {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::units::{LengthExt, Wavelength};
+    use crate::units::{Area, LengthExt, Wavelength};
     use approx::assert_relative_eq;
 
     #[test]

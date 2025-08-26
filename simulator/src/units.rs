@@ -5,6 +5,7 @@
 //! and expanding to other physical quantities.
 
 use uom::si::angle::{degree, radian};
+use uom::si::area::{square_centimeter, square_meter};
 use uom::si::f64::*;
 use uom::si::length::{centimeter, meter, micrometer, millimeter, nanometer};
 use uom::si::thermodynamic_temperature::degree_celsius;
@@ -23,6 +24,9 @@ pub type Wavelength = Length;
 
 /// Type alias for angular measurements with convenient methods
 pub type Angle = uom::si::f64::Angle;
+
+/// Type alias for area measurements with convenient methods
+pub type Area = uom::si::f64::Area;
 
 /// Extension trait for temperature conversions
 pub trait TemperatureExt {
@@ -97,6 +101,21 @@ pub trait AngleExt {
 
     /// Get angle in milliarcseconds
     fn as_milliarcseconds(&self) -> f64;
+}
+
+/// Extension trait for area conversions commonly used in optics
+pub trait AreaExt {
+    /// Create area from square meters
+    fn from_square_meters(m2: f64) -> Self;
+
+    /// Get area in square meters
+    fn as_square_meters(&self) -> f64;
+
+    /// Create area from square centimeters
+    fn from_square_centimeters(cm2: f64) -> Self;
+
+    /// Get area in square centimeters
+    fn as_square_centimeters(&self) -> f64;
 }
 
 impl TemperatureExt for Temperature {
@@ -194,6 +213,24 @@ impl AngleExt for Angle {
 
     fn as_milliarcseconds(&self) -> f64 {
         self.as_degrees() * 3_600_000.0
+    }
+}
+
+impl AreaExt for Area {
+    fn from_square_meters(m2: f64) -> Self {
+        Area::new::<square_meter>(m2)
+    }
+
+    fn as_square_meters(&self) -> f64 {
+        self.get::<square_meter>()
+    }
+
+    fn from_square_centimeters(cm2: f64) -> Self {
+        Area::new::<square_centimeter>(cm2)
+    }
+
+    fn as_square_centimeters(&self) -> f64 {
+        self.get::<square_centimeter>()
     }
 }
 

@@ -871,10 +871,10 @@ mod tests {
         let second = Duration::from_secs_f64(1.0);
         let elec_small = star_data_to_fluxes(&star_data, &small_satellite)
             .electrons
-            .integrated_over(&second, small_telescope.collecting_area_cm2());
+            .integrated_over(&second, small_telescope.clear_aperture_area());
         let elec_large = star_data_to_fluxes(&star_data, &large_satellite)
             .electrons
-            .integrated_over(&second, large_telescope.collecting_area_cm2());
+            .integrated_over(&second, large_telescope.clear_aperture_area());
 
         // Aperture ratio squared: 1.0^2 / 0.5^2 = 4.0
         let expected_ratio =
@@ -938,7 +938,7 @@ mod tests {
 
         // Verify the fluxes match
         let second = Duration::from_secs_f64(1.0);
-        let area = telescope.collecting_area_cm2();
+        let area = telescope.clear_aperture_area();
 
         let actual_electrons = fluxes.electrons.integrated_over(&second, area);
         let expected_electrons = expected_fluxes.electrons.integrated_over(&second, area);

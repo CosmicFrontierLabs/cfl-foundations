@@ -8,12 +8,11 @@
 //! instrumental measurements (counts/second) to astronomical magnitudes.
 
 use clap::Parser;
-use simulator::photometry::{
-    photoconversion::photo_electrons, stellar::BlackbodyStellarSpectrum, QuantumEfficiency,
-};
+use simulator::photometry::{photoconversion::photo_electrons, stellar::BlackbodyStellarSpectrum};
 use simulator::shared_args::{SensorModel, TelescopeModel};
 use simulator::{
     hardware::{
+        satellite::SatelliteConfig,
         sensor::models::ALL_SENSORS,
         telescope::models::{
             COSMIC_FRONTIER_JBT_1M, COSMIC_FRONTIER_JBT_50CM, COSMIC_FRONTIER_JBT_MAX, IDEAL_100CM,
@@ -23,7 +22,7 @@ use simulator::{
         TelescopeConfig,
     },
     star_math::DEFAULT_BV,
-    units::LengthExt,
+    units::{LengthExt, Temperature, TemperatureExt, Wavelength},
 };
 use std::time::Duration;
 
@@ -61,11 +60,10 @@ struct Args {
 
 /// Calculate zero-point magnitude using binary search
 ///
-/// Finds the magnitude at which the given telescope/sensor combination
+/// Finds the magnitude at which the given satellite configuration
 /// produces exactly 1 photoelectron per second.
 fn find_zero_point(
-    telescope: &TelescopeConfig,
-    sensor_qe: &QuantumEfficiency,
+    satellite: &SatelliteConfig,
     bv_color: f64,
     tolerance: f64,
     max_iterations: usize,
@@ -75,12 +73,8 @@ fn find_zero_point(
     let mut mag_low = 5.0;
     let mut mag_high = 30.0;
 
-    // Use telescope's collecting area method which accounts for obscuration
-    let aperture_area_cm2 = telescope.collecting_area_cm2();
-
-    // Combine telescope and sensor quantum efficiencies
-    let combined_qe = QuantumEfficiency::product(&telescope.quantum_efficiency, sensor_qe)
-        .map_err(|e| format!("Failed to combine QE curves: {e}"))?;
+    // Use telescope's clear aperture area method which accounts for obscuration
+    let aperture_area = satellite.telescope.clear_aperture_area();
 
     // 1 second exposure
     let exposure = Duration::from_secs(1);
@@ -93,9 +87,9 @@ fn find_zero_point(
         // Create stellar spectrum at this magnitude
         let spectrum = BlackbodyStellarSpectrum::from_gaia_bv_magnitude(bv_color, mag_mid);
 
-        // Calculate photoelectrons per second
+        // Calculate photoelectrons per second using combined QE from satellite
         let electrons_per_s =
-            photo_electrons(&spectrum, &combined_qe, aperture_area_cm2, &exposure);
+            photo_electrons(&spectrum, &satellite.combined_qe, aperture_area, &exposure);
 
         if verbose {
             println!(
@@ -138,6 +132,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("B-V Color Index: {:.2}", args.bv_color);
     println!("Convergence Tolerance: {:.3} mag", args.tolerance);
     println!();
+
+    // Default temperature and wavelength for satellite config
+    let temperature = Temperature::from_celsius(-10.0);
+    let wavelength = Wavelength::from_nanometers(550.0);
 
     // Determine which telescopes to analyze
     let telescopes: Vec<(&str, &TelescopeConfig)> = match args.telescope {
@@ -191,13 +189,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Calculate zero-point for each combination
     for (telescope_name, telescope) in &telescopes {
         for sensor in &sensors {
+            // Create SatelliteConfig for this combination
+            let satellite = SatelliteConfig::new(
+                (*telescope).clone(),
+                (*sensor).clone(),
+                temperature,
+                wavelength,
+            );
+
             if args.verbose {
                 println!("\nCalculating for {} + {}:", telescope_name, sensor.name);
             }
 
             match find_zero_point(
-                telescope,
-                &sensor.quantum_efficiency,
+                &satellite,
                 args.bv_color,
                 args.tolerance,
                 args.max_iterations,

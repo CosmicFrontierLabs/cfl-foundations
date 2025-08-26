@@ -17,7 +17,7 @@ use simulator::photometry::{
     QuantumEfficiency,
 };
 use simulator::star_math::DEFAULT_BV;
-use simulator::units::{LengthExt, Wavelength};
+use simulator::units::{Area, AreaExt, LengthExt, Wavelength};
 use std::error::Error;
 use std::time::Duration;
 
@@ -38,7 +38,7 @@ struct Args {}
 /// * `detector_qe` - Quantum efficiency curve of the detector
 /// * `airy_disk` - Reference PSF model with nominal FWHM and wavelength
 /// * `stars` - Array of stellar spectra with their type labels and temperatures
-/// * `aperture_cm2` - Telescope aperture area in cm²
+/// * `aperture` - Telescope aperture area
 /// * `integration_time` - Integration time for the observation
 ///
 /// # Returns
@@ -121,7 +121,7 @@ fn analyze_sensor_psf(
 /// * `sensor_qe` - Quantum efficiency curve of the detector
 /// * `airy_disk` - Reference PSF model
 /// * `stars` - Array of stellar spectra to plot
-/// * `aperture_cm2` - Telescope aperture area in cm²
+/// * `aperture` - Telescope aperture area
 /// * `integration_time` - Integration time
 /// * `max_radius` - Maximum radius for plot in normalized units
 /// * `n_points` - Number of points for radial profile
@@ -134,7 +134,7 @@ fn create_sensor_plot(
     sensor_qe: &QuantumEfficiency,
     airy_disk: &PixelScaledAiryDisk,
     stars: &[(&BlackbodyStellarSpectrum, &str, f64)],
-    aperture_cm2: f64,
+    aperture: Area,
     integration_time: &Duration,
     max_radius: f64,
     n_points: usize,
@@ -166,7 +166,7 @@ fn create_sensor_plot(
         for (j, psf) in star_psfs.iter().enumerate() {
             star_profiles[j].push(
                 psf.disk.gaussian_approximation(r)
-                    * psf.integrated_over(integration_time, aperture_cm2),
+                    * psf.integrated_over(integration_time, aperture),
             );
         }
     }
@@ -296,7 +296,7 @@ fn create_sensor_plot(
 /// * `sun_like` - Sun-like stellar spectrum for chromatic PSF
 /// * `sensor_qe` - Quantum efficiency of the first sensor
 /// * `sensor_name` - Name of the sensor for display
-/// * `aperture_cm2` - Telescope aperture area in cm²
+/// * `aperture` - Telescope aperture area
 /// * `integration_time` - Integration time
 /// * `max_radius` - Maximum radius in normalized units (should match radial plots)
 ///
@@ -308,7 +308,7 @@ fn create_2d_psf_comparison(
     sun_like: &BlackbodyStellarSpectrum,
     sensor_qe: &QuantumEfficiency,
     sensor_name: &str,
-    aperture_cm2: f64,
+    aperture: Area,
     integration_time: &Duration,
     max_radius: f64,
 ) -> Result<(), Box<dyn Error>> {
@@ -339,7 +339,7 @@ fn create_2d_psf_comparison(
     // Create chromatic PSF image for sun-like star
     let sun_pe = photon_electron_fluxes(airy_disk, sun_like, sensor_qe).electrons;
     let sun_image = create_psf_image(&|r| {
-        sun_pe.disk.intensity(r) * sun_pe.integrated_over(integration_time, aperture_cm2)
+        sun_pe.disk.intensity(r) * sun_pe.integrated_over(integration_time, aperture)
     });
 
     // Log scale for visualization
@@ -400,8 +400,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let aperture = 0.5; // 0.5 meter diameter (50cm)
     let reference_wavelength = Wavelength::from_nanometers(550.0); // 550nm (green)
 
-    // Calculate aperture area in cm² for photon calculations
+    // Calculate aperture area for photon calculations
     let aperture_cm2 = std::f64::consts::PI * (aperture * 100.0 / 2.0_f64).powi(2); // π × (25cm)²
+    let aperture_area = Area::from_square_centimeters(aperture_cm2);
     let integration_time = Duration::from_secs(1); // 1 second integration
 
     // Create PSF model
@@ -463,7 +464,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let n_points = 800; // 4x more interpolation points
     let max_radius = 2.0;
 
-    println!("\nTelescope aperture area: {aperture_cm2:.1} cm²");
+    println!(
+        "\nTelescope aperture area: {:.1} cm²",
+        aperture_area.as_square_centimeters()
+    );
 
     // Create plots directory if it doesn't exist
     std::fs::create_dir_all("plots")?;
@@ -475,7 +479,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             sensor_qe,
             &airy_disk,
             &stars,
-            aperture_cm2,
+            aperture_area,
             &integration_time,
             max_radius,
             n_points,
@@ -490,7 +494,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         &sun_like,
         sensors[0].1,
         sensors[0].0,
-        aperture_cm2,
+        aperture_area,
         &integration_time,
         max_radius,
     )?;

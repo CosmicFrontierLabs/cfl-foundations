@@ -8,7 +8,7 @@ use crate::{
     hardware::SatelliteConfig,
     photometry::{photoconversion::SourceFlux, zodical::SolarAngularCoordinates, ZodicalLight},
     star_math::{field_diameter, star_data_to_fluxes, StarProjector},
-    units::AngleExt,
+    units::{AngleExt, Area},
     SensorConfig,
 };
 
@@ -174,7 +174,7 @@ impl Renderer {
             satellite_config.sensor.height_px,
             &rendered_stars,
             &Duration::from_secs(1),
-            satellite_config.telescope.collecting_area_cm2(),
+            satellite_config.telescope.clear_aperture_area(),
         );
 
         Self {
@@ -204,7 +204,7 @@ impl Renderer {
             satellite_config.sensor.height_px,
             stars,
             &Duration::from_secs(1),
-            satellite_config.telescope.collecting_area_cm2(),
+            satellite_config.telescope.clear_aperture_area(),
         );
 
         Self {
@@ -450,7 +450,7 @@ pub fn quantize_image(electron_img: &Array2<f64>, sensor: &SensorConfig) -> Arra
 /// use simulator::image_proc::render::{add_stars_to_image, StarInFrame};
 /// use simulator::photometry::photoconversion::{SourceFlux, SpotFlux};
 /// use simulator::image_proc::airy::PixelScaledAiryDisk;
-/// use simulator::units::{LengthExt, Wavelength};
+/// use simulator::units::{Area, AreaExt, LengthExt, Wavelength};
 /// use starfield::catalogs::StarData;
 /// use starfield::Equatorial;
 /// use std::time::Duration;
@@ -467,14 +467,14 @@ pub fn quantize_image(electron_img: &Array2<f64>, sensor: &SensorConfig) -> Arra
 ///     electrons: SpotFlux { disk: disk.clone(), flux: 1000.0 },
 /// };
 /// let stars = vec![StarInFrame { x: 50.0, y: 50.0, spot: source_flux, star: star_data }];
-/// let image = add_stars_to_image(100, 100, &stars, &Duration::from_secs(1), 1.0);
+/// let image = add_stars_to_image(100, 100, &stars, &Duration::from_secs(1), Area::from_square_centimeters(1.0));
 /// ```
 pub fn add_stars_to_image(
     width: usize,
     height: usize,
     stars: &Vec<StarInFrame>,
     exposure: &Duration,
-    aperture_cm2: f64,
+    aperture: Area,
 ) -> Array2<f64> {
     // Create new image array with specified dimensions
     let mut image = Array2::zeros((height, width));
@@ -507,7 +507,7 @@ pub fn add_stars_to_image(
                 let contribution = flux.disk.pixel_flux_simpson(
                     x_pixel,
                     y_pixel,
-                    flux.integrated_over(exposure, aperture_cm2),
+                    flux.integrated_over(exposure, aperture),
                 );
 
                 image[[y as usize, x as usize]] += contribution;
@@ -531,7 +531,7 @@ mod tests {
     use crate::image_proc::airy::PixelScaledAiryDisk;
     use crate::image_proc::noise::simple_normal_array;
     use crate::photometry::photoconversion::SpotFlux;
-    use crate::units::{Length, LengthExt, Temperature, TemperatureExt};
+    use crate::units::{Area, AreaExt, Length, LengthExt, Temperature, TemperatureExt};
 
     fn test_star_data() -> StarData {
         StarData {
@@ -605,7 +605,13 @@ mod tests {
                 star: test_star_data(),
             }];
 
-            let image = add_stars_to_image(50, 50, &stars, &Duration::from_secs(1), 1.0);
+            let image = add_stars_to_image(
+                50,
+                50,
+                &stars,
+                &Duration::from_secs(1),
+                Area::from_square_centimeters(1.0),
+            );
             // Compute the weighted center of mass
             let mut total_flux = 0.0;
             let mut x_cm = 0.0;
@@ -629,7 +635,13 @@ mod tests {
             let total_flux = 1000.0;
 
             let stars = vec![create_star_in_frame(25.0, 25.0, sigma_pix, total_flux)];
-            let image = add_stars_to_image(50, 50, &stars, &Duration::from_secs(1), 1.0);
+            let image = add_stars_to_image(
+                50,
+                50,
+                &stars,
+                &Duration::from_secs(1),
+                Area::from_square_centimeters(1.0),
+            );
             let added_flux = image.sum();
             println!("Sigma: {sigma_pix}, Added Flux: {added_flux}");
             assert_relative_eq!(added_flux, total_flux, epsilon = 1e-6 * total_flux);
@@ -642,7 +654,13 @@ mod tests {
         let total_flux = 1000.0;
 
         let stars = vec![create_star_in_frame(60.0, 60.0, sigma_pix, total_flux)];
-        let image = add_stars_to_image(50, 50, &stars, &Duration::from_secs(1), 1.0);
+        let image = add_stars_to_image(
+            50,
+            50,
+            &stars,
+            &Duration::from_secs(1),
+            Area::from_square_centimeters(1.0),
+        );
         let added_flux = image.sum();
         // With Simpson's rule, some flux can still be captured even when star center is outside
         // Expect very small flux contribution
@@ -658,7 +676,13 @@ mod tests {
         let total_flux = 1000.0;
 
         let stars = vec![create_star_in_frame(-0.5, 25.0, sigma_pix, total_flux)];
-        let image = add_stars_to_image(50, 50, &stars, &Duration::from_secs(1), 1.0);
+        let image = add_stars_to_image(
+            50,
+            50,
+            &stars,
+            &Duration::from_secs(1),
+            Area::from_square_centimeters(1.0),
+        );
         let added_flux = image.sum();
         assert_relative_eq!(added_flux * 2.0, total_flux, epsilon = total_flux * 0.01);
     }
@@ -675,7 +699,13 @@ mod tests {
             create_star_in_frame(49.5, 49.5, sigma_pix, total_flux),
         ];
 
-        let image = add_stars_to_image(50, 50, &stars, &Duration::from_secs(1), 1.0);
+        let image = add_stars_to_image(
+            50,
+            50,
+            &stars,
+            &Duration::from_secs(1),
+            Area::from_square_centimeters(1.0),
+        );
         let added_flux = image.sum();
 
         // The total flux should be about 1 star flux value, because we see 1/4 of each star
@@ -696,7 +726,13 @@ mod tests {
             stars.push(create_star_in_frame(x, y, sigma_pix, total_flux));
         }
 
-        let image = add_stars_to_image(50, 50, &stars, &Duration::from_secs(1), 1.0);
+        let image = add_stars_to_image(
+            50,
+            50,
+            &stars,
+            &Duration::from_secs(1),
+            Area::from_square_centimeters(1.0),
+        );
         let added_flux = image.sum();
 
         // Very loose bounds, but should catch egregious errors
@@ -717,7 +753,13 @@ mod tests {
             stars.push(create_star_in_frame(x, y, sigma_pix, total_flux));
         }
 
-        let image = add_stars_to_image(23, 57, &stars, &Duration::from_secs(1), 1.0);
+        let image = add_stars_to_image(
+            23,
+            57,
+            &stars,
+            &Duration::from_secs(1),
+            Area::from_square_centimeters(1.0),
+        );
         let added_flux = image.sum();
 
         // Very loose bounds, but should catch egregious errors

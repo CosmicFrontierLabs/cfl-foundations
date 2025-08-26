@@ -7,7 +7,7 @@ use crate::photometry::{
     spectrum::{wavelength_to_ergs, Band},
     QuantumEfficiency, Spectrum,
 };
-use crate::units::LengthExt;
+use crate::units::{Area, AreaExt, LengthExt};
 use std::time::Duration;
 
 /// Calculate photon flux for each nm sub-band of a wavelength band.
@@ -64,16 +64,16 @@ impl SpotFlux {
     ///
     /// # Arguments
     /// * `exposure` - Integration time duration
-    /// * `aperture_cm2` - Telescope collecting area in cm²
+    /// * `aperture` - Telescope collecting area
     ///
     /// # Returns
     /// Total particle count (photons or electrons)
     ///
     /// # Formula
     /// `total = flux_rate × aperture_area × exposure_time`
-    pub fn integrated_over(&self, exposure: &Duration, aperture_cm2: f64) -> f64 {
+    pub fn integrated_over(&self, exposure: &Duration, aperture: Area) -> f64 {
         // Convert the flux to total photons or electrons over the integration time
-        self.flux * aperture_cm2 * exposure.as_secs_f64()
+        self.flux * aperture.as_square_centimeters() * exposure.as_secs_f64()
     }
 }
 
@@ -200,18 +200,13 @@ pub fn photon_electron_fluxes<S: Spectrum>(
 ///
 /// * `spectrum` - The spectrum to integrate
 /// * `band` - The wavelength band to integrate over
-/// * `aperture_cm2` - Collection aperture area in square centimeters
-/// * `duration` - Duration of the observation
+/// * `aperture` - Collection aperture area
+/// * `exposure` - Duration of the observation
 ///
 /// # Returns
 ///
 /// The number of photons detected in the specified band
-pub fn photons<S: Spectrum>(
-    spectrum: &S,
-    band: &Band,
-    aperture_cm2: f64,
-    exposure: &Duration,
-) -> f64 {
+pub fn photons<S: Spectrum>(spectrum: &S, band: &Band, aperture: Area, exposure: &Duration) -> f64 {
     // Convert power to photons per second
     // E = h * c / λ, so N = P / (h * c / λ)
     // where P is power in erg/s, h is Planck's constant, c is speed of light, and λ is wavelength in cm
@@ -220,7 +215,7 @@ pub fn photons<S: Spectrum>(
         .sum();
 
     // Multiply by duration to get total photons detected
-    total_photons * exposure.as_secs_f64() * aperture_cm2
+    total_photons * exposure.as_secs_f64() * aperture.as_square_centimeters()
 }
 
 /// Calculate the photo-electrons obtained from this spectrum when using a sensor with a given quantum efficiency
@@ -228,8 +223,8 @@ pub fn photons<S: Spectrum>(
 /// # Arguments
 /// * `spectrum` - The spectrum to integrate
 /// * `qe` - The quantum efficiency of the sensor as a function of wavelength
-/// * `aperture_cm2` - Collection aperture area in square centimeters
-/// * `duration` - Duration of the observation
+/// * `aperture` - Collection aperture area
+/// * `exposure` - Duration of the observation
 ///
 /// # Returns
 ///
@@ -237,7 +232,7 @@ pub fn photons<S: Spectrum>(
 pub fn photo_electrons<S: Spectrum>(
     spectrum: &S,
     qe: &QuantumEfficiency,
-    aperture_cm2: f64,
+    aperture: Area,
     duration: &Duration,
 ) -> f64 {
     // Convert power to photons per second
@@ -249,7 +244,7 @@ pub fn photo_electrons<S: Spectrum>(
         .sum();
 
     // Multiply by duration to get total photons detected
-    total_electrons * duration.as_secs_f64() * aperture_cm2
+    total_electrons * duration.as_secs_f64() * aperture.as_square_centimeters()
 }
 
 #[cfg(test)]
@@ -381,7 +376,7 @@ mod tests {
 
     #[test]
     fn test_photoelectron_math_100percent() {
-        let aperture_cm2 = 1.0; // 1 cm² aperture
+        let aperture = Area::from_square_centimeters(1.0); // 1 cm² aperture
         let duration = std::time::Duration::from_secs(1); // 1 second observation
 
         let band = Band::from_nm_bounds(400.0, 600.0);
@@ -391,8 +386,8 @@ mod tests {
         // Create a flat spectrum with a known flux density
         let spectrum = FlatStellarSpectrum::from_ab_mag(0.0);
 
-        let photons_count = photons(&spectrum, &band, aperture_cm2, &duration);
-        let electrons_count = photo_electrons(&spectrum, &qe, aperture_cm2, &duration);
+        let photons_count = photons(&spectrum, &band, aperture, &duration);
+        let electrons_count = photo_electrons(&spectrum, &qe, aperture, &duration);
 
         // For a perfect QE, the number of electrons should equal the number of photons
         let err = f64::abs(photons_count - electrons_count) / photons_count;
@@ -405,7 +400,7 @@ mod tests {
 
     #[test]
     fn test_photoelectron_math_50_percent() {
-        let aperture_cm2 = 1.0; // 1 cm² aperture
+        let aperture = Area::from_square_centimeters(1.0); // 1 cm² aperture
         let duration = std::time::Duration::from_secs(1); // 1 second observation
 
         let band = Band::from_nm_bounds(400.0, 600.0);
@@ -415,8 +410,8 @@ mod tests {
         // Create a flat spectrum with a known flux density
         let spectrum = FlatStellarSpectrum::from_ab_mag(0.0);
 
-        let photons_count = photons(&spectrum, &band, aperture_cm2, &duration);
-        let electrons_count = photo_electrons(&spectrum, &qe, aperture_cm2, &duration);
+        let photons_count = photons(&spectrum, &band, aperture, &duration);
+        let electrons_count = photo_electrons(&spectrum, &qe, aperture, &duration);
 
         // For 50% QE, electrons should be ~50% of photons
         let ratio = electrons_count / photons_count;
@@ -426,7 +421,7 @@ mod tests {
 
     #[test]
     fn test_photoelectron_math_vega() {
-        let aperture_cm2 = 1.0; // 1 cm² aperture
+        let aperture = Area::from_square_centimeters(1.0); // 1 cm² aperture
         let duration = std::time::Duration::from_secs(1); // 1 second observation
 
         let v_band = Band::from_nm_bounds(551.0 - 44.0, 551.0 + 44.0);
@@ -439,12 +434,12 @@ mod tests {
         let disk = PixelScaledAiryDisk::with_fwhm(1.0, Wavelength::from_nanometers(550.0));
 
         let fluxes = photon_electron_fluxes(&disk, &spectrum, &qe);
-        let photons_count = fluxes.photons.integrated_over(&duration, aperture_cm2);
-        let electrons_count = fluxes.electrons.integrated_over(&duration, aperture_cm2);
+        let photons_count = fluxes.photons.integrated_over(&duration, aperture);
+        let electrons_count = fluxes.electrons.integrated_over(&duration, aperture);
 
         // Rule of thumb for vega is 1000 photons per second per cm² per second per angstrom
         let angs = v_band.width() * 10.0; // Convert nm to angstroms
-        let expected_photons = 1000.0 * angs * aperture_cm2;
+        let expected_photons = 1000.0 * angs * aperture.as_square_centimeters();
 
         println!("Photons: {photons_count}, Electrons: {electrons_count}");
         let err = f64::abs(photons_count - expected_photons) / photons_count;
@@ -472,19 +467,19 @@ mod tests {
         let e_spot = fluxes.electrons;
         let pe_spot = fluxes.photons;
 
-        let aperture_cm2 = 100.0; // 1 cm² aperture
+        let aperture = Area::from_square_centimeters(100.0); // 100 cm² aperture
         let exposure = Duration::from_secs(1); // 1 second observation
 
-        let photons_direct = photons(&spectrum, &band, aperture_cm2, &exposure);
-        let electrons_direct = photo_electrons(&spectrum, &qe, aperture_cm2, &exposure);
+        let photons_direct = photons(&spectrum, &band, aperture, &exposure);
+        let electrons_direct = photo_electrons(&spectrum, &qe, aperture, &exposure);
 
         assert_relative_eq!(
-            e_spot.integrated_over(&exposure, aperture_cm2),
+            e_spot.integrated_over(&exposure, aperture),
             electrons_direct,
             epsilon = 0.1
         );
         assert_relative_eq!(
-            pe_spot.integrated_over(&exposure, aperture_cm2),
+            pe_spot.integrated_over(&exposure, aperture),
             photons_direct,
             epsilon = 0.1
         );

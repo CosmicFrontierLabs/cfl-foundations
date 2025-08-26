@@ -68,7 +68,7 @@ use std::time::Duration;
 
 use super::gaia::GAIA_PASSBAND;
 use super::spectrum::{Band, Spectrum, CGS};
-use crate::units::{LengthExt, Wavelength};
+use crate::units::{Area, AreaExt, LengthExt, Wavelength};
 
 /// Flat spectral energy distribution for calibration and reference sources.
 ///
@@ -258,7 +258,7 @@ fn compute_gaia_scaler(b_v: f64) -> f64 {
     // Gather the same passband, duration, and aperture
     let gaia_band = GAIA_PASSBAND.band();
     let duration = Duration::from_secs(1);
-    let one_cm_sq = 1.0;
+    let one_cm_sq = Area::from_square_centimeters(1.0);
 
     // Compute both, with the blackbody output unscaled
     let gaia_gated_flat_flux = flat_spectrum.photons(&gaia_band, one_cm_sq, duration);
@@ -405,7 +405,7 @@ impl Spectrum for BlackbodyStellarSpectrum {
 
 #[cfg(test)]
 mod tests {
-    use crate::units::{LengthExt, Wavelength};
+    use crate::units::{Area, AreaExt, LengthExt, Wavelength};
     use crate::QuantumEfficiency;
 
     use super::*;
@@ -426,9 +426,9 @@ mod tests {
             let spectrum = FlatStellarSpectrum::from_ab_mag(*mag);
 
             // Assume 1 cm² aperture and 1 second duration
-            let aperture_cm2 = 1.0;
+            let aperture = Area::from_square_centimeters(1.0);
             let duration = Duration::from_secs_f64(1.0);
-            let electrons = spectrum.photo_electrons(&qe, aperture_cm2, &duration);
+            let electrons = spectrum.photo_electrons(&qe, aperture, &duration);
 
             let error = f64::abs(electrons - *expected_electrons) / *expected_electrons;
 
@@ -454,9 +454,9 @@ mod tests {
             let band = Band::from_nm_bounds(400.0, 700.0);
 
             // Assume 1 cm² aperture and 1 second duration
-            let aperture_cm2 = 1.0;
+            let aperture = Area::from_square_centimeters(1.0);
             let duration = Duration::from_secs(1);
-            let photons = spectrum.photons(&band, aperture_cm2, duration);
+            let photons = spectrum.photons(&band, aperture, duration);
 
             let error = f64::abs(photons - *expected_photons) / *expected_photons;
 
@@ -496,14 +496,14 @@ mod tests {
     fn test_printout_photons() {
         let wavelengths = vec![400.0, 500.0, 600.0, 700.0];
         let spectrum = FlatStellarSpectrum::from_ab_mag(0.0);
-        let aperture_cm2 = 1.0; // 1 cm² aperture
+        let aperture = Area::from_square_centimeters(1.0); // 1 cm² aperture
         let duration = Duration::from_secs(1); // 1 second observation
 
         for wavelength in wavelengths {
             // Make a band that is at the wavelength +- 1THz
             let band = Band::centered_on(wavelength, 1e12);
             let irradiance = spectrum.irradiance(&band);
-            let photons = spectrum.photons(&band, aperture_cm2, duration);
+            let photons = spectrum.photons(&band, aperture, duration);
             println!("Wavelength: {wavelength} nm, Irradiance: {irradiance} Photons: {photons:.2}");
         }
     }
@@ -516,8 +516,16 @@ mod tests {
         let band2 = Band::centered_on(800.0, 1e12);
 
         // Calculate photons in each band
-        let photons1 = spectrum.photons(&band1, 1.0, Duration::from_secs(1));
-        let photons2 = spectrum.photons(&band2, 1.0, Duration::from_secs(1));
+        let photons1 = spectrum.photons(
+            &band1,
+            Area::from_square_centimeters(1.0),
+            Duration::from_secs(1),
+        );
+        let photons2 = spectrum.photons(
+            &band2,
+            Area::from_square_centimeters(1.0),
+            Duration::from_secs(1),
+        );
 
         // Should be the same number 2x frequency == 1/2 wavelength == 2x photons
         println!(
@@ -660,11 +668,11 @@ mod tests {
         let blackbody = BlackbodyStellarSpectrum::from_gaia_bv_magnitude(0.0, 12.0);
 
         let band = Band::from_nm_bounds(400.0, 700.0);
-        let aperture_cm2 = 1.0;
+        let aperture = Area::from_square_centimeters(1.0);
         let duration = Duration::from_secs(1);
 
-        let flat_photons = flat.photons(&band, aperture_cm2, duration);
-        let blackbody_photons = blackbody.photons(&band, aperture_cm2, duration);
+        let flat_photons = flat.photons(&band, aperture, duration);
+        let blackbody_photons = blackbody.photons(&band, aperture, duration);
 
         // Both should produce positive photon counts
         assert!(flat_photons > 0.0);
@@ -689,11 +697,11 @@ mod tests {
             let blackbody = BlackbodyStellarSpectrum::from_gaia_bv_magnitude(bv, 12.0);
 
             let band = Band::from_nm_bounds(400.0, 700.0);
-            let aperture_cm2 = 1.0;
+            let aperture = Area::from_square_centimeters(1.0);
             let duration = Duration::from_secs(1);
 
-            let flat_photons = flat.photons(&band, aperture_cm2, duration);
-            let blackbody_photons = blackbody.photons(&band, aperture_cm2, duration);
+            let flat_photons = flat.photons(&band, aperture, duration);
+            let blackbody_photons = blackbody.photons(&band, aperture, duration);
 
             // Both should produce positive photon counts
             assert!(flat_photons > 0.0);

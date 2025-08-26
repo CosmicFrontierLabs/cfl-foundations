@@ -37,6 +37,7 @@
 //!     BlackbodyStellarSpectrum, b_filter, v_filter,
 //!     temperature_to_spectral_class, spectrum_to_rgb_values, Spectrum
 //! };
+//! use simulator::units::{Area, AreaExt};
 //! use std::time::Duration;
 //!
 //! // 1. Create stellar spectrum
@@ -49,7 +50,7 @@
 //!
 //! // 3. Calculate synthetic photometry
 //! let exposure = Duration::from_secs(30);
-//! let aperture = 100.0; // cm²
+//! let aperture = Area::from_square_centimeters(100.0); // 100 cm²
 //! let b_flux = star.photo_electrons(&b_band, aperture, &exposure);
 //! let v_flux = star.photo_electrons(&v_band, aperture, &exposure);
 //!
@@ -71,6 +72,7 @@
 //! use simulator::photometry::{
 //!     HumanVision, BlackbodyStellarSpectrum, gaia::GAIA_PASSBAND, Spectrum
 //! };
+//! use simulator::units::{Area, AreaExt};
 //! use std::time::Duration;
 //!
 //! // Create stellar spectra for different types
@@ -91,7 +93,7 @@
 //!     
 //!     // Human RGB response
 //!     let exposure = Duration::from_secs(1);
-//!     let aperture = 1.0;
+//!     let aperture = Area::from_square_centimeters(1.0);
 //!     let r = spectrum.photo_electrons(&red_qe, aperture, &exposure);
 //!     let g = spectrum.photo_electrons(&green_qe, aperture, &exposure);
 //!     let b = spectrum.photo_electrons(&blue_qe, aperture, &exposure);

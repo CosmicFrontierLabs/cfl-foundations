@@ -117,7 +117,7 @@ fn test_algorithm(
             args.domain,
             &vec![star],
             &args.shared.exposure.0,
-            satellite.telescope.collecting_area_cm2(),
+            satellite.telescope.clear_aperture_area(),
         );
 
         // Generate and add noise

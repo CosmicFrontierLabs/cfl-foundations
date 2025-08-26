@@ -736,8 +736,8 @@ impl ZodicalLight {
         let pixel_solid_angle_arcsec2 = pixel_scale_arcsec_per_pixel * pixel_scale_arcsec_per_pixel;
 
         // Compute the photoelectrons per solid angle and multiply by the pixel solid angle
-        let aperture_cmsq = satellite.telescope.aperture.as_meters() * 10000.0;
-        let mean_pe = z_spect.photo_electrons(&satellite.combined_qe, aperture_cmsq, exposure)
+        let aperture = satellite.telescope.clear_aperture_area();
+        let mean_pe = z_spect.photo_electrons(&satellite.combined_qe, aperture, exposure)
             * pixel_solid_angle_arcsec2;
 
         Array2::ones((satellite.sensor.height_px, satellite.sensor.width_px)) * mean_pe
