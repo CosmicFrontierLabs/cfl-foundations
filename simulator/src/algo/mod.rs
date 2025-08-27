@@ -5,6 +5,7 @@
 
 pub mod bilinear;
 pub mod icp;
+pub mod lookup_table;
 pub mod min_max_scan;
 pub mod misc;
 pub mod motion;
@@ -16,6 +17,7 @@ pub mod stats;
 
 pub use bilinear::{BilinearInterpolator, InterpolationError};
 pub use icp::{iterative_closest_point, ICPResult};
+pub use lookup_table::{LookupError, LookupTable};
 pub use min_max_scan::{MinMaxError, MinMaxScan};
 pub use motion::{MotionModel, XAxisSpinner, XYWobble};
 pub use parallel::process_array_in_parallel_chunks;
