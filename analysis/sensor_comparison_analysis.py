@@ -1801,6 +1801,182 @@ def plot_icp_translations(df, output_path=None):
     return None
 
 
+def plot_trial_error_stddev(df, output_path=None):
+    """Plot standard deviation of pixel errors across trials vs brightest magnitude
+    
+    This aggregates multiple trials for the same pointing (same experiment_num) 
+    and calculates the standard deviation of the pixel errors across trials.
+    """
+    # Check if we have trial_num column (new format)
+    if 'trial_num' not in df.columns:
+        print("Warning: No trial_num column found. Assuming single trial per experiment.")
+        df['trial_num'] = 0
+    
+    # Get unique sensors and f-numbers from the data
+    sensors = sorted(df['sensor'].unique())
+    f_numbers = sorted(df['f_number'].unique())
+    
+    # Create figure with subplots - one for each sensor  
+    n_sensors = len(sensors)
+    fig, axes = plt.subplots(1, n_sensors, figsize=(10*n_sensors, 8))
+    
+    # Make axes iterable even for single sensor
+    if n_sensors == 1:
+        axes = [axes]
+    
+    # Use consistent colormap
+    cmap = cm.viridis
+    
+    for idx, (sensor_name, ax) in enumerate(zip(sensors, axes)):
+        legend_elements = []
+        
+        for f_num in f_numbers:
+            color = get_f_number_color(f_num, cmap)
+            
+            # Filter data for this sensor and f-number
+            mask = (df['sensor'] == sensor_name) & (df['f_number'] == f_num)
+            sensor_data = df[mask]
+            
+            if len(sensor_data) == 0:
+                continue
+            
+            # Group by experiment_num and exposure_ms to aggregate trials
+            grouped = sensor_data.groupby(['experiment_num', 'exposure_ms'])
+            
+            brightest_mags = []
+            pixel_error_stds = []
+            
+            for (exp_num, exp_ms), group in grouped:
+                # Only compute std if we have multiple trials
+                if len(group) > 1:
+                    # Get brightest magnitude (should be same for all trials in this group)
+                    brightest_mag = group['brightest_mag'].iloc[0]
+                    
+                    # Calculate standard deviation of pixel errors across trials
+                    pixel_error_std = group['pixel_error'].std()
+                    
+                    # Skip if NaN
+                    if not np.isnan(brightest_mag) and not np.isnan(pixel_error_std):
+                        brightest_mags.append(brightest_mag)
+                        pixel_error_stds.append(pixel_error_std)
+            
+            # Plot if we have data
+            if len(brightest_mags) > 0:
+                # Sort by brightest magnitude for cleaner plot
+                sorted_indices = np.argsort(brightest_mags)
+                brightest_mags = np.array(brightest_mags)[sorted_indices]
+                pixel_error_stds = np.array(pixel_error_stds)[sorted_indices]
+                
+                # Plot with low opacity to show overlapping points better
+                ax.scatter(brightest_mags, pixel_error_stds, 
+                          color=color, alpha=0.1, s=30,
+                          label=f'f/{f_num:.1f}')
+                
+                # Optional: add trend line
+                if len(brightest_mags) > 3:
+                    z = np.polyfit(brightest_mags, pixel_error_stds, 2)
+                    p = np.poly1d(z)
+                    x_trend = np.linspace(brightest_mags.min(), brightest_mags.max(), 100)
+                    ax.plot(x_trend, p(x_trend), color=color, alpha=0.3, linestyle='--', linewidth=1)
+        
+        # Formatting
+        ax.set_xlabel('Brightest Star Magnitude', fontsize=12)
+        ax.set_ylabel('Std Dev of Pixel Error Across Trials', fontsize=12)
+        ax.set_title(f'{sensor_name} - Trial-to-Trial Error Consistency', fontsize=14)
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='upper left', fontsize=10)
+        
+        # Set reasonable y-axis limits
+        ax.set_ylim(bottom=0)
+        
+        # Invert x-axis (brighter stars have lower magnitude)
+        ax.invert_xaxis()
+    
+    plt.suptitle('Standard Deviation of Errors Across Trials vs Brightest Star', fontsize=16, y=1.02)
+    plt.tight_layout()
+    
+    # Save or show
+    if output_path:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"Trial stddev plot saved to: {output_path}")
+    else:
+        plt.show()
+    
+    return fig, axes
+
+
+def plot_brightest_magnitude_distribution(df, output_path=None):
+    """Plot distribution of brightest star in scene across all sky pointings
+    
+    Uses only the longest exposure time to show the distribution of the brightest
+    star magnitude available in each scene/pointing across the full sky survey.
+    """
+    # Get longest exposure time
+    longest_exposure = df['exposure_ms'].max()
+    
+    # Filter for longest exposure only
+    longest_exp_data = df[df['exposure_ms'] == longest_exposure]
+    
+    # Get unique brightest magnitudes (one per experiment_num since all trials have same catalog stars)
+    unique_pointings = longest_exp_data.groupby('experiment_num')['brightest_mag'].first().dropna()
+    
+    # Create single figure
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+    
+    # Create histogram
+    n, bins, patches = ax.hist(unique_pointings, bins=50, 
+                              color='steelblue', alpha=0.7, 
+                              edgecolor='black', linewidth=0.5)
+    
+    # Add statistics
+    mean_mag = unique_pointings.mean()
+    median_mag = unique_pointings.median()
+    std_mag = unique_pointings.std()
+    min_mag = unique_pointings.min()
+    max_mag = unique_pointings.max()
+    
+    # Add vertical lines for mean and median
+    ax.axvline(mean_mag, color='red', linestyle='--', 
+              linewidth=2, alpha=0.7, label=f'Mean: {mean_mag:.2f}')
+    ax.axvline(median_mag, color='green', linestyle='--', 
+              linewidth=2, alpha=0.7, label=f'Median: {median_mag:.2f}')
+    
+    # Add text with statistics
+    stats_text = (f'n={len(unique_pointings)} pointings\n'
+                 f'μ={mean_mag:.2f}\n'
+                 f'σ={std_mag:.2f}\n'
+                 f'Range: {min_mag:.2f} - {max_mag:.2f}')
+    ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
+           fontsize=11, va='top', ha='right',
+           bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    # Labels and title
+    ax.set_xlabel('Brightest Star Magnitude in Scene', fontsize=12)
+    ax.set_ylabel('Number of Sky Pointings', fontsize=12)
+    ax.set_title(f'Distribution of Brightest Star in Scene Across Sky Survey\n(Using {longest_exposure}ms exposures)', fontsize=14)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='upper left', fontsize=10)
+    
+    # Add annotation explaining what this shows
+    annotation_text = ("Each pointing represents a unique sky location.\n"
+                      "Shows the brightest star available in the star catalog\n"
+                      "for each field of view across the survey.")
+    ax.text(0.02, 0.02, annotation_text, transform=ax.transAxes,
+           fontsize=9, va='bottom', ha='left', style='italic',
+           bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.7))
+    
+    plt.tight_layout()
+    
+    # Save or show
+    if output_path:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"Brightest star in scene distribution plot saved to: {output_path}")
+    else:
+        plt.show()
+    
+    return fig, ax
+
+
 def plot_brightest_star_offsets(df, output_path=None):
     """Plot histograms of brightest star dx and dy offsets for each exposure"""
     # Filter out NaN values
@@ -2027,8 +2203,8 @@ def compute_statistics_table(df, output_path=None):
 def main():
     parser = argparse.ArgumentParser(description='Unified sensor comparison analysis')
     parser.add_argument('csv_file', type=str, help='Path to experiment CSV file')
-    parser.add_argument('--mode', type=str, choices=['mean', 'win', 'quotient', 'stars', 'brightest', 'faintest', 'closure', 'accuracy', 'variance', 'histograms', 'coverage', 'heatmap', 'icp', 'brightest_star', 'stats', 'all'], default='mean',
-                       help='Analysis mode: mean pointing error, win percentage, quotient, star count, brightest/faintest magnitude, field closure, high accuracy, error variance, error histograms, sky coverage, sky heatmap, ICP translations, brightest star offsets, statistics table, or all')
+    parser.add_argument('--mode', type=str, choices=['mean', 'win', 'quotient', 'stars', 'brightest', 'faintest', 'closure', 'accuracy', 'variance', 'histograms', 'coverage', 'heatmap', 'icp', 'brightest_star', 'trial_stddev', 'brightest_distribution', 'stats', 'all'], default='mean',
+                       help='Analysis mode: mean pointing error, win percentage, quotient, star count, brightest/faintest magnitude, field closure, high accuracy, error variance, error histograms, sky coverage, sky heatmap, ICP translations, brightest star offsets, trial std deviation, brightest star distribution, statistics table, or all')
     parser.add_argument('--aperture', type=float, default=0.485,
                        help='Telescope aperture in meters (default: 0.485m)')
     parser.add_argument('--output', type=str, help='Output plot filename (PNG/PDF/etc)')
@@ -2082,6 +2258,8 @@ def main():
         heatmap_output = str(parent_dir / f"{base_name}_heatmap{ext}")
         icp_output = str(parent_dir / f"{base_name}_icp{ext}")
         brightest_star_output = str(parent_dir / f"{base_name}_brightest_star{ext}")
+        trial_stddev_output = str(parent_dir / f"{base_name}_trial_stddev{ext}")
+        brightest_distribution_output = str(parent_dir / f"{base_name}_brightest_distribution{ext}")
     else:
         # For individual modes, append mode name if not already present
         if args.mode == 'variance' and '_variance' not in base_name:
@@ -2113,6 +2291,16 @@ def main():
             brightest_star_output = str(parent_dir / f"{base_name}_brightest_star{ext}")
         else:
             brightest_star_output = args.output
+            
+        if args.mode == 'trial_stddev' and '_trial_stddev' not in base_name:
+            trial_stddev_output = str(parent_dir / f"{base_name}_trial_stddev{ext}")
+        else:
+            trial_stddev_output = args.output
+            
+        if args.mode == 'brightest_distribution' and '_brightest_distribution' not in base_name:
+            brightest_distribution_output = str(parent_dir / f"{base_name}_brightest_distribution{ext}")
+        else:
+            brightest_distribution_output = args.output
             
         # Keep other outputs same as args.output for single mode
         mean_output = args.output if args.mode != 'mean' or '_mean' in base_name else str(parent_dir / f"{base_name}_mean{ext}")
@@ -2169,6 +2357,12 @@ def main():
     
     if args.mode in ['brightest_star', 'all']:
         plot_brightest_star_offsets(df, brightest_star_output)
+    
+    if args.mode in ['trial_stddev', 'all']:
+        plot_trial_error_stddev(df, trial_stddev_output)
+    
+    if args.mode in ['brightest_distribution', 'all']:
+        plot_brightest_magnitude_distribution(df, brightest_distribution_output)
     
     if args.mode in ['stats', 'all']:
         # Generate stats table output path

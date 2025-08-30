@@ -77,6 +77,7 @@ impl CsvWriter {
         // Write header
         let headers = vec![
             "experiment_num",
+            "trial_num",
             "ra",
             "dec",
             "focal_length_m",
@@ -112,8 +113,9 @@ impl CsvWriter {
             let exposure_ms = duration.as_millis();
             writeln!(
                 file,
-                "{},{:.6},{:.6},{:.2},{},{},{},{:.2},{:.2},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4}",
+                "{},{},{:.6},{:.6},{:.2},{},{},{},{:.2},{:.2},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4}",
                 result.experiment_num,
+                result.trial_num,
                 result.coordinates.ra_degrees(),
                 result.coordinates.dec_degrees(),
                 focal_length_m,
@@ -171,6 +173,8 @@ impl Clone for ExperimentCommonArgs {
 #[derive(Debug, Clone)]
 struct ExperimentParams {
     experiment_num: u32,
+    trial_num: u32, // Trial number for this pointing (0-based)
+    rng_seed: u64,  // Unique RNG seed for this trial
     ra_dec: Equatorial,
     satellites: Vec<SatelliteConfig>,
     f_numbers: Vec<f64>, // Multiple f-numbers to test
@@ -196,6 +200,7 @@ struct ExposureResult {
 #[derive(Debug)]
 struct ExperimentResult {
     experiment_num: u32,
+    trial_num: u32, // Trial number for this pointing
     sensor_name: String,
     f_number: f64, // F-number used for this result
     coordinates: Equatorial,
@@ -293,6 +298,10 @@ struct Args {
     ///          "8:16:5#" tests 5 evenly spaced values from f/8 to f/16
     #[arg(long)]
     f_number_range: Option<RangeArg>,
+
+    /// Number of trials to run for each pointing (each trial uses different noise seed)
+    #[arg(long, default_value_t = 1)]
+    trials: u32,
 }
 
 /// Prints histogram of star magnitudes
@@ -344,12 +353,16 @@ fn run_experiment<T: StarCatalog>(
     let experiment_start = Instant::now();
     let output_path = Path::new(&params.common_args.output_dir);
 
-    debug!("Running experiment {}...", params.experiment_num);
+    debug!(
+        "Running experiment {} (trial {})...",
+        params.experiment_num, params.trial_num
+    );
     debug!(
         "  RA: {:.2}, Dec: {:.2}",
         params.ra_dec.ra_degrees(),
         params.ra_dec.dec_degrees()
     );
+    debug!("  RNG Seed: {}", params.rng_seed);
     debug!("  Temperature/Wavelength: per-satellite configuration");
     debug!("  Exposures: {:?}", params.common_args.exposures);
     debug!("  F-numbers: {:?}", params.f_numbers);
@@ -417,8 +430,9 @@ fn run_experiment<T: StarCatalog>(
                     exposure_duration.as_secs_f64()
                 );
 
-                // Render the scene
-                let render_result = scene.render(exposure_duration);
+                // Render the scene with unique seed for this trial
+                let render_result =
+                    scene.render_with_seed(exposure_duration, Some(params.rng_seed));
 
                 let exposure_ms = exposure_duration.as_millis();
                 let prefix = format!(
@@ -591,6 +605,7 @@ fn run_experiment<T: StarCatalog>(
             // Create experiment result for this satellite with all exposure results
             let experiment_result = ExperimentResult {
                 experiment_num: params.experiment_num,
+                trial_num: params.trial_num,
                 sensor_name: satellite.sensor.name.clone(),
                 f_number: *f_number,
                 coordinates: params.ra_dec,
@@ -779,15 +794,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             randomizer.next().unwrap()
         };
 
-        // Create one experiment param per sky pointing (stars computed in run_experiment)
-        let params = ExperimentParams {
-            experiment_num: i,
-            ra_dec,
-            satellites: satellites.clone(),
-            f_numbers: f_numbers.clone(),
-            common_args: common_args.clone(),
-        };
-        all_experiments.push(params);
+        // Create multiple trials for each pointing with different RNG seeds
+        for trial in 0..args.trials {
+            // Generate unique seed combining experiment number and trial number
+            // This ensures reproducibility while giving different noise for each trial
+            let rng_seed = ((i as u64) << 32) | (trial as u64);
+
+            let params = ExperimentParams {
+                experiment_num: i,
+                trial_num: trial,
+                rng_seed,
+                ra_dec,
+                satellites: satellites.clone(),
+                f_numbers: f_numbers.clone(),
+                common_args: common_args.clone(),
+            };
+            all_experiments.push(params);
+        }
 
         if args.single_shot_debug.is_some() {
             // If in single-shot debug mode, only run one set of experiments
@@ -796,8 +819,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     info!(
-        "Running {} experiments (sky pointings) {}...",
+        "Running {} total experiments ({} pointings × {} trials) {}...",
         all_experiments.len(),
+        args.experiments,
+        args.trials,
         if args.serial {
             "serially"
         } else {
@@ -864,6 +889,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Print timing report
     info!("==================== TIMING REPORT ====================");
     info!("Total experiments run: {}", all_experiments.len());
+    info!("  Unique pointings: {}", args.experiments);
+    info!("  Trials per pointing: {}", args.trials);
     info!("Total sensor configurations: {}", satellites.len());
     info!(
         "Total experiment-sensor combinations: {}",
