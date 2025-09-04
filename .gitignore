@@ -38,3 +38,5 @@ __pycache__/
 .Python
 *.egg-info/
 .pytest_cache/
+remote-test-results/
+exp_logs/
