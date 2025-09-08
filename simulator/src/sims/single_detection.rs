@@ -276,8 +276,7 @@ mod tests {
             let satellite = SatelliteConfig::new(
                 telescope.clone(),
                 sized_sensor,
-                Temperature::from_celsius(0.0),     // 0°C
-                Wavelength::from_nanometers(550.0), // 550nm wavelength
+                Temperature::from_celsius(0.0), // 0°C
             );
 
             // Adjust for reasonable PSF sampling
@@ -347,12 +346,8 @@ mod tests {
 
         let telescope = IDEAL_50CM.clone();
         let sensor = HWK4123.with_dimensions(domain, domain);
-        let satellite = SatelliteConfig::new(
-            telescope,
-            sensor.clone(),
-            Temperature::from_celsius(0.0),
-            Wavelength::from_nanometers(550.0),
-        );
+        let satellite =
+            SatelliteConfig::new(telescope, sensor.clone(), Temperature::from_celsius(0.0));
         let adjusted_satellite = satellite.with_fwhm_sampling(2.0);
 
         let params = ExperimentParams {
@@ -391,12 +386,7 @@ mod tests {
         let domain = 64;
         let telescope = IDEAL_50CM.clone();
         let sensor = GSENSE4040BSI.with_dimensions(domain, domain);
-        let satellite = SatelliteConfig::new(
-            telescope,
-            sensor,
-            Temperature::from_celsius(0.0),
-            Wavelength::from_nanometers(550.0),
-        );
+        let satellite = SatelliteConfig::new(telescope, sensor, Temperature::from_celsius(0.0));
         let adjusted_satellite = satellite.with_fwhm_sampling(2.0);
 
         let params = ExperimentParams {

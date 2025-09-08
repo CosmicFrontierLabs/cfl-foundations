@@ -7,7 +7,7 @@ use simulator::algo::misc::generate_wwt_overlay_url;
 use simulator::hardware::{
     sensor::models::HWK4123, telescope::models::IDEAL_50CM, SatelliteConfig,
 };
-use simulator::units::{LengthExt, Temperature, TemperatureExt, Wavelength};
+use simulator::units::{Temperature, TemperatureExt};
 use starfield::Equatorial;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -26,7 +26,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         IDEAL_50CM.clone(),
         HWK4123.clone(),
         Temperature::from_celsius(-10.0),
-        Wavelength::from_nanometers(550.0),
     );
 
     // Generate main overlay showing the failed region

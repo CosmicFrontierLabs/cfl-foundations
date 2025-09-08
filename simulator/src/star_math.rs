@@ -857,13 +857,11 @@ mod tests {
             small_telescope.clone(),
             sensor.clone(),
             Temperature::from_celsius(-10.0),
-            Wavelength::from_nanometers(550.0),
         );
         let large_satellite = SatelliteConfig::new(
             large_telescope.clone(),
             sensor.clone(),
             Temperature::from_celsius(-10.0),
-            Wavelength::from_nanometers(550.0),
         );
 
         let star_data = StarData::new(0, 0.0, 0.0, 2.0, None);
@@ -910,7 +908,6 @@ mod tests {
             telescope.clone(),
             sensor.clone(),
             Temperature::from_celsius(-10.0),
-            Wavelength::from_nanometers(550.0),
         );
 
         // Verify combined QE is correct

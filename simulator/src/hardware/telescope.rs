@@ -69,6 +69,8 @@ pub struct TelescopeConfig {
     /// Wavelength-dependent quantum efficiency of the optical system
     /// Represents combined mirror reflectivity, lens transmission, etc.
     pub quantum_efficiency: QuantumEfficiency,
+    /// Reference wavelength for diffraction-limited calculations (typically 550nm for visible light)
+    pub corrected_to: Wavelength,
 }
 
 impl TelescopeConfig {
@@ -94,6 +96,7 @@ impl TelescopeConfig {
             focal_length,
             obscuration_ratio: 0.0,
             quantum_efficiency,
+            corrected_to: Wavelength::from_nanometers(550.0),
         }
     }
 
@@ -105,12 +108,32 @@ impl TelescopeConfig {
         quantum_efficiency: QuantumEfficiency,
         obscuration_ratio: f64,
     ) -> Self {
+        Self::new_with_qe_and_wavelength(
+            name,
+            aperture,
+            focal_length,
+            quantum_efficiency,
+            obscuration_ratio,
+            Wavelength::from_nanometers(550.0),
+        )
+    }
+
+    /// Create a new telescope configuration with custom quantum efficiency curve and diffraction wavelength
+    pub fn new_with_qe_and_wavelength(
+        name: impl Into<String>,
+        aperture: Length,
+        focal_length: Length,
+        quantum_efficiency: QuantumEfficiency,
+        obscuration_ratio: f64,
+        corrected_to: Wavelength,
+    ) -> Self {
         Self {
             name: name.into(),
             aperture,
             focal_length,
             obscuration_ratio,
             quantum_efficiency,
+            corrected_to,
         }
     }
 
@@ -119,25 +142,22 @@ impl TelescopeConfig {
         self.focal_length.as_meters() / self.aperture.as_meters()
     }
 
-    /// Calculate the radius of the Airy disk in microns at the focal plane for given wavelength
+    /// Calculate the radius of the Airy disk in microns at the focal plane
     ///
     /// The formula used is: r = 1.22 * λ * f / D
     /// where:
     /// - r is the radius of the first dark ring of the Airy disk
-    /// - λ is the wavelength
+    /// - λ is the wavelength (uses telescope's corrected_to)
     /// - f is the focal length
     /// - D is the aperture diameter
-    pub fn airy_disk_radius_um(&self, wavelength: Wavelength) -> f64 {
-        self.fwhm_image_spot_um(wavelength) * 1.22
+    pub fn airy_disk_radius_um(&self) -> f64 {
+        self.fwhm_image_spot() * 1.22
     }
 
-    pub fn fwhm_image_spot_um(&self, wavelength: Wavelength) -> f64 {
-        let wavelength_nm = wavelength.as_nanometers();
-        // Convert wavelength from nm to m
-        let wavelength_m = wavelength_nm * 1.0e-9;
-
+    pub fn fwhm_image_spot(&self) -> f64 {
         // Calculate radius in meters
-        let radius_m = wavelength_m * self.focal_length.as_meters() / self.aperture.as_meters();
+        let radius_m = self.corrected_to.as_meters() * self.focal_length.as_meters()
+            / self.aperture.as_meters();
 
         // Convert to microns
         radius_m * 1.0e6
@@ -148,35 +168,13 @@ impl TelescopeConfig {
     /// The formula used is: θ = 1.22 * λ / D
     /// where:
     /// - θ is the angular radius
-    /// - λ is the wavelength
+    /// - λ is the wavelength (uses telescope's corrected_to)
     /// - D is the aperture diameter
-    pub fn airy_disk_radius(&self, wavelength: Wavelength) -> Angle {
-        let wavelength_m = wavelength.as_nanometers() * 1.0e-9;
-
+    pub fn airy_disk_radius(&self) -> Angle {
         // Calculate angular radius in radians
-        let radius_rad = 1.22 * wavelength_m / self.aperture.as_meters();
+        let radius_rad = 1.22 * self.corrected_to.as_meters() / self.aperture.as_meters();
 
         Angle::from_radians(radius_rad)
-    }
-
-    /// Calculate the angular radius of the Airy disk in milliarcseconds
-    ///
-    /// Convenience method for backward compatibility
-    pub fn airy_disk_radius_mas(&self, wavelength: Wavelength) -> f64 {
-        self.airy_disk_radius(wavelength).as_milliarcseconds()
-    }
-
-    /// Calculate the diffraction-limited resolution (FWHM)
-    pub fn diffraction_limited_resolution(&self, wavelength: Wavelength) -> Angle {
-        self.airy_disk_radius(wavelength) * 2.0
-    }
-
-    /// Calculate the diffraction-limited resolution in milliarcseconds at given wavelength
-    ///
-    /// Convenience method for backward compatibility
-    pub fn diffraction_limited_resolution_mas(&self, wavelength: Wavelength) -> f64 {
-        self.diffraction_limited_resolution(wavelength)
-            .as_milliarcseconds()
     }
 
     /// Calculate the plate scale (angular size per unit focal plane distance)
@@ -216,6 +214,7 @@ impl TelescopeConfig {
             focal_length,
             quantum_efficiency: self.quantum_efficiency.clone(),
             obscuration_ratio: self.obscuration_ratio,
+            corrected_to: self.corrected_to,
         }
     }
 }
@@ -250,8 +249,9 @@ mod tests {
         // Calculate expected angular radius in radians
         let expected_radius_rad = 1.22 * wavelength_nm * 1e-9 / 0.5;
 
-        // Test the new typed method
-        let airy_radius = telescope.airy_disk_radius(Wavelength::from_nanometers(wavelength_nm));
+        // Test the new typed method (uses telescope's corrected_to wavelength)
+        let airy_radius = telescope.airy_disk_radius();
+        // Note: telescope uses default 550nm corrected_to wavelength
         assert!(approx_eq!(
             f64,
             airy_radius.as_radians(),
@@ -265,14 +265,6 @@ mod tests {
             airy_radius.as_milliarcseconds(),
             expected_radius_rad * 360.0 * 60.0 * 60.0 * 1000.0 / (PI * 2.0),
             epsilon = 1e-6
-        ));
-
-        // Test legacy method still works
-        assert!(approx_eq!(
-            f64,
-            telescope.airy_disk_radius_mas(Wavelength::from_nanometers(wavelength_nm)),
-            airy_radius.as_milliarcseconds(),
-            epsilon = 1e-10
         ));
     }
 
@@ -394,12 +386,13 @@ pub mod models {
         let quantum_efficiency = QuantumEfficiency::from_table(wavelengths, efficiencies)
             .expect("Failed to create Weasel QE curve");
 
-        TelescopeConfig::new_with_qe(
+        TelescopeConfig::new_with_qe_and_wavelength(
             "Officina Stellare Weasel",
             Length::from_meters(0.5),  // 50cm aperture
             Length::from_meters(3.45), // 345cm focal length (f/6.9)
             quantum_efficiency,
             0.42, // 42% linear obscuration ratio
+            Wavelength::from_nanometers(800.0),
         )
     });
 
@@ -416,12 +409,13 @@ pub mod models {
         let quantum_efficiency = QuantumEfficiency::from_table(wavelengths, efficiencies)
             .expect("Failed to create LS50 QE curve");
 
-        TelescopeConfig::new_with_qe(
+        TelescopeConfig::new_with_qe_and_wavelength(
             "Optech/Lina LS50",
             Length::from_meters(0.5), // 50cm aperture
             Length::from_meters(5.0), // 500cm focal length (f/10)
             quantum_efficiency,
             0.37, // 37% linear obscuration ratio
+            Wavelength::from_nanometers(833.0),
         )
     });
 
@@ -438,17 +432,18 @@ pub mod models {
         let quantum_efficiency = QuantumEfficiency::from_table(wavelengths, efficiencies)
             .expect("Failed to create LS35 QE curve");
 
-        TelescopeConfig::new_with_qe(
+        TelescopeConfig::new_with_qe_and_wavelength(
             "Optech/Lina LS35",
             Length::from_meters(0.35), // 35cm aperture
             Length::from_meters(3.5),  // 350cm focal length (f/10)
             quantum_efficiency,
             0.37, // 37% linear obscuration ratio
+            Wavelength::from_nanometers(833.0),
         )
     });
 
     /// Cosmic Frontier JBT .5m - 48.5cm f/12.3 Reflective
-    /// Bandpass: broad spectrum, 0.8 Strehl at 700nm
+    /// Bandpass: broad spectrum, 0.8 Strehl at 550nm
     pub static COSMIC_FRONTIER_JBT_50CM: Lazy<TelescopeConfig> = Lazy::new(|| {
         let wavelengths = vec![
             149.0, 175.0, 300.0, 395.0, 545.0, 680.0, 820.0, 1050.0, 1400.0, 1800.0, 1801.0,
@@ -459,17 +454,18 @@ pub mod models {
         let quantum_efficiency = QuantumEfficiency::from_table(wavelengths, efficiencies)
             .expect("Failed to create JBT 50cm QE curve");
 
-        TelescopeConfig::new_with_qe(
+        TelescopeConfig::new_with_qe_and_wavelength(
             "Cosmic Frontier JBT .5m",
             Length::from_meters(0.485), // 48.5cm aperture
             Length::from_meters(5.987), // 598.7cm focal length (f/12.3)
             quantum_efficiency,
             0.35, // 35% linear obscuration ratio
+            Wavelength::from_nanometers(550.0),
         )
     });
 
     /// Cosmic Frontier JBT MAX - 65cm f/12.3 Reflective
-    /// Bandpass: broad spectrum, 0.8 Strehl at 700nm
+    /// Bandpass: broad spectrum, 0.8 Strehl at 550nm
     pub static COSMIC_FRONTIER_JBT_MAX: Lazy<TelescopeConfig> = Lazy::new(|| {
         let wavelengths = vec![
             149.0, 175.0, 300.0, 395.0, 545.0, 680.0, 820.0, 1050.0, 1400.0, 1800.0, 1801.0,
@@ -480,17 +476,18 @@ pub mod models {
         let quantum_efficiency = QuantumEfficiency::from_table(wavelengths, efficiencies)
             .expect("Failed to create JBT MAX QE curve");
 
-        TelescopeConfig::new_with_qe(
+        TelescopeConfig::new_with_qe_and_wavelength(
             "Cosmic Frontier JBT MAX",
             Length::from_meters(0.65),  // 65cm aperture
             Length::from_meters(8.024), // 802.4cm focal length (f/12.3)
             quantum_efficiency,
             0.35, // 35% linear obscuration ratio
+            Wavelength::from_nanometers(550.0),
         )
     });
 
     /// Cosmic Frontier JBT 1.0m - 100cm f/12.3 Reflective
-    /// Bandpass: broad spectrum, 0.8 Strehl at 700nm
+    /// Bandpass: broad spectrum, 0.8 Strehl at 550nm
     pub static COSMIC_FRONTIER_JBT_1M: Lazy<TelescopeConfig> = Lazy::new(|| {
         let wavelengths = vec![
             149.0, 175.0, 300.0, 395.0, 545.0, 680.0, 820.0, 1050.0, 1400.0, 1800.0, 1801.0,
@@ -501,12 +498,13 @@ pub mod models {
         let quantum_efficiency = QuantumEfficiency::from_table(wavelengths, efficiencies)
             .expect("Failed to create JBT 1m QE curve");
 
-        TelescopeConfig::new_with_qe(
+        TelescopeConfig::new_with_qe_and_wavelength(
             "Cosmic Frontier JBT 1.0m",
             Length::from_meters(1.0),    // 100cm aperture
             Length::from_meters(12.344), // 1234.4cm focal length (f/12.3)
             quantum_efficiency,
             0.35, // 35% linear obscuration ratio
+            Wavelength::from_nanometers(550.0),
         )
     });
 

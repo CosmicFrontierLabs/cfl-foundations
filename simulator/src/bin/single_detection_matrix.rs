@@ -14,7 +14,7 @@ use simulator::hardware::sensor::models::ALL_SENSORS;
 use simulator::hardware::SatelliteConfig;
 use simulator::shared_args::{RangeArg, SharedSimulationArgs};
 use simulator::sims::single_detection::{run_single_experiment, ExperimentParams};
-use simulator::units::{LengthExt, Temperature, TemperatureExt, Wavelength};
+use simulator::units::{LengthExt, Temperature, TemperatureExt};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -89,7 +89,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 telescope_config.clone(),
                 sized_sensor,
                 Temperature::from_celsius(args.shared.temperature),
-                Wavelength::from_nanometers(args.shared.wavelength),
             )
         })
         .collect();
@@ -279,7 +278,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.shared.noise_multiple
     )
     .unwrap();
-    writeln!(csv_file, "Wavelength: {} nm", args.shared.wavelength).unwrap();
     writeln!(csv_file, "Telescope: {}", args.shared.telescope).unwrap();
     writeln!(
         csv_file,

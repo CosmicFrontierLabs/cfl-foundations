@@ -346,7 +346,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             telescope.clone(),
             sensor.clone(),
             Temperature::from_celsius(-10.0), // Default temperature for example
-            Wavelength::from_nanometers(550.0), // Default wavelength for example
         );
 
         // Calculate zodical minimum e-/s for this sensor

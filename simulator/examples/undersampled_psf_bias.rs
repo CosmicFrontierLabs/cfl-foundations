@@ -16,7 +16,7 @@ use simulator::image_proc::render::StarInFrame;
 use simulator::photometry::zodical::SolarAngularCoordinates;
 use simulator::scene::Scene;
 use simulator::star_data_to_fluxes;
-use simulator::units::{LengthExt, Temperature, TemperatureExt, Wavelength};
+use simulator::units::{Temperature, TemperatureExt};
 use starfield::catalogs::StarData;
 use starfield::Equatorial;
 use std::error::Error;
@@ -200,7 +200,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Telescope and sensor setup - use IDEAL_50CM from models
     let telescope = IDEAL_50CM.clone();
     let sensor = IMX455.with_dimensions(image_size, image_size);
-    let wavelength = Wavelength::from_nanometers(550.0); // nm (green light)
     let temperature = Temperature::from_celsius(0.0); // 0°C in sensor's expected range
 
     // Test parameters
@@ -227,8 +226,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     for &psf_sampling in &psf_sampling_values {
         // Create satellite config with specified PSF sampling
-        let base_satellite =
-            SatelliteConfig::new(telescope.clone(), sensor.clone(), temperature, wavelength);
+        let base_satellite = SatelliteConfig::new(telescope.clone(), sensor.clone(), temperature);
         let satellite = base_satellite.with_fwhm_sampling(psf_sampling);
 
         // Create experiment for each position
@@ -282,8 +280,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("\nTesting PSF sampling = {psf_sampling:.2} FWHM/pixel");
 
         // Create satellite just to get FWHM info
-        let base_satellite =
-            SatelliteConfig::new(telescope.clone(), sensor.clone(), temperature, wavelength);
+        let base_satellite = SatelliteConfig::new(telescope.clone(), sensor.clone(), temperature);
         let satellite = base_satellite.with_fwhm_sampling(psf_sampling);
         let airy_disk = satellite.airy_disk_fwhm_sampled();
         let psf_fwhm_pixels = airy_disk.fwhm();

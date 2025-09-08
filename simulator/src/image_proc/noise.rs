@@ -299,7 +299,7 @@ pub fn apply_poisson_photon_noise(
 
 #[cfg(test)]
 mod tests {
-    use crate::units::{Length, LengthExt, Wavelength};
+    use crate::units::{Length, LengthExt};
     use approx::assert_relative_eq;
 
     use crate::{
@@ -770,7 +770,6 @@ mod tests {
             telescope.clone(),
             sensor.clone(),
             Temperature::from_celsius(-10.0), // Default temperature for test
-            Wavelength::from_nanometers(550.0), // Default wavelength for test
         );
         let zodical_noise =
             z_light.generate_zodical_background(&temp_satellite, &exposure_time, &coords);

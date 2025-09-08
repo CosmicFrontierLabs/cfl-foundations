@@ -2,7 +2,7 @@ use clap::Parser;
 use simulator::hardware::sensor::models as sensor_models;
 use simulator::hardware::telescope::models::IDEAL_50CM;
 use simulator::hardware::SatelliteConfig;
-use simulator::units::{LengthExt, Temperature, TemperatureExt, Wavelength};
+use simulator::units::{AngleExt, LengthExt, Temperature, TemperatureExt};
 
 #[derive(Parser, Debug)]
 #[command(name = "Telescope Sampling Info")]
@@ -43,7 +43,6 @@ fn main() {
             IDEAL_50CM.clone(),
             sensor.clone(),
             Temperature::from_celsius(0.0), // Temperature doesn't affect optical calculations
-            Wavelength::from_nanometers(args.wavelength),
         );
 
         // Adjust to match desired sampling
@@ -61,7 +60,9 @@ fn main() {
         let sky_coverage_percent = (fov_steradians / (4.0 * std::f64::consts::PI)) * 100.0;
 
         // Debug: get FOV in arcmin to check
-        let (fov_x_arcmin, fov_y_arcmin) = adjusted_satellite.field_of_view_arcmin();
+        let (fov_x_angle, fov_y_angle) = adjusted_satellite.field_of_view();
+        let fov_x_arcmin = fov_x_angle.as_degrees() * 60.0;
+        let fov_y_arcmin = fov_y_angle.as_degrees() * 60.0;
 
         println!(
             "{:<20} {:>15.8} {:>15.2} {:>15.1} {:>20.3} {:>15.6} {:>15.8} ({:.1}' x {:.1}')",

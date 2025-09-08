@@ -16,7 +16,7 @@ use simulator::image_proc::render::{add_stars_to_image, quantize_image, StarInFr
 use simulator::photometry::ZodicalLight;
 use simulator::shared_args::SharedSimulationArgs;
 use simulator::star_data_to_fluxes;
-use simulator::units::{LengthExt, Temperature, TemperatureExt, Wavelength};
+use simulator::units::{Temperature, TemperatureExt};
 use starfield::catalogs::StarData;
 use starfield::Equatorial;
 
@@ -147,7 +147,7 @@ fn test_algorithm(
 
         // Run detection algorithm
         let scaled_airy_disk =
-            PixelScaledAiryDisk::with_fwhm(airy_disk_pixels, satellite.wavelength);
+            PixelScaledAiryDisk::with_fwhm(airy_disk_pixels, satellite.telescope.corrected_to);
         let detected_stars: Vec<StarDetection> = match detect_stars_unified(
             quantized.view(),
             algorithm,
@@ -244,7 +244,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 telescope_config.clone(),
                 sized_sensor,
                 Temperature::from_celsius(args.shared.temperature),
-                Wavelength::from_nanometers(args.shared.wavelength),
             );
             satellite = satellite.with_fwhm_sampling(args.disk_size);
             satellite

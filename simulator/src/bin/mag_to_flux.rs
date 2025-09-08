@@ -9,7 +9,7 @@ use simulator::image_proc::{save_u8_image, stretch_histogram, u16_to_u8_scaled};
 use simulator::photometry::zodical::SolarAngularCoordinates;
 use simulator::shared_args::{RangeArg, SensorModel, TelescopeModel};
 use simulator::star_data_to_fluxes;
-use simulator::units::{LengthExt, Temperature, TemperatureExt, Wavelength};
+use simulator::units::{Temperature, TemperatureExt};
 use simulator::Scene;
 use starfield::catalogs::StarData;
 use starfield::Equatorial;
@@ -208,8 +208,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_config()
         .with_dimensions(args.domain, args.domain);
     let temperature = Temperature::from_celsius(args.temperature);
-    let wavelength = Wavelength::from_nanometers(550.0);
-    let satellite_config = SatelliteConfig::new(telescope, sensor, temperature, wavelength);
+    let satellite_config = SatelliteConfig::new(telescope, sensor, temperature);
 
     // Run analysis for each detector
     for detector in detectors {

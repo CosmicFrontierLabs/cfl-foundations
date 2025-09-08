@@ -1,7 +1,7 @@
 use super::{sensor::SensorConfig, telescope::TelescopeConfig};
 use crate::image_proc::airy::PixelScaledAiryDisk;
 use crate::photometry::QuantumEfficiency;
-use crate::units::{Angle, AngleExt, Length, LengthExt, Temperature, Wavelength};
+use crate::units::{Angle, AngleExt, Length, LengthExt, Temperature};
 
 /// Complete satellite configuration combining telescope optics and sensor.
 ///
@@ -32,8 +32,6 @@ pub struct SatelliteConfig {
     pub sensor: SensorConfig,
     /// Operating temperature (affects dark current)
     pub temperature: Temperature,
-    /// Primary observing wavelength (affects PSF size)
-    pub wavelength: Wavelength,
     /// Combined quantum efficiency of telescope optics and sensor
     pub combined_qe: QuantumEfficiency,
 }
@@ -48,17 +46,11 @@ impl SatelliteConfig {
     /// * `telescope` - Optical system configuration (aperture, focal length, etc.)
     /// * `sensor` - Detector configuration (QE, noise, pixel size, etc.)  
     /// * `temperature` - Operating temperature (affects thermal noise)
-    /// * `wavelength` - Primary observing wavelength (affects PSF)
     ///
     /// # Returns
     /// New SatelliteConfig ready for astronomical simulations
     ///
-    pub fn new(
-        telescope: TelescopeConfig,
-        sensor: SensorConfig,
-        temperature: Temperature,
-        wavelength: Wavelength,
-    ) -> Self {
+    pub fn new(telescope: TelescopeConfig, sensor: SensorConfig, temperature: Temperature) -> Self {
         // Calculate combined QE from telescope and sensor
         let combined_qe =
             QuantumEfficiency::product(&telescope.quantum_efficiency, &sensor.quantum_efficiency)
@@ -68,7 +60,6 @@ impl SatelliteConfig {
             telescope,
             sensor,
             temperature,
-            wavelength,
             combined_qe,
         }
     }
@@ -122,22 +113,6 @@ impl SatelliteConfig {
         (width_angle, height_angle)
     }
 
-    /// Get the field of view in arcminutes for the sensor.
-    ///
-    /// Calculates the total sky coverage of the detector array,
-    /// useful for survey planning and catalog queries.
-    ///
-    /// # Returns
-    /// Tuple of (width, height) field of view in arcminutes
-    ///
-    pub fn field_of_view_arcmin(&self) -> (f64, f64) {
-        let (width_angle, height_angle) = self.field_of_view();
-        (
-            width_angle.as_arcseconds() / 60.0,
-            height_angle.as_arcseconds() / 60.0,
-        )
-    }
-
     /// Calculate the field of view in steradians
     ///
     /// Returns the solid angle covered by the full sensor in steradians,
@@ -161,13 +136,13 @@ impl SatelliteConfig {
     /// A PixelScaledAiryDisk scaled to pixels for this telescope/sensor combination
     pub fn airy_disk_pixel_space(&self) -> PixelScaledAiryDisk {
         // Get Airy disk radius in microns from telescope
-        let airy_radius_um = self.telescope.airy_disk_radius_um(self.wavelength);
+        let airy_radius_um = self.telescope.airy_disk_radius_um();
 
         // Convert to pixels using sensor pixel size
         let airy_radius_pixels = airy_radius_um / self.sensor.pixel_size().as_micrometers();
 
         // Create scaled Airy disk with pixel radius
-        PixelScaledAiryDisk::with_first_zero(airy_radius_pixels, self.wavelength)
+        PixelScaledAiryDisk::with_first_zero(airy_radius_pixels, self.telescope.corrected_to)
     }
 
     /// Create a PixelScaledAiryDisk based on FWHM sampling for this satellite configuration
@@ -184,7 +159,7 @@ impl SatelliteConfig {
         let fwhm_pixels = self.fwhm_sampling_ratio();
 
         // Create scaled Airy disk with this FWHM size
-        PixelScaledAiryDisk::with_fwhm(fwhm_pixels, self.wavelength)
+        PixelScaledAiryDisk::with_fwhm(fwhm_pixels, self.telescope.corrected_to)
     }
 
     /// Adjust telescope focal length to achieve specific FWHM sampling in pixels
@@ -201,8 +176,8 @@ impl SatelliteConfig {
     /// A new SatelliteConfig with adjusted telescope focal length
     ///
     pub fn with_fwhm_sampling(&self, q: f64) -> SatelliteConfig {
-        let current_q = self.telescope.fwhm_image_spot_um(self.wavelength)
-            / self.sensor.pixel_size().as_micrometers();
+        let current_q =
+            self.telescope.fwhm_image_spot() / self.sensor.pixel_size().as_micrometers();
 
         let ratio = q / current_q;
         let new_focal_length = Length::from_meters(self.telescope.focal_length.as_meters() * ratio);
@@ -211,7 +186,6 @@ impl SatelliteConfig {
             self.telescope.with_focal_length(new_focal_length),
             self.sensor.clone(),
             self.temperature,
-            self.wavelength,
         )
     }
 
@@ -224,8 +198,7 @@ impl SatelliteConfig {
     /// Number of pixels per FWHM of the PSF
     ///
     pub fn fwhm_sampling_ratio(&self) -> f64 {
-        self.telescope.fwhm_image_spot_um(self.wavelength)
-            / self.sensor.pixel_size().as_micrometers()
+        self.telescope.fwhm_image_spot() / self.sensor.pixel_size().as_micrometers()
     }
 
     /// Generate a descriptive string for this satellite configuration
@@ -264,8 +237,7 @@ mod tests {
         let sensor = crate::hardware::sensor::models::GSENSE4040BSI.clone();
         let temp = Temperature::from_celsius(-10.0);
 
-        let satellite =
-            SatelliteConfig::new(telescope, sensor, temp, Wavelength::from_nanometers(550.0));
+        let satellite = SatelliteConfig::new(telescope, sensor, temp);
         assert_eq!(satellite.temperature, temp);
         assert!(satellite.telescope.clear_aperture_area().as_square_meters() > 0.0);
         assert!(satellite.plate_scale_arcsec_per_pixel() > 0.0);
@@ -281,14 +253,16 @@ mod tests {
         );
         let sensor = crate::hardware::sensor::models::GSENSE6510BSI.clone();
 
-        let satellite = SatelliteConfig::new(
-            telescope,
-            sensor,
-            Temperature::from_celsius(-10.0),
-            Wavelength::from_nanometers(550.0),
-        );
+        let satellite = SatelliteConfig::new(telescope, sensor, Temperature::from_celsius(-10.0));
 
-        let (width_arcmin, height_arcmin) = satellite.field_of_view_arcmin();
+        let (width_arcmin, height_arcmin) = {
+            let this = &satellite;
+            let (width_angle, height_angle) = this.field_of_view();
+            (
+                width_angle.as_arcseconds() / 60.0,
+                height_angle.as_arcseconds() / 60.0,
+            )
+        };
         assert!(width_arcmin > 0.0);
         assert!(height_arcmin > 0.0);
     }
@@ -303,12 +277,7 @@ mod tests {
         );
         let sensor = crate::hardware::sensor::models::HWK4123.clone();
 
-        let satellite = SatelliteConfig::new(
-            telescope,
-            sensor,
-            Temperature::from_celsius(-10.0),
-            Wavelength::from_nanometers(550.0),
-        );
+        let satellite = SatelliteConfig::new(telescope, sensor, Temperature::from_celsius(-10.0));
 
         let airy_disk = satellite.airy_disk_pixel_space();
 
@@ -327,12 +296,7 @@ mod tests {
         );
         let sensor = crate::hardware::sensor::models::GSENSE4040BSI.clone();
 
-        let satellite = SatelliteConfig::new(
-            telescope,
-            sensor,
-            Temperature::from_celsius(-10.0),
-            Wavelength::from_nanometers(550.0),
-        );
+        let satellite = SatelliteConfig::new(telescope, sensor, Temperature::from_celsius(-10.0));
 
         // Get current sampling ratio
         let original_sampling = satellite.fwhm_sampling_ratio();
@@ -348,7 +312,6 @@ mod tests {
         // Check that other parameters remain unchanged
         assert_eq!(resampled.sensor.name, satellite.sensor.name);
         assert_eq!(resampled.temperature, satellite.temperature);
-        assert_eq!(resampled.wavelength, satellite.wavelength);
         assert_eq!(
             resampled.telescope.aperture.as_meters(),
             satellite.telescope.aperture.as_meters()
@@ -375,7 +338,6 @@ mod tests {
             telescope.clone(),
             sensor.clone(),
             Temperature::from_celsius(-10.0),
-            Wavelength::from_nanometers(550.0),
         );
 
         let sampling = satellite.fwhm_sampling_ratio();
@@ -384,8 +346,7 @@ mod tests {
         assert!(sampling > 0.0);
 
         // Should match manual calculation
-        let expected = telescope.fwhm_image_spot_um(Wavelength::from_nanometers(550.0))
-            / sensor.pixel_size().as_micrometers();
+        let expected = telescope.fwhm_image_spot() / sensor.pixel_size().as_micrometers();
         assert!((sampling - expected).abs() < 1e-10);
     }
 
@@ -403,7 +364,6 @@ mod tests {
             telescope.clone(),
             sensor.clone(),
             Temperature::from_celsius(-10.0),
-            Wavelength::from_nanometers(550.0),
         );
 
         // Get Airy disk scaled to current FWHM sampling
@@ -438,7 +398,6 @@ mod tests {
             telescope.clone(),
             sensor.clone(),
             Temperature::from_celsius(-10.0),
-            Wavelength::from_nanometers(550.0),
         );
 
         let description = satellite.description();

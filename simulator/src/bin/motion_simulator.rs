@@ -102,7 +102,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("================");
     println!("Shared parameters:");
     println!("  Exposure: {}", args.shared.exposure);
-    println!("  Wavelength: {} nm", args.shared.wavelength);
     println!("  Temperature: {} °C", args.shared.temperature);
     println!(
         "  Coordinates: {:.1}°,{:.1}°",
@@ -147,11 +146,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "  Dark current: {:.3} e⁻/px/s @ {}°C",
         sensor.dark_current_at_temperature(Temperature::from_celsius(args.shared.temperature)),
         args.shared.temperature
-    );
-    println!(
-        "  QE @ {} nm: {:.1}%",
-        args.shared.wavelength as u32,
-        sensor.qe_at_wavelength(args.shared.wavelength as u32) * 100.0
     );
     println!("  Max frame rate: {:.1} fps", sensor.max_frame_rate_fps);
     println!();

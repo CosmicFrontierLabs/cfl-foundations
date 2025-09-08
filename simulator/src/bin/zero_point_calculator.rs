@@ -22,7 +22,7 @@ use simulator::{
         TelescopeConfig,
     },
     star_math::DEFAULT_BV,
-    units::{LengthExt, Temperature, TemperatureExt, Wavelength},
+    units::{LengthExt, Temperature, TemperatureExt},
 };
 use std::time::Duration;
 
@@ -133,9 +133,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Convergence Tolerance: {:.3} mag", args.tolerance);
     println!();
 
-    // Default temperature and wavelength for satellite config
+    // Default temperature for satellite config
     let temperature = Temperature::from_celsius(-10.0);
-    let wavelength = Wavelength::from_nanometers(550.0);
 
     // Determine which telescopes to analyze
     let telescopes: Vec<(&str, &TelescopeConfig)> = match args.telescope {
@@ -190,12 +189,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (telescope_name, telescope) in &telescopes {
         for sensor in &sensors {
             // Create SatelliteConfig for this combination
-            let satellite = SatelliteConfig::new(
-                (*telescope).clone(),
-                (*sensor).clone(),
-                temperature,
-                wavelength,
-            );
+            let satellite =
+                SatelliteConfig::new((*telescope).clone(), (*sensor).clone(), temperature);
 
             if args.verbose {
                 println!("\nCalculating for {} + {}:", telescope_name, sensor.name);

@@ -773,10 +773,6 @@ pub struct SharedSimulationArgs {
     #[arg(long, default_value = "1s")]
     pub exposure: DurationArg,
 
-    /// Wavelength in nanometers
-    #[arg(long, default_value_t = 550.0)]
-    pub wavelength: f64,
-
     /// Sensor temperature in degrees Celsius for dark current calculation
     #[arg(long, default_value_t = 20.0)]
     pub temperature: f64,
