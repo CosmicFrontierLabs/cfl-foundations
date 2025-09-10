@@ -2,7 +2,6 @@
 members = [
     "simulator",
     "test_helpers",
-    "viz",
     "flight-software",
     "monacle",
     "shared",

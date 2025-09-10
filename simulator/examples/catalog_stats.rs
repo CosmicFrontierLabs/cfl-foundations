@@ -5,6 +5,7 @@
 
 use clap::Parser;
 use shared::algo::MinMaxScan;
+use shared::viz::histogram::create_magnitude_histogram;
 use starfield::catalogs::binary_catalog::{BinaryCatalog, MinimalStar};
 use starfield::catalogs::hipparcos::HipparcosCatalog;
 use starfield::catalogs::{StarCatalog, StarPosition};
@@ -13,7 +14,6 @@ use std::f64::consts::PI;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use viz::histogram::create_magnitude_histogram;
 
 /// Converts equatorial coordinates from one epoch to another using approximate precession.
 ///

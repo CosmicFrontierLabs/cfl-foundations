@@ -56,7 +56,7 @@
 //!
 //! ## Basic Point Distribution
 //! ```rust
-//! use viz::density_map::{Point, DensityMapConfig, create_density_map};
+//! use shared::viz::density_map::{Point, DensityMapConfig, create_density_map};
 //!
 //! // Create sample data points
 //! let points = vec![
@@ -85,7 +85,7 @@
 //!
 //! ## Star Field Visualization
 //! ```rust
-//! use viz::density_map::create_celestial_density_map;
+//! use shared::viz::density_map::create_celestial_density_map;
 //!
 //! // Star catalog data (RA, Dec in degrees)
 //! let stars = vec![
@@ -109,7 +109,7 @@
 //!
 //! ## Custom Position Data
 //! ```rust
-//! use viz::density_map::{PositionData, DensityMapConfig, create_density_map};
+//! use shared::viz::density_map::{PositionData, DensityMapConfig, create_density_map};
 //!
 //! // Custom data structure
 //! struct Star {
@@ -140,7 +140,7 @@
 //!
 //! ## Algorithm Debugging
 //! ```rust
-//! use viz::density_map::{Point, DensityMapConfig, create_density_map};
+//! use shared::viz::density_map::{Point, DensityMapConfig, create_density_map};
 //!
 //! // Debug coordinate transformation results
 //! fn debug_projection_results(projected_stars: &[(f64, f64)]) {
@@ -209,7 +209,7 @@
 //! - **CI integration**: Include map generation in test suites
 //! - **Documentation**: Embed maps in code comments and README files
 
-use crate::Result;
+use super::Result;
 
 /// Universal trait for 2D spatial positioning in normalized coordinate space.
 ///
@@ -225,7 +225,7 @@ use crate::Result;
 ///
 /// # Implementation Examples
 /// ```rust
-/// use viz::density_map::PositionData;
+/// use shared::viz::density_map::PositionData;
 ///
 /// // Simple 2D point
 /// struct Point2D { x: f64, y: f64 }
@@ -281,7 +281,7 @@ pub trait PositionData {
 ///
 /// # Examples
 /// ```rust
-/// use viz::density_map::Point;
+/// use shared::viz::density_map::Point;
 ///
 /// // Create points at various positions
 /// let origin = Point::new(0.0, 0.0);       // Bottom-left corner
@@ -336,7 +336,7 @@ impl PositionData for Point {
 ///
 /// # Examples
 /// ```rust
-/// use viz::density_map::DensityMapConfig;
+/// use shared::viz::density_map::DensityMapConfig;
 ///
 /// // Minimal configuration with defaults
 /// let simple = DensityMapConfig::default();
@@ -457,7 +457,7 @@ impl Default for DensityMapConfig<'_> {
 ///
 /// # Examples
 /// ```rust
-/// use viz::density_map::{Point, DensityMapConfig, create_density_map};
+/// use shared::viz::density_map::{Point, DensityMapConfig, create_density_map};
 ///
 /// // Create clustered point data
 /// let points = vec![
@@ -533,7 +533,7 @@ pub fn create_density_map<T: PositionData>(
     // Choose characters for density representation based on max count
     let char_count = config.density_chars.chars().count();
     if char_count == 0 {
-        return Err(crate::VizError::HistogramError(
+        return Err(super::VizError::HistogramError(
             "Empty character set for density map".to_string(),
         ));
     }
@@ -619,7 +619,7 @@ pub fn create_density_map<T: PositionData>(
 ///
 /// # Examples
 /// ```rust
-/// use viz::density_map::create_celestial_density_map;
+/// use shared::viz::density_map::create_celestial_density_map;
 ///
 /// // Sample star catalog data
 /// let bright_stars = vec![

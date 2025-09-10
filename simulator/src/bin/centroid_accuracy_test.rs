@@ -359,7 +359,7 @@ fn print_histogram(title: &str, data: &[f64], bins: usize, min_val: f64, max_val
     println!("\n{title}");
     println!("-----------------------------------------------------------");
 
-    use viz::histogram::{Histogram, HistogramConfig};
+    use shared::viz::histogram::{Histogram, HistogramConfig};
 
     // Create histogram with the specified bins and range
     if let Ok(mut hist) = Histogram::new_equal_bins(min_val..max_val, bins) {

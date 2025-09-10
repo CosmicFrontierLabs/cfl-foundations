@@ -44,7 +44,7 @@
 //!
 //! ## Basic Magnitude Distribution
 //! ```rust
-//! use viz::histogram::{create_magnitude_histogram, HistogramConfig};
+//! use shared::viz::histogram::{create_magnitude_histogram, HistogramConfig};
 //!
 //! // Stellar magnitudes from photometric catalog
 //! let magnitudes = vec![12.3, 13.1, 13.7, 14.2, 14.8, 15.1, 15.9, 16.2];
@@ -65,7 +65,7 @@
 //!
 //! ## Photometric Error Analysis
 //! ```rust
-//! use viz::histogram::{Histogram, HistogramConfig, Scale};
+//! use shared::viz::histogram::{Histogram, HistogramConfig, Scale};
 //!
 //! // Photometric uncertainties in magnitudes
 //! let errors = vec![0.01, 0.02, 0.03, 0.05, 0.08, 0.12, 0.18, 0.25];
@@ -96,7 +96,7 @@
 //!
 //! ## Color Index Distribution
 //! ```rust
-//! use viz::histogram::histogram;
+//! use shared::viz::histogram::histogram;
 //!
 //! // B-V color indices from stellar photometry
 //! let bv_colors = vec![-0.3, -0.1, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4];
@@ -116,7 +116,7 @@
 //!
 //! ## Survey Completeness Analysis
 //! ```rust
-//! use viz::histogram::{create_magnitude_histogram, Scale};
+//! use shared::viz::histogram::{create_magnitude_histogram, Scale};
 //!
 //! // Detected star magnitudes from survey
 //! let survey_mags = vec![10.1, 11.3, 12.5, 13.8, 14.2, 15.1, 15.9, 16.5];
@@ -170,7 +170,7 @@
 //! - **Export capabilities**: Text-based output for further processing
 //! - **CI/CD integration**: Automated quality assessment in data pipelines
 
-use crate::{Result, VizError};
+use super::{Result, VizError};
 use std::collections::HashSet;
 use std::fmt::{Display, Write};
 use std::ops::Range;
@@ -374,7 +374,7 @@ where
     ///
     /// # Examples
     /// ```rust
-    /// use viz::histogram::Histogram;
+    /// use shared::viz::histogram::Histogram;
     ///
     /// // Custom magnitude bins with finer resolution at bright end
     /// let mag_edges = vec![10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0];
@@ -434,7 +434,7 @@ where
     ///
     /// # Examples
     /// ```rust
-    /// use viz::histogram::Histogram;
+    /// use shared::viz::histogram::Histogram;
     ///
     /// // Color index histogram with 0.1 magnitude bins
     /// let color_hist = Histogram::new_equal_bins(-0.5..2.0, 25)?;
@@ -485,7 +485,7 @@ where
     ///
     /// # Examples
     /// ```rust
-    /// use viz::histogram::{Histogram, HistogramConfig, Scale};
+    /// use shared::viz::histogram::{Histogram, HistogramConfig, Scale};
     ///
     /// let mut hist = Histogram::new_equal_bins(0.0..10.0, 10)?;
     ///
@@ -523,7 +523,7 @@ where
     ///
     /// # Examples
     /// ```rust
-    /// use viz::histogram::Histogram;
+    /// use shared::viz::histogram::Histogram;
     ///
     /// let mut mag_hist = Histogram::new_equal_bins(10.0..20.0, 10)?;
     ///
@@ -557,7 +557,7 @@ where
     ///
     /// # Examples
     /// ```rust
-    /// use viz::histogram::Histogram;
+    /// use shared::viz::histogram::Histogram;
     ///
     /// let mut hist = Histogram::new_equal_bins(0.0..5.0, 10)?;
     ///
@@ -670,7 +670,7 @@ where
     /// # Examples
     /// ```rust,ignore
     /// // NOTE: This doctest is ignored due to Result handling issues
-    /// use viz::histogram::Histogram;
+    /// use shared::viz::histogram::Histogram;
     ///
     /// let mut hist = Histogram::new_equal_bins(0.0..10.0, 10)?;
     /// hist.add_all(vec![2.0, 4.0, 6.0, 8.0]);
@@ -726,7 +726,7 @@ where
     ///
     /// # Examples
     /// ```rust
-    /// use viz::histogram::Histogram;
+    /// use shared::viz::histogram::Histogram;
     ///
     /// let mut hist = Histogram::new_equal_bins(0.0..10.0, 10)?;
     /// hist.add_all(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
@@ -796,7 +796,7 @@ where
     ///
     /// # Examples
     /// ```rust
-    /// use viz::histogram::Histogram;
+    /// use shared::viz::histogram::Histogram;
     ///
     /// let mut mag_errors = Histogram::new_equal_bins(0.0..0.5, 20)?;
     /// mag_errors.add_all(vec![0.01, 0.02, 0.03, 0.05, 0.08]);
@@ -848,7 +848,7 @@ where
     ///
     /// # Examples
     /// ```rust
-    /// use viz::histogram::Histogram;
+    /// use shared::viz::histogram::Histogram;
     ///
     /// let mut survey_mags = Histogram::new_equal_bins(10.0..20.0, 20)?;
     /// // Simulate survey with completeness limit at faint end
@@ -929,7 +929,7 @@ where
     ///
     /// # Examples
     /// ```rust
-    /// use viz::histogram::Histogram;
+    /// use shared::viz::histogram::Histogram;
     ///
     /// let mut errors = Histogram::new_equal_bins(0.0..1.0, 50)?;
     /// // Add photometric errors with some outliers
@@ -1004,7 +1004,7 @@ where
     ///
     /// # Examples
     /// ```rust
-    /// use viz::histogram::Histogram;
+    /// use shared::viz::histogram::Histogram;
     ///
     /// let mut mags = Histogram::new_equal_bins(10.0..20.0, 20)?;
     /// mags.add_all(vec![12.1, 13.5, 14.2, 15.1, 16.8, 17.2, 18.5]);
@@ -1073,7 +1073,7 @@ where
     ///
     /// # Examples
     /// ```rust
-    /// use viz::histogram::create_magnitude_histogram;
+    /// use shared::viz::histogram::create_magnitude_histogram;
     ///
     /// let mags = vec![12.3, 13.1, 13.8, 14.2, 14.9, 15.1, 15.7, 16.2];
     /// let hist = create_magnitude_histogram(&mags, None, false)?;
@@ -1212,7 +1212,7 @@ where
     ///
     /// # Examples
     /// ```rust
-    /// use viz::histogram::{Histogram, HistogramConfig};
+    /// use shared::viz::histogram::{Histogram, HistogramConfig};
     ///
     /// let mut hist = Histogram::new_equal_bins(0.0..5.0, 5)?;
     /// hist.add_all(vec![1.2, 2.3, 2.7, 3.1, 4.2]);
@@ -1372,7 +1372,7 @@ where
     ///
     /// # Examples
     /// ```rust
-    /// use viz::histogram::create_magnitude_histogram;
+    /// use shared::viz::histogram::create_magnitude_histogram;
     ///
     /// let mags = vec![12.1, 13.5, 14.2, 15.8, 16.1];
     /// let hist = create_magnitude_histogram(&mags,
@@ -1429,7 +1429,7 @@ where
 ///
 /// # Examples
 /// ```rust
-/// use viz::histogram::create_magnitude_histogram;
+/// use shared::viz::histogram::create_magnitude_histogram;
 ///
 /// // V-band magnitudes from photometric catalog
 /// let v_mags = vec![11.2, 12.8, 13.1, 13.9, 14.2, 15.1, 15.8, 16.5];
@@ -1448,7 +1448,7 @@ where
 ///
 /// # Survey Completeness Example
 /// ```rust
-/// use viz::histogram::create_magnitude_histogram;
+/// use shared::viz::histogram::create_magnitude_histogram;
 ///
 /// // Survey data showing completeness limit
 /// let survey_mags = vec![10.1, 11.3, 12.1, 13.2, 14.1, 15.3, 16.1, 16.8];
@@ -1571,7 +1571,7 @@ pub fn create_magnitude_histogram(
 ///
 /// # Examples
 /// ```rust
-/// use viz::histogram::histogram;
+/// use shared::viz::histogram::histogram;
 ///
 /// // Quick analysis of color indices
 /// let bv_colors = vec![-0.2, 0.1, 0.3, 0.5, 0.7, 0.9, 1.1, 1.3];
@@ -1590,7 +1590,7 @@ pub fn create_magnitude_histogram(
 ///
 /// # Measurement Error Analysis
 /// ```rust
-/// use viz::histogram::histogram;
+/// use shared::viz::histogram::histogram;
 ///
 /// // Photometric error analysis
 /// let errors = vec![0.005, 0.01, 0.02, 0.03, 0.05, 0.08, 0.12, 0.20];

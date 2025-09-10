@@ -7,3 +7,4 @@
 pub mod algo;
 pub mod image_proc;
 pub mod units;
+pub mod viz;

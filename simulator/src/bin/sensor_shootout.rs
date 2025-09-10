@@ -39,6 +39,7 @@ use shared::image_proc::io::{write_typed_fits, FitsDataType};
 use shared::image_proc::{
     draw_stars_with_x_markers, save_u8_image, stretch_histogram, u16_to_u8_scaled, StarDetection,
 };
+use shared::viz::histogram::{Histogram, HistogramConfig, Scale};
 use simulator::hardware::sensor::models as sensor_models;
 use simulator::hardware::SatelliteConfig;
 use simulator::image_proc::render::{RenderingResult, StarInFrame};
@@ -59,7 +60,6 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use viz::histogram::{Histogram, HistogramConfig, Scale};
 
 /// Default filename for experiment results CSV
 /// Will be appended with timestamp in format: experiment_log_YYYYMMDD_HHMMSS.csv
@@ -319,7 +319,7 @@ fn print_am_hist(stars: &[StarData]) {
 
         // Create a magnitude histogram using the new specialized function
         // This automatically creates bins centered on integer magnitudes with 1.0 width
-        let mag_hist = viz::histogram::create_magnitude_histogram(
+        let mag_hist = shared::viz::histogram::create_magnitude_histogram(
             &star_magnitudes,
             Some(format!("Star Magnitude Histogram ({} stars)", stars.len())),
             false, // Use linear scale

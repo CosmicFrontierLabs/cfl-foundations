@@ -34,6 +34,8 @@ thiserror = "1.0"
 url = "2.5"
 urlencoding = "2.1"
 once_cell = "1.19"
+itertools = "0.11"
+indicatif = "0.17"
 
 # Graphics
 resvg = { version = "0.45.0", features = ["text"] }
