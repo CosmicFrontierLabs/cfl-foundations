@@ -3,7 +3,7 @@
 //! Fine Guidance System state machine implementation based on the FGS ConOps.
 //! Processes images through states: Idle -> Acquiring -> Calibrating -> Tracking
 
-use ndarray::ArrayView2;
+use ndarray::{Array2, ArrayView2};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -144,8 +144,10 @@ pub struct FineGuidanceSystem {
     config: FgsConfig,
     /// Selected guide stars (populated during calibration)
     guide_stars: Vec<GuideStar>,
-    /// Accumulated frames during acquisition
-    accumulated_frames: Vec<ArrayView2<'static, u16>>,
+    /// Accumulated frame sum (stored as f64 to avoid overflow)
+    accumulated_frame: Option<Array2<f64>>,
+    /// Number of frames accumulated
+    frames_accumulated: usize,
     /// Last guidance update
     last_update: Option<GuidanceUpdate>,
 }
@@ -157,7 +159,8 @@ impl FineGuidanceSystem {
             state: FgsState::Idle,
             config,
             guide_stars: Vec::new(),
-            accumulated_frames: Vec::new(),
+            accumulated_frame: None,
+            frames_accumulated: 0,
             last_update: None,
         }
     }
@@ -170,7 +173,8 @@ impl FineGuidanceSystem {
             // From Idle
             (Idle, FgsEvent::StartFgs) => {
                 log::info!("Starting FGS, entering Acquiring state");
-                self.accumulated_frames.clear();
+                self.accumulated_frame = None;
+                self.frames_accumulated = 0;
                 self.guide_stars.clear();
                 Acquiring {
                     frames_collected: 0,
@@ -193,7 +197,8 @@ impl FineGuidanceSystem {
             }
             (Acquiring { .. }, FgsEvent::Abort) => {
                 log::info!("Aborting acquisition, returning to Idle");
-                self.accumulated_frames.clear();
+                self.accumulated_frame = None;
+                self.frames_accumulated = 0;
                 Idle
             }
 
@@ -283,9 +288,39 @@ impl FineGuidanceSystem {
         &self.state
     }
 
+    /// Get the averaged accumulated frame
+    pub fn get_averaged_frame(&self) -> Option<Array2<f64>> {
+        self.accumulated_frame.as_ref().map(|frame| {
+            if self.frames_accumulated > 0 {
+                frame / self.frames_accumulated as f64
+            } else {
+                frame.clone()
+            }
+        })
+    }
+
     /// Accumulate frames during acquisition
-    fn accumulate_frame(&mut self, _frame: ArrayView2<u16>) -> Result<(), String> {
-        // TODO: Store frame for averaging
+    fn accumulate_frame(&mut self, frame: ArrayView2<u16>) -> Result<(), String> {
+        match &mut self.accumulated_frame {
+            Some(sum) => {
+                // Add this frame to the existing sum
+                if sum.shape() != frame.shape() {
+                    return Err("Frame dimensions mismatch".to_string());
+                }
+                for ((i, j), value) in frame.indexed_iter() {
+                    sum[[i, j]] += *value as f64;
+                }
+            }
+            None => {
+                // Initialize with first frame
+                let mut sum = Array2::<f64>::zeros(frame.dim());
+                for ((i, j), value) in frame.indexed_iter() {
+                    sum[[i, j]] = *value as f64;
+                }
+                self.accumulated_frame = Some(sum);
+            }
+        }
+        self.frames_accumulated += 1;
         Ok(())
     }
 
@@ -352,5 +387,70 @@ mod tests {
         let result = fgs.process_frame(dummy_frame.view());
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_frame_accumulation() {
+        let mut fgs = FineGuidanceSystem::new(FgsConfig {
+            acquisition_frames: 3,
+            ..Default::default()
+        });
+
+        // Start FGS
+        let _ = fgs.process_event(FgsEvent::StartFgs);
+
+        // Create test frames with different values
+        let frame1 = Array2::<u16>::from_elem((10, 10), 100);
+        let frame2 = Array2::<u16>::from_elem((10, 10), 200);
+        let frame3 = Array2::<u16>::from_elem((10, 10), 300);
+
+        // Process first frame
+        let _ = fgs.process_frame(frame1.view());
+        assert_eq!(fgs.frames_accumulated, 1);
+        assert!(matches!(
+            fgs.state(),
+            FgsState::Acquiring {
+                frames_collected: 1
+            }
+        ));
+
+        // Process second frame
+        let _ = fgs.process_frame(frame2.view());
+        assert_eq!(fgs.frames_accumulated, 2);
+        assert!(matches!(
+            fgs.state(),
+            FgsState::Acquiring {
+                frames_collected: 2
+            }
+        ));
+
+        // Process third frame - should transition to Calibrating
+        let _ = fgs.process_frame(frame3.view());
+        assert_eq!(fgs.frames_accumulated, 3);
+        assert!(matches!(fgs.state(), FgsState::Calibrating));
+
+        // Check averaged frame
+        let averaged = fgs
+            .get_averaged_frame()
+            .expect("Should have accumulated frame");
+        let expected_avg = (100.0 + 200.0 + 300.0) / 3.0;
+        assert!((averaged[[0, 0]] - expected_avg).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_frame_accumulation_abort() {
+        let mut fgs = FineGuidanceSystem::new(FgsConfig::default());
+
+        // Start FGS and accumulate some frames
+        let _ = fgs.process_event(FgsEvent::StartFgs);
+        let frame = Array2::<u16>::from_elem((10, 10), 100);
+        let _ = fgs.process_frame(frame.view());
+        assert_eq!(fgs.frames_accumulated, 1);
+
+        // Abort should clear accumulation
+        let _ = fgs.process_event(FgsEvent::Abort);
+        assert_eq!(fgs.frames_accumulated, 0);
+        assert!(fgs.accumulated_frame.is_none());
+        assert_eq!(fgs.state(), &FgsState::Idle);
     }
 }
