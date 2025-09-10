@@ -4,6 +4,7 @@ members = [
     "test_helpers",
     "viz",
     "flight-software",
+    "monacle",
 ]
 resolver = "2"
 
