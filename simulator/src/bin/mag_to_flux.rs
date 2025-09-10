@@ -2,14 +2,14 @@
 
 use clap::Parser;
 use plotters::prelude::*;
+use shared::image_proc::detection::{detect_stars_unified, StarFinder};
+use shared::image_proc::{save_u8_image, stretch_histogram, u16_to_u8_scaled};
+use shared::units::{Temperature, TemperatureExt};
 use simulator::hardware::SatelliteConfig;
-use simulator::image_proc::detection::{detect_stars_unified, StarFinder};
 use simulator::image_proc::render::StarInFrame;
-use simulator::image_proc::{save_u8_image, stretch_histogram, u16_to_u8_scaled};
 use simulator::photometry::zodical::SolarAngularCoordinates;
 use simulator::shared_args::{RangeArg, SensorModel, TelescopeModel};
 use simulator::star_data_to_fluxes;
-use simulator::units::{Temperature, TemperatureExt};
 use simulator::Scene;
 use starfield::catalogs::StarData;
 use starfield::Equatorial;

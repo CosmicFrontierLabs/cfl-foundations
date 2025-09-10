@@ -5,12 +5,12 @@
 //! - SDSS bands (u', g', r', i', z')
 //! - Near-IR bands (J, H)
 
+use shared::units::{LengthExt, Wavelength};
 use simulator::hardware::sensor::models::{
     ALL_SENSORS, GSENSE4040BSI, GSENSE6510BSI, HWK4123, IMX455,
 };
 use simulator::photometry::quantum_efficiency::QuantumEfficiency;
 use simulator::photometry::spectrum::Band;
-use simulator::units::{LengthExt, Wavelength};
 
 /// Spectral band definition with name and wavelength bounds.
 ///

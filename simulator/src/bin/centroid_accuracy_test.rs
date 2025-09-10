@@ -14,10 +14,10 @@
 //! - Analysis of any systematic bias in X or Y directions
 
 use ndarray::Array2;
-use simulator::algo::min_max_scan::MinMaxScan;
-use simulator::image_proc::airy::PixelScaledAiryDisk;
-use simulator::image_proc::detection::StarFinder;
-use simulator::units::{Length, LengthExt};
+use shared::algo::min_max_scan::MinMaxScan;
+use shared::image_proc::airy::PixelScaledAiryDisk;
+use shared::image_proc::detection::StarFinder;
+use shared::units::{Length, LengthExt};
 use starfield::image::starfinders::StellarSource;
 
 /// Generate a 2D Gaussian PSF with specified parameters
@@ -80,7 +80,7 @@ fn run_single_star_test(
     let stars = match detector {
         StarFinder::Naive => {
             // Use the naive detector directly with f64 image
-            use simulator::image_proc::detection::detect_stars as detect_stars_naive;
+            use shared::image_proc::detection::detect_stars as detect_stars_naive;
             detect_stars_naive(&image.view(), Some(0.1))
                 .into_iter()
                 .map(|s| Box::new(s) as Box<dyn StellarSource>)
@@ -88,7 +88,7 @@ fn run_single_star_test(
         }
         _ => {
             // Use the unified interface for DAO and IRAF
-            use simulator::image_proc::detection::detect_stars_unified;
+            use shared::image_proc::detection::detect_stars_unified;
             let scaled_airy_disk =
                 PixelScaledAiryDisk::with_fwhm(airy_disk_pixels, Length::from_nanometers(550.0));
             match detect_stars_unified(
@@ -188,7 +188,7 @@ fn run_subpixel_grid_test(image_size: usize, sigma: f64, detector: &StarFinder) 
             let stars = match detector {
                 StarFinder::Naive => {
                     // Use the naive detector directly with f64 image
-                    use simulator::image_proc::detection::detect_stars as detect_stars_naive;
+                    use shared::image_proc::detection::detect_stars as detect_stars_naive;
                     detect_stars_naive(&image.view(), Some(0.1))
                         .into_iter()
                         .map(|s| Box::new(s) as Box<dyn StellarSource>)
@@ -196,7 +196,7 @@ fn run_subpixel_grid_test(image_size: usize, sigma: f64, detector: &StarFinder) 
                 }
                 _ => {
                     // Use the unified interface for DAO and IRAF
-                    use simulator::image_proc::detection::detect_stars_unified;
+                    use shared::image_proc::detection::detect_stars_unified;
                     let scaled_airy_disk = PixelScaledAiryDisk::with_fwhm(
                         airy_disk_pixels,
                         Length::from_nanometers(550.0),
@@ -497,7 +497,7 @@ fn test_sigma_effect(image_size: usize, detector: &StarFinder) {
         let stars = match detector {
             StarFinder::Naive => {
                 // Use the naive detector directly with f64 image
-                use simulator::image_proc::detection::detect_stars as detect_stars_naive;
+                use shared::image_proc::detection::detect_stars as detect_stars_naive;
                 detect_stars_naive(&image.view(), Some(0.1))
                     .into_iter()
                     .map(|s| Box::new(s) as Box<dyn StellarSource>)
@@ -505,7 +505,7 @@ fn test_sigma_effect(image_size: usize, detector: &StarFinder) {
             }
             _ => {
                 // Use the unified interface for DAO and IRAF
-                use simulator::image_proc::detection::detect_stars_unified;
+                use shared::image_proc::detection::detect_stars_unified;
                 let scaled_airy_disk = PixelScaledAiryDisk::with_fwhm(
                     airy_disk_pixels,
                     Length::from_nanometers(550.0),

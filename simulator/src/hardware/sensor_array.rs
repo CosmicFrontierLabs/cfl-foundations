@@ -5,7 +5,7 @@
 //! and survey instruments.
 
 use crate::hardware::sensor::SensorConfig;
-use crate::units::LengthExt;
+use shared::units::LengthExt;
 
 /// Position of a sensor in the array focal plane.
 ///

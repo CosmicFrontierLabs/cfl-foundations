@@ -17,9 +17,9 @@
 
 use clap::{Parser, ValueEnum};
 use log::debug;
+use shared::units::{LengthExt, Temperature, TemperatureExt, Wavelength};
 use simulator::hardware::telescope::{models, TelescopeConfig};
 use simulator::shared_args::{DurationArg, SensorModel, SharedSimulationArgs};
-use simulator::units::{LengthExt, Temperature, TemperatureExt, Wavelength};
 
 /// Available telescope models for selection
 #[derive(Debug, Clone, ValueEnum)]

@@ -3851,6 +3851,7 @@ dependencies = [
  "itertools 0.11.0",
  "log",
  "serde",
+ "shared",
  "simulator",
  "test_helpers",
  "thiserror",

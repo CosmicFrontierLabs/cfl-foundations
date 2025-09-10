@@ -12,7 +12,7 @@
 use clap::Parser;
 use ndarray::{Array1, Array2};
 use plotters::prelude::*;
-use simulator::algo::MinMaxScan;
+use shared::algo::MinMaxScan;
 use simulator::hardware::sensor::models::ALL_SENSORS;
 use simulator::hardware::SatelliteConfig;
 use simulator::image_proc::render::quantize_image;

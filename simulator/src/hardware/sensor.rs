@@ -45,7 +45,7 @@ use std::fmt;
 use crate::hardware::dark_current::DarkCurrentEstimator;
 use crate::hardware::read_noise::ReadNoiseEstimator;
 use crate::photometry::quantum_efficiency::QuantumEfficiency;
-use crate::units::{Area, AreaExt, Length, LengthExt, Temperature, TemperatureExt};
+use shared::units::{Area, AreaExt, Length, LengthExt, Temperature, TemperatureExt};
 
 /// Sensor dimensions in pixels and physical size
 #[derive(Debug, Clone, Copy, PartialEq)]

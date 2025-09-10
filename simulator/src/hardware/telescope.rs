@@ -39,7 +39,7 @@ use once_cell::sync::Lazy;
 use std::f64::consts::PI;
 
 use crate::photometry::QuantumEfficiency;
-use crate::units::{Angle, AngleExt, Area, AreaExt, Length, LengthExt, Wavelength};
+use shared::units::{Angle, AngleExt, Area, AreaExt, Length, LengthExt, Wavelength};
 
 /// Complete telescope optical system configuration.
 ///

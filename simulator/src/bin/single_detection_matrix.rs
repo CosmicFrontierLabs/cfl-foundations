@@ -10,11 +10,11 @@ use ndarray::{Array1, Array3};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
+use shared::units::{LengthExt, Temperature, TemperatureExt};
 use simulator::hardware::sensor::models::ALL_SENSORS;
 use simulator::hardware::SatelliteConfig;
 use simulator::shared_args::{RangeArg, SharedSimulationArgs};
 use simulator::sims::single_detection::{run_single_experiment, ExperimentParams};
-use simulator::units::{LengthExt, Temperature, TemperatureExt};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -61,7 +61,7 @@ struct Args {
 
     /// Star detection algorithm to use (dao, iraf, naive)
     #[arg(long, default_value = "naive")]
-    star_finder: simulator::image_proc::detection::StarFinder,
+    star_finder: shared::image_proc::detection::StarFinder,
 
     /// Random seed for reproducible experiments
     #[arg(long, default_value_t = 42)]

@@ -4,9 +4,7 @@
 //! comparing sequential and parallel execution.
 
 use ndarray::Array2;
-use simulator::image_proc::convolve2d::{
-    convolve2d, gaussian_kernel, ConvolveMode, ConvolveOptions,
-};
+use shared::image_proc::convolve2d::{convolve2d, gaussian_kernel, ConvolveMode, ConvolveOptions};
 use std::time::Instant;
 
 fn main() {

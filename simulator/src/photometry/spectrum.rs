@@ -51,7 +51,7 @@ use std::time::Duration;
 use thiserror::Error;
 
 use super::QuantumEfficiency;
-use crate::units::{Area, LengthExt, Wavelength};
+use shared::units::{Area, LengthExt, Wavelength};
 
 /// Physical constants in CGS units for astronomical calculations.
 ///

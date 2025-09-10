@@ -4,7 +4,7 @@
 //! temperatures based on sensor specifications and thermal models.
 
 use crate::algo::misc::{interp, InterpError};
-use crate::units::{Temperature, TemperatureExt};
+use shared::units::{Temperature, TemperatureExt};
 
 /// Minimum temperature for dark current interpolation table (°C)
 pub const MIN_TEMP_C: f64 = -40.0;
@@ -501,7 +501,7 @@ mod tests {
 
     #[test]
     fn test_type_safe_temperature() {
-        use crate::units::{Temperature, TemperatureExt};
+        use shared::units::{Temperature, TemperatureExt};
 
         let estimator =
             DarkCurrentEstimator::from_reference_point(0.1, Temperature::from_celsius(20.0));

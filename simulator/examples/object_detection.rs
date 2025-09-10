@@ -22,7 +22,7 @@
 //! - Detection performance metrics
 
 use ndarray::Array2;
-use simulator::image_proc::{
+use shared::image_proc::{
     convolve2d::{convolve2d, gaussian_kernel, ConvolveMode, ConvolveOptions},
     detection::{detect_stars, otsu_threshold},
 };

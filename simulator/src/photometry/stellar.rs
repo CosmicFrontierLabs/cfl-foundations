@@ -68,7 +68,7 @@ use std::time::Duration;
 
 use super::gaia::GAIA_PASSBAND;
 use super::spectrum::{Band, Spectrum, CGS};
-use crate::units::{Area, AreaExt, LengthExt, Wavelength};
+use shared::units::{Area, AreaExt, LengthExt, Wavelength};
 
 /// Flat spectral energy distribution for calibration and reference sources.
 ///
@@ -405,8 +405,8 @@ impl Spectrum for BlackbodyStellarSpectrum {
 
 #[cfg(test)]
 mod tests {
-    use crate::units::{Area, AreaExt, LengthExt, Wavelength};
     use crate::QuantumEfficiency;
+    use shared::units::{Area, AreaExt, LengthExt, Wavelength};
 
     use super::*;
     use approx::assert_relative_eq;

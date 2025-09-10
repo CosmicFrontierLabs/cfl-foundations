@@ -80,7 +80,7 @@
 //! 59 wavelength points from 1000-11000 Å with surface brightness measurements
 
 use crate::algo::misc::interp;
-use crate::units::{LengthExt, Wavelength};
+use shared::units::{LengthExt, Wavelength};
 
 use super::spectrum::{Band, Spectrum, CGS};
 
@@ -401,8 +401,8 @@ impl Spectrum for STISZodiacalSpectrum {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::units::{LengthExt, Wavelength};
     use approx::assert_relative_eq;
+    use shared::units::{LengthExt, Wavelength};
 
     #[test]
     fn test_spectrum_rescaling() {

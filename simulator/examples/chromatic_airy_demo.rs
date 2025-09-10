@@ -7,9 +7,9 @@
 use clap::Parser;
 use ndarray::Array2;
 use plotters::prelude::*;
-use simulator::algo::misc::normalize;
+use shared::algo::misc::normalize;
+use shared::image_proc::airy::PixelScaledAiryDisk;
 use simulator::hardware::sensor::models::{HWK4123, IMX455};
-use simulator::image_proc::airy::PixelScaledAiryDisk;
 use simulator::photometry::{
     color::{rgb_values_to_color, spectrum_to_rgb_values},
     photon_electron_fluxes,

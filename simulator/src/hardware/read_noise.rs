@@ -8,7 +8,7 @@
 use ndarray::Array2;
 use std::time::Duration;
 
-use crate::algo::bilinear::{BilinearInterpolator, InterpolationError};
+use shared::algo::bilinear::{BilinearInterpolator, InterpolationError};
 
 /// Error types for read noise estimation
 #[derive(Debug, Clone, PartialEq)]

@@ -53,7 +53,7 @@
 use thiserror::Error;
 
 use super::Band;
-use crate::units::{LengthExt, Wavelength};
+use shared::units::{LengthExt, Wavelength};
 
 /// Errors that can occur with quantum efficiency calculations
 #[derive(Debug, Error)]
@@ -399,8 +399,8 @@ impl QuantumEfficiency {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::units::{LengthExt, Wavelength};
     use approx::assert_relative_eq;
+    use shared::units::{LengthExt, Wavelength};
 
     #[test]
     fn test_valid_qe() {

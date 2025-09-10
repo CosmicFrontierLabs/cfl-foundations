@@ -4,7 +4,7 @@
 //! and reports which bright stars are missing from the binary catalog.
 
 use clap::Parser;
-use simulator::algo::MinMaxScan;
+use shared::algo::MinMaxScan;
 use starfield::catalogs::binary_catalog::{BinaryCatalog, MinimalStar};
 use starfield::catalogs::hipparcos::HipparcosCatalog;
 use starfield::catalogs::{StarCatalog, StarPosition};

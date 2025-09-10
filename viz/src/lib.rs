@@ -201,7 +201,7 @@ pub mod histogram;
 #[cfg(test)]
 mod tests {
     use image::{DynamicImage, Rgb, RgbImage};
-    use simulator::image_proc::overlay::overlay_to_image;
+    use shared::image_proc::overlay::overlay_to_image;
 
     #[test]
     fn test_text_rendering() {

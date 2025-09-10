@@ -137,7 +137,7 @@ use crate::hardware::{SatelliteConfig, SensorConfig, TelescopeConfig};
 use crate::photometry::photoconversion::SourceFlux;
 use crate::photometry::photon_electron_fluxes;
 use crate::photometry::BlackbodyStellarSpectrum;
-use crate::units::{Angle, AngleExt, LengthExt};
+use shared::units::{Angle, AngleExt, LengthExt};
 
 // A majority of stars have a B-V color index around 1.4
 // This is used when the catalog does not provide a B-V value

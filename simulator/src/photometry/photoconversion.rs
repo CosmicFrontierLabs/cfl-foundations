@@ -1,13 +1,13 @@
 //! Photon to electron conversion utilities for detector modeling.
 
-use crate::image_proc::airy::PixelScaledAiryDisk;
 #[cfg(test)]
 use crate::photometry::spectrum::FlatSpectrum;
 use crate::photometry::{
     spectrum::{wavelength_to_ergs, Band},
     QuantumEfficiency, Spectrum,
 };
-use crate::units::{Area, AreaExt, LengthExt};
+use shared::image_proc::airy::PixelScaledAiryDisk;
+use shared::units::{Area, AreaExt, LengthExt};
 use std::time::Duration;
 
 /// Calculate photon flux for each nm sub-band of a wavelength band.

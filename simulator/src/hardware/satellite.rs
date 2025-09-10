@@ -1,7 +1,7 @@
 use super::{sensor::SensorConfig, telescope::TelescopeConfig};
-use crate::image_proc::airy::PixelScaledAiryDisk;
 use crate::photometry::QuantumEfficiency;
-use crate::units::{Angle, AngleExt, Length, LengthExt, Temperature};
+use shared::image_proc::airy::PixelScaledAiryDisk;
+use shared::units::{Angle, AngleExt, Length, LengthExt, Temperature};
 
 /// Complete satellite configuration combining telescope optics and sensor.
 ///

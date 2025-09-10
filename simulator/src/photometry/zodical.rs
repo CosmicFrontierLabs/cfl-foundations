@@ -148,10 +148,10 @@ use ndarray::Array2;
 use std::time::Duration;
 use thiserror::Error;
 
-use crate::algo::bilinear::{BilinearInterpolator, InterpolationError};
 use crate::hardware::SatelliteConfig;
 use crate::photometry::{spectrum::Spectrum, STISZodiacalSpectrum};
-use crate::units::LengthExt;
+use shared::algo::bilinear::{BilinearInterpolator, InterpolationError};
+use shared::units::LengthExt;
 
 /// Ecliptic latitude/elongation of minimum measurable zodiacal light brightness.
 ///

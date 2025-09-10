@@ -13,14 +13,14 @@
 use clap::Parser;
 use plotters::prelude::*;
 use rayon::prelude::*;
-use simulator::algo::MinMaxScan;
+use shared::algo::MinMaxScan;
+use shared::units::{LengthExt, Wavelength};
 use simulator::photometry::color::SpectralClass;
 use simulator::photometry::spectrum::Spectrum;
 use simulator::photometry::stellar::BlackbodyStellarSpectrum;
 use simulator::photometry::{
     generate_temperature_sequence, spectrum_to_rgb_values, temperature_to_spectral_class,
 };
-use simulator::units::{LengthExt, Wavelength};
 use std::error::Error;
 
 /// Command line arguments for stellar spectrum plotting

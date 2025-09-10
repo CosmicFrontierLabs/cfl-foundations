@@ -6,10 +6,10 @@
 use std::time::Duration;
 
 use crate::hardware::sensor::SensorConfig;
-use crate::units::{Temperature, TemperatureExt};
 use ndarray::Array2;
 use rand::{thread_rng, RngCore};
 use shared::image_proc::noise::generate_noise_with_precomputed_params;
+use shared::units::{Temperature, TemperatureExt};
 
 /// Generate realistic sensor noise field for astronomical detector simulation.
 ///

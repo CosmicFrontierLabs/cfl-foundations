@@ -41,8 +41,8 @@
 
 use super::human::HumanVision;
 use super::spectrum::Spectrum;
-use crate::units::{Area, AreaExt};
 use plotters::style::RGBColor;
+use shared::units::{Area, AreaExt};
 use std::fmt;
 use std::time::Duration;
 

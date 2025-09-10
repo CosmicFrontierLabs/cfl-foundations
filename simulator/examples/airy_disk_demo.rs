@@ -17,7 +17,7 @@
 //! All plots are saved to the `plots/` directory.
 
 use plotters::prelude::*;
-use simulator::image_proc::AiryDisk;
+use shared::image_proc::AiryDisk;
 use std::path::Path;
 
 /// Type of Airy disk approximation to render in 2D images.
@@ -240,7 +240,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use simulator::image_proc::AiryDisk;
+/// use shared::image_proc::AiryDisk;
 ///
 /// let airy = AiryDisk::new();
 /// let (radii, exact, gauss, tri) = airy.generate_comparison_samples(1000);
@@ -404,7 +404,7 @@ fn create_airy_comparison_plot(
 /// # Examples
 ///
 /// ```rust,no_run
-/// use simulator::image_proc::AiryDisk;
+/// use shared::image_proc::AiryDisk;
 ///
 /// let airy = AiryDisk::new();
 /// create_airy_disk_image(&airy, "exact.png", ImageType::Exact)?;

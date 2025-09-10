@@ -13,17 +13,17 @@
 //! 4. Measuring detection rates and centroid accuracy
 
 use crate::hardware::SatelliteConfig;
-use crate::image_proc::detection::{detect_stars_unified, StarDetection, StarFinder};
 use crate::image_proc::render::StarInFrame;
 use crate::photometry::zodical::SolarAngularCoordinates;
 use crate::star_data_to_fluxes;
-#[allow(unused_imports)]
-// Wavelength is needed for type alias, even though trait provides the method
-use crate::units::{LengthExt, Temperature, TemperatureExt, Wavelength};
 use crate::Scene;
 use core::f64;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use shared::image_proc::detection::{detect_stars_unified, StarDetection, StarFinder};
+#[allow(unused_imports)]
+// Wavelength is needed for type alias, even though trait provides the method
+use shared::units::{LengthExt, Temperature, TemperatureExt, Wavelength};
 use starfield::catalogs::StarData;
 use starfield::Equatorial;
 use std::f64::consts::PI;

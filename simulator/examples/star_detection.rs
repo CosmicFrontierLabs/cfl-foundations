@@ -1,7 +1,7 @@
 //! Simple star detection example demonstrating centroid-based analysis.
 
 use ndarray::Array2;
-use simulator::image_proc::detection::detect_stars;
+use shared::image_proc::detection::detect_stars;
 
 fn main() {
     println!("Star detection example");

@@ -27,21 +27,21 @@ use image::DynamicImage;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::{debug, info, warn};
 use rayon::prelude::*;
-use simulator::algo::{
+use shared::algo::{
     icp::{icp_match_objects, Locatable2d},
     MinMaxScan,
 };
-use simulator::hardware::sensor::models as sensor_models;
-use simulator::hardware::SatelliteConfig;
-use simulator::image_proc::airy::PixelScaledAiryDisk;
-use simulator::image_proc::detection::{detect_stars_unified, StarFinder};
-use simulator::image_proc::histogram_stretch::sigma_stretch;
-use simulator::image_proc::image::array2_to_gray_image;
-use simulator::image_proc::io::{write_typed_fits, FitsDataType};
-use simulator::image_proc::render::{RenderingResult, StarInFrame};
-use simulator::image_proc::{
+use shared::image_proc::airy::PixelScaledAiryDisk;
+use shared::image_proc::detection::{detect_stars_unified, StarFinder};
+use shared::image_proc::histogram_stretch::sigma_stretch;
+use shared::image_proc::image::array2_to_gray_image;
+use shared::image_proc::io::{write_typed_fits, FitsDataType};
+use shared::image_proc::{
     draw_stars_with_x_markers, save_u8_image, stretch_histogram, u16_to_u8_scaled, StarDetection,
 };
+use simulator::hardware::sensor::models as sensor_models;
+use simulator::hardware::SatelliteConfig;
+use simulator::image_proc::render::{RenderingResult, StarInFrame};
 use simulator::photometry::zodical::SolarAngularCoordinates;
 use simulator::scene::Scene;
 use simulator::shared_args::{RangeArg, SharedSimulationArgs};
@@ -466,7 +466,7 @@ fn run_experiment<T: StarCatalog>(
                             // Convert boxed StellarSource to StarDetection-like structure
                             {
                                 let (x, y) = star.get_centroid();
-                                simulator::image_proc::StarDetection {
+                                shared::image_proc::StarDetection {
                                     id: 0,
                                     x,
                                     y,

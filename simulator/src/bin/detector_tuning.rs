@@ -59,9 +59,9 @@
 
 use clap::{Parser, Subcommand};
 use ndarray::Array2;
-use simulator::algo::min_max_scan::MinMaxScan;
-use simulator::image_proc::airy::PixelScaledAiryDisk;
-use simulator::units::{LengthExt, Wavelength};
+use shared::algo::min_max_scan::MinMaxScan;
+use shared::image_proc::airy::PixelScaledAiryDisk;
+use shared::units::{LengthExt, Wavelength};
 use starfield::image::starfinders::{
     DAOStarFinder, DAOStarFinderConfig, IRAFStarFinder, IRAFStarFinderConfig, StellarSource,
 };
@@ -195,7 +195,7 @@ fn test_iraf_single(
 
 /// Test naive detector at a single position
 fn test_naive_single(position_x: f64, position_y: f64, image: &Array2<f64>) -> Option<f64> {
-    let stars = simulator::image_proc::detection::detect_stars(&image.view(), Some(0.1));
+    let stars = shared::image_proc::detection::detect_stars(&image.view(), Some(0.1));
 
     if !stars.is_empty() {
         let (star_x, star_y) = stars[0].get_centroid();
@@ -237,7 +237,7 @@ fn run_grid_test(detector: &str, grid_size: usize, image_size: usize) {
 
             let error_opt = match detector {
                 "dao" => {
-                    let config = simulator::image_proc::detection::config::dao_autoconfig(
+                    let config = shared::image_proc::detection::config::dao_autoconfig(
                         &scaled_airy_disk,
                         background_rms,
                         detection_sigma,
@@ -245,7 +245,7 @@ fn run_grid_test(detector: &str, grid_size: usize, image_size: usize) {
                     test_dao_single(config, position_x, position_y, &image)
                 }
                 "iraf" => {
-                    let config = simulator::image_proc::detection::config::iraf_autoconfig(
+                    let config = shared::image_proc::detection::config::iraf_autoconfig(
                         &scaled_airy_disk,
                         background_rms,
                         detection_sigma,
@@ -430,7 +430,7 @@ fn main() {
 
             let error_opt = match detector.as_str() {
                 "dao" => {
-                    let mut config = simulator::image_proc::detection::config::dao_autoconfig(
+                    let mut config = shared::image_proc::detection::config::dao_autoconfig(
                         &scaled_airy_disk,
                         10.0,
                         3.0,
@@ -442,7 +442,7 @@ fn main() {
                     test_dao_single(config, test_x, test_y, &image)
                 }
                 "iraf" => {
-                    let mut config = simulator::image_proc::detection::config::iraf_autoconfig(
+                    let mut config = shared::image_proc::detection::config::iraf_autoconfig(
                         &scaled_airy_disk,
                         10.0,
                         3.0,

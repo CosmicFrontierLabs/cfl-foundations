@@ -3,11 +3,11 @@
 //! This example creates WWT overlay URLs for the sky position that failed
 //! to detect any stars across all exposures (RA: 272.7390°, Dec: -63.2654°)
 
+use shared::units::{Temperature, TemperatureExt};
 use simulator::algo::misc::generate_wwt_overlay_url;
 use simulator::hardware::{
     sensor::models::HWK4123, telescope::models::IDEAL_50CM, SatelliteConfig,
 };
-use simulator::units::{Temperature, TemperatureExt};
 use starfield::Equatorial;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
