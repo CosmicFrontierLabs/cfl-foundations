@@ -6,6 +6,8 @@
 use ndarray::{Array2, ArrayView2};
 use serde::{Deserialize, Serialize};
 use shared::image_proc::detection::{detect_stars, StarDetection};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 /// ROI (Region of Interest) around a guide star
@@ -137,6 +139,65 @@ pub enum CentroidMethod {
     QuadraticInterpolation,
 }
 
+/// Position estimate for tracking callbacks
+#[derive(Debug, Clone)]
+pub struct PositionEstimate {
+    /// X position in pixels
+    pub x: f64,
+    /// Y position in pixels
+    pub y: f64,
+    /// Confidence level (0.0 to 1.0)
+    pub confidence: f64,
+    /// Timestamp in microseconds
+    pub timestamp_us: u64,
+}
+
+/// Events emitted for external callbacks
+#[derive(Debug, Clone)]
+pub enum FgsCallbackEvent {
+    /// Tracking has started
+    TrackingStarted {
+        track_id: u32,
+        initial_position: PositionEstimate,
+        num_guide_stars: usize,
+    },
+    /// Tracking position update
+    TrackingUpdate {
+        track_id: u32,
+        position: PositionEstimate,
+        delta_x: f64,
+        delta_y: f64,
+        num_stars_used: usize,
+    },
+    /// Tracking has been lost
+    TrackingLost {
+        track_id: u32,
+        last_position: PositionEstimate,
+        reason: TrackingLostReason,
+    },
+}
+
+/// Reasons for tracking loss
+#[derive(Debug, Clone)]
+pub enum TrackingLostReason {
+    /// Signal too weak to track
+    SignalTooWeak,
+    /// Target moved out of bounds
+    OutOfBounds,
+    /// Target was occluded
+    Occlusion,
+    /// User requested stop
+    UserRequested,
+    /// System error occurred
+    SystemError(String),
+}
+
+/// Callback ID for registration/deregistration
+pub type CallbackId = u64;
+
+/// Callback function type
+pub type FgsCallback = Arc<dyn Fn(&FgsCallbackEvent) + Send + Sync>;
+
 /// Main Fine Guidance System state machine
 pub struct FineGuidanceSystem {
     /// Current state
@@ -153,6 +214,12 @@ pub struct FineGuidanceSystem {
     detected_stars: Vec<StarDetection>,
     /// Last guidance update
     last_update: Option<GuidanceUpdate>,
+    /// Registered callbacks
+    callbacks: Arc<Mutex<HashMap<CallbackId, FgsCallback>>>,
+    /// Next callback ID
+    next_callback_id: Arc<Mutex<CallbackId>>,
+    /// Current track ID
+    current_track_id: u32,
 }
 
 impl FineGuidanceSystem {
@@ -166,6 +233,38 @@ impl FineGuidanceSystem {
             frames_accumulated: 0,
             detected_stars: Vec::new(),
             last_update: None,
+            callbacks: Arc::new(Mutex::new(HashMap::new())),
+            next_callback_id: Arc::new(Mutex::new(0)),
+            current_track_id: 0,
+        }
+    }
+
+    /// Register a callback for FGS events
+    pub fn register_callback<F>(&self, callback: F) -> CallbackId
+    where
+        F: Fn(&FgsCallbackEvent) + Send + Sync + 'static,
+    {
+        let mut callbacks = self.callbacks.lock().unwrap();
+        let mut next_id = self.next_callback_id.lock().unwrap();
+
+        let callback_id = *next_id;
+        *next_id += 1;
+
+        callbacks.insert(callback_id, Arc::new(callback));
+        callback_id
+    }
+
+    /// Deregister a callback
+    pub fn deregister_callback(&self, callback_id: CallbackId) -> bool {
+        let mut callbacks = self.callbacks.lock().unwrap();
+        callbacks.remove(&callback_id).is_some()
+    }
+
+    /// Emit an event to all registered callbacks
+    fn emit_event(&self, event: &FgsCallbackEvent) {
+        let callbacks = self.callbacks.lock().unwrap();
+        for callback in callbacks.values() {
+            callback(event);
         }
     }
 
@@ -216,6 +315,24 @@ impl FineGuidanceSystem {
                         "Calibration complete with {} guide stars, entering Tracking",
                         self.guide_stars.len()
                     );
+
+                    // Increment track ID for new tracking session
+                    self.current_track_id += 1;
+
+                    // Emit tracking started event
+                    if let Some(first_star) = self.guide_stars.first() {
+                        self.emit_event(&FgsCallbackEvent::TrackingStarted {
+                            track_id: self.current_track_id,
+                            initial_position: PositionEstimate {
+                                x: first_star.x,
+                                y: first_star.y,
+                                confidence: 1.0,
+                                timestamp_us: Instant::now().elapsed().as_micros() as u64,
+                            },
+                            num_guide_stars: self.guide_stars.len(),
+                        });
+                    }
+
                     Tracking {
                         frames_processed: 0,
                     }
@@ -231,12 +348,43 @@ impl FineGuidanceSystem {
                 let update = self.track(frame)?;
 
                 if update.num_stars_used > 0 {
+                    // Emit tracking update event
+                    if let Some(first_star) = self.guide_stars.first() {
+                        self.emit_event(&FgsCallbackEvent::TrackingUpdate {
+                            track_id: self.current_track_id,
+                            position: PositionEstimate {
+                                x: first_star.x + update.delta_x,
+                                y: first_star.y + update.delta_y,
+                                confidence: update.quality,
+                                timestamp_us: Instant::now().elapsed().as_micros() as u64,
+                            },
+                            delta_x: update.delta_x,
+                            delta_y: update.delta_y,
+                            num_stars_used: update.num_stars_used,
+                        });
+                    }
+
                     self.last_update = Some(update.clone());
                     Tracking {
                         frames_processed: frames + 1,
                     }
                 } else {
                     log::warn!("Lost all guide stars, entering Reacquiring");
+
+                    // Emit tracking lost event
+                    if let Some(first_star) = self.guide_stars.first() {
+                        self.emit_event(&FgsCallbackEvent::TrackingLost {
+                            track_id: self.current_track_id,
+                            last_position: PositionEstimate {
+                                x: first_star.x,
+                                y: first_star.y,
+                                confidence: 0.0,
+                                timestamp_us: Instant::now().elapsed().as_micros() as u64,
+                            },
+                            reason: TrackingLostReason::SignalTooWeak,
+                        });
+                    }
+
                     Reacquiring { attempts: 0 }
                 }
             }
@@ -390,6 +538,7 @@ impl FineGuidanceSystem {
 mod tests {
     use super::*;
     use ndarray::Array2;
+    use std::sync::Arc;
 
     #[test]
     fn test_state_transitions() {
@@ -477,5 +626,87 @@ mod tests {
         assert_eq!(fgs.frames_accumulated, 0);
         assert!(fgs.accumulated_frame.is_none());
         assert_eq!(fgs.state(), &FgsState::Idle);
+    }
+
+    #[test]
+    fn test_callback_registration() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let fgs = FineGuidanceSystem::new(FgsConfig::default());
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        // Register callback
+        let callback_id = fgs.register_callback(move |_event| {
+            counter_clone.fetch_add(1, Ordering::SeqCst);
+        });
+
+        // Test event emission
+        fgs.emit_event(&FgsCallbackEvent::TrackingStarted {
+            track_id: 1,
+            initial_position: PositionEstimate {
+                x: 100.0,
+                y: 200.0,
+                confidence: 0.95,
+                timestamp_us: 1000,
+            },
+            num_guide_stars: 3,
+        });
+
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+
+        // Deregister and test again
+        assert!(fgs.deregister_callback(callback_id));
+
+        fgs.emit_event(&FgsCallbackEvent::TrackingUpdate {
+            track_id: 1,
+            position: PositionEstimate {
+                x: 101.0,
+                y: 201.0,
+                confidence: 0.95,
+                timestamp_us: 2000,
+            },
+            delta_x: 1.0,
+            delta_y: 1.0,
+            num_stars_used: 3,
+        });
+
+        // Counter should not have increased
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_multiple_callbacks() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let fgs = FineGuidanceSystem::new(FgsConfig::default());
+
+        let counter1 = Arc::new(AtomicUsize::new(0));
+        let counter2 = Arc::new(AtomicUsize::new(0));
+
+        let c1_clone = counter1.clone();
+        let c2_clone = counter2.clone();
+
+        let _id1 = fgs.register_callback(move |_| {
+            c1_clone.fetch_add(1, Ordering::SeqCst);
+        });
+
+        let _id2 = fgs.register_callback(move |_| {
+            c2_clone.fetch_add(10, Ordering::SeqCst);
+        });
+
+        fgs.emit_event(&FgsCallbackEvent::TrackingLost {
+            track_id: 1,
+            last_position: PositionEstimate {
+                x: 100.0,
+                y: 200.0,
+                confidence: 0.0,
+                timestamp_us: 3000,
+            },
+            reason: TrackingLostReason::SignalTooWeak,
+        });
+
+        assert_eq!(counter1.load(Ordering::SeqCst), 1);
+        assert_eq!(counter2.load(Ordering::SeqCst), 10);
     }
 }
