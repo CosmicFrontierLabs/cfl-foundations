@@ -3,7 +3,7 @@ members = [
     "simulator",
     "test_helpers",
     "flight-software",
-    "monacle",
+    "monocle",
     "shared",
 ]
 resolver = "2"
