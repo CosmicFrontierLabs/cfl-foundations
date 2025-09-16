@@ -1,4 +1,4 @@
-name: Format Check
+name: Format & Clippy Check
 
 on:
   push:
@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  format:
+  format-and-clippy:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -18,8 +18,11 @@ jobs:
     - name: Setup Rust
       uses: ./.github/actions/setup
       with:
-        install-deps: 'false'
+        install-deps: 'true'
         setup-cache: 'false'
     
     - name: Check formatting
       run: cargo fmt --all -- --check
+    
+    - name: Run clippy
+      run: cargo clippy -- -D warnings
