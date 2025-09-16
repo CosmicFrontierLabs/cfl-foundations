@@ -6,6 +6,7 @@
 use ndarray::{Array2, ArrayView2};
 use serde::{Deserialize, Serialize};
 use shared::image_proc::detection::{detect_stars, StarDetection};
+use shared::image_proc::noise::quantify::estimate_noise_level;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -540,8 +541,18 @@ impl FineGuidanceSystem {
             .get_averaged_frame()
             .ok_or("No accumulated frame available for calibration")?;
 
-        // Detect stars in the averaged frame
-        let detections = detect_stars(&averaged_frame.view(), None);
+        // Estimate noise level using Chen et al. 2015 method
+        let noise_level = estimate_noise_level(&averaged_frame.view(), 8);
+
+        // Calculate 5-sigma threshold for detection
+        let detection_threshold = 5.0 * noise_level;
+
+        log::info!(
+            "Estimated noise level: {noise_level:.2}, using 5-sigma threshold: {detection_threshold:.2}"
+        );
+
+        // Detect stars in the averaged frame with 5-sigma threshold
+        let detections = detect_stars(&averaged_frame.view(), Some(detection_threshold));
         self.detected_stars = detections.clone();
 
         // Apply filters for guide star selection
@@ -613,7 +624,7 @@ impl FineGuidanceSystem {
             .sort_by(|a, b| b.flux.partial_cmp(&a.flux).unwrap());
 
         log::info!(
-            "Detected {} stars, selected {} guide stars for tracking",
+            "Detected {} stars in calibration frame with 5-sigma threshold, selected {} guide stars for tracking",
             self.detected_stars.len(),
             self.guide_stars.len()
         );
