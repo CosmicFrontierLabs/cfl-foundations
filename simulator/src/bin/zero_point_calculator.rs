@@ -8,7 +8,11 @@
 //! instrumental measurements (counts/second) to astronomical magnitudes.
 
 use clap::Parser;
-use simulator::photometry::{photoconversion::photo_electrons, stellar::BlackbodyStellarSpectrum};
+use simulator::photometry::{
+    photoconversion::photo_electrons,
+    stellar::BlackbodyStellarSpectrum,
+    zodiacal::{SolarAngularCoordinates, ZodiacalLight},
+};
 use simulator::shared_args::{SensorModel, TelescopeModel};
 use simulator::{
     hardware::{
@@ -56,6 +60,125 @@ struct Args {
     /// Show detailed calculation steps
     #[arg(long)]
     verbose: bool,
+
+    /// Calculate limiting magnitude instead of zero-point
+    #[arg(long)]
+    limiting_magnitude: bool,
+
+    /// Exposure time in seconds for limiting magnitude calculation
+    #[arg(long, default_value_t = 100.0)]
+    exposure_time: f64,
+
+    /// Sensor temperature in Celsius for limiting magnitude calculation
+    #[arg(long, default_value_t = -20.0)]
+    temperature_c: f64,
+}
+
+/// Calculate limiting magnitude where signal equals noise floor
+///
+/// Finds the magnitude at which a star's flux onto a pixel center equals
+/// the combined noise from read noise, dark current, and zodiacal light.
+fn find_limiting_magnitude(
+    satellite: &SatelliteConfig,
+    exposure_time: Duration,
+    temperature: Temperature,
+    bv_color: f64,
+    tolerance: f64,
+    max_iterations: usize,
+    verbose: bool,
+) -> Result<f64, String> {
+    // Binary search bounds (magnitudes)
+    let mut mag_low = 10.0;
+    let mut mag_high = 35.0;
+
+    // Get telescope and sensor properties
+    let aperture_area = satellite.telescope.clear_aperture_area();
+
+    // Calculate noise floor components
+    let exposure_s = exposure_time.as_secs_f64();
+
+    // Read noise (electrons)
+    let read_noise = satellite
+        .sensor
+        .read_noise_estimator
+        .estimate(temperature.as_celsius(), exposure_time)
+        .map_err(|e| format!("Failed to estimate read noise: {e}"))?;
+
+    // Dark current (electrons/pixel/s)
+    let dark_current = satellite.sensor.dark_current_at_temperature(temperature);
+    let dark_electrons = dark_current * exposure_s;
+
+    // Zodiacal light at minimum (best case - ecliptic pole)
+    let zodiacal = ZodiacalLight::default();
+    let min_zodiacal_coords = SolarAngularCoordinates::zodiacal_minimum();
+
+    // Generate zodiacal background for entire sensor
+    let zodiacal_background =
+        zodiacal.generate_zodiacal_background(satellite, &exposure_time, &min_zodiacal_coords);
+
+    // Get per-pixel zodiacal electrons (uniform across sensor)
+    let zodiacal_electrons = zodiacal_background[[0, 0]]; // All pixels have same value
+
+    // Total noise floor (RMS)
+    let noise_floor = (read_noise * read_noise + dark_electrons + zodiacal_electrons).sqrt();
+
+    if verbose {
+        println!("\nNoise floor calculation:");
+        println!("  Read noise: {read_noise:.2} e⁻");
+        println!(
+            "  Dark current: {dark_current:.3} e⁻/px/s × {exposure_s} s = {dark_electrons:.2} e⁻"
+        );
+        println!("  Zodiacal light: {zodiacal_electrons:.2} e⁻");
+        println!("  Total noise floor: {noise_floor:.2} e⁻ RMS");
+        println!();
+    }
+
+    let mut iteration = 0;
+
+    while iteration < max_iterations && (mag_high - mag_low) > tolerance {
+        let mag_mid = (mag_low + mag_high) / 2.0;
+
+        // Create stellar spectrum at this magnitude
+        let spectrum = BlackbodyStellarSpectrum::from_gaia_bv_magnitude(bv_color, mag_mid);
+
+        // Calculate photoelectrons for this exposure
+        let star_electrons = photo_electrons(
+            &spectrum,
+            &satellite.combined_qe,
+            aperture_area,
+            &exposure_time,
+        );
+
+        if verbose {
+            println!(
+                "  Iteration {}: mag = {:.3}, star e⁻ = {:.3e}, noise = {:.3e}",
+                iteration + 1,
+                mag_mid,
+                star_electrons,
+                noise_floor
+            );
+        }
+
+        // Compare star signal to noise floor
+        if star_electrons > noise_floor {
+            // Too bright, increase magnitude (dimmer)
+            mag_low = mag_mid;
+        } else {
+            // Too dim, decrease magnitude (brighter)
+            mag_high = mag_mid;
+        }
+
+        iteration += 1;
+    }
+
+    if iteration >= max_iterations {
+        return Err(format!(
+            "Failed to converge after {max_iterations} iterations"
+        ));
+    }
+
+    // Return the midpoint as the limiting magnitude
+    Ok((mag_low + mag_high) / 2.0)
 }
 
 /// Calculate zero-point magnitude using binary search
@@ -125,16 +248,32 @@ fn find_zero_point(
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    println!("Zero-Point Magnitude Calculator");
-    println!("===============================");
-    println!();
-    println!("Finding magnitude at which telescope/sensor produces 1 e⁻/s");
-    println!("B-V Color Index: {:.2}", args.bv_color);
-    println!("Convergence Tolerance: {:.3} mag", args.tolerance);
-    println!();
+    if args.limiting_magnitude {
+        println!("Limiting Magnitude Calculator");
+        println!("=============================");
+        println!();
+        println!("Finding faintest detectable star (signal = noise floor)");
+        println!("Exposure Time: {} s", args.exposure_time);
+        println!("Temperature: {:.1} °C", args.temperature_c);
+        println!("B-V Color Index: {:.2}", args.bv_color);
+        println!("Convergence Tolerance: {:.3} mag", args.tolerance);
+        println!();
+    } else {
+        println!("Zero-Point Magnitude Calculator");
+        println!("===============================");
+        println!();
+        println!("Finding magnitude at which telescope/sensor produces 1 e⁻/s");
+        println!("B-V Color Index: {:.2}", args.bv_color);
+        println!("Convergence Tolerance: {:.3} mag", args.tolerance);
+        println!();
+    }
 
-    // Default temperature for satellite config
-    let temperature = Temperature::from_celsius(-10.0);
+    // Use temperature from args for limiting magnitude, default for zero-point
+    let temperature = if args.limiting_magnitude {
+        Temperature::from_celsius(args.temperature_c)
+    } else {
+        Temperature::from_celsius(-10.0)
+    };
 
     // Determine which telescopes to analyze
     let telescopes: Vec<(&str, &TelescopeConfig)> = match args.telescope {
@@ -179,13 +318,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Print results header
-    println!(
-        "{:<15} {:<20} {:<15} {:<15}",
-        "Telescope", "Sensor", "Zero-Point (mag)", "Aperture (m)"
-    );
+    if args.limiting_magnitude {
+        println!(
+            "{:<15} {:<20} {:<15} {:<15}",
+            "Telescope", "Sensor", "Limiting Mag", "Aperture (m)"
+        );
+    } else {
+        println!(
+            "{:<15} {:<20} {:<15} {:<15}",
+            "Telescope", "Sensor", "Zero-Point (mag)", "Aperture (m)"
+        );
+    }
     println!("{:-<65}", "");
 
-    // Calculate zero-point for each combination
+    // Calculate for each combination
     for (telescope_name, telescope) in &telescopes {
         for sensor in &sensors {
             // Create SatelliteConfig for this combination
@@ -196,19 +342,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("\nCalculating for {} + {}:", telescope_name, sensor.name);
             }
 
-            match find_zero_point(
-                &satellite,
-                args.bv_color,
-                args.tolerance,
-                args.max_iterations,
-                args.verbose,
-            ) {
-                Ok(zero_point) => {
+            let result = if args.limiting_magnitude {
+                find_limiting_magnitude(
+                    &satellite,
+                    Duration::from_secs_f64(args.exposure_time),
+                    temperature,
+                    args.bv_color,
+                    args.tolerance,
+                    args.max_iterations,
+                    args.verbose,
+                )
+            } else {
+                find_zero_point(
+                    &satellite,
+                    args.bv_color,
+                    args.tolerance,
+                    args.max_iterations,
+                    args.verbose,
+                )
+            };
+
+            match result {
+                Ok(magnitude) => {
                     println!(
                         "{:<15} {:<20} {:<15.3} {:<15.2}",
                         telescope_name,
                         sensor.name,
-                        zero_point,
+                        magnitude,
                         telescope.aperture.as_meters()
                     );
                 }
@@ -223,8 +383,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!();
-    println!("Note: Zero-point is the stellar magnitude that produces 1 photoelectron/second");
-    println!("      for the given telescope/sensor combination.");
+    if args.limiting_magnitude {
+        println!("Note: Limiting magnitude is where star flux equals noise floor");
+        println!("      (read noise + dark current + zodiacal light at ecliptic pole)");
+    } else {
+        println!("Note: Zero-point is the stellar magnitude that produces 1 photoelectron/second");
+        println!("      for the given telescope/sensor combination.");
+    }
 
     Ok(())
 }
