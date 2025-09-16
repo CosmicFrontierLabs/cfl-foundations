@@ -68,6 +68,9 @@ IMPORTANT: Always run `cargo fmt` before committing any code changes!
 - Reference issue numbers when applicable
 - Always check `git status` before committing to ensure no unwanted files are staged
 
+## Acronyms
+- HIL: Hardware In the Loop - Testing real hardware components with simulated environments
+
 ## Commonly Worked Files
 ### sensor_shootout.rs (simulator/src/bin/sensor_shootout.rs)
 - Compares performance of different sensor models under various conditions
@@ -77,7 +80,7 @@ IMPORTANT: Always run `cargo fmt` before committing any code changes!
 - Supports parallel/serial execution and optional image saving
 - CSV header includes sensor noise characteristics (read noise, dark current at temp)
 
-### sensor_floor_est.rs (simulator/src/bin/sensor_floor_est.rs) 
+### sensor_floor_est.rs (simulator/src/bin/sensor_floor_est.rs)
 - Estimates sensor noise floor and detection limits
 - Analyzes minimum detectable star magnitudes for each sensor configuration
 - Useful for understanding sensor sensitivity and performance boundaries
