@@ -258,7 +258,7 @@ mod tests {
         for i in 1..6 {
             for j in 1..6 {
                 let dist_sq =
-                    ((i as f64 - center as f64).powi(2) + (j as f64 - center as f64).powi(2));
+                    (i as f64 - center as f64).powi(2) + (j as f64 - center as f64).powi(2);
                 let intensity = 100.0 * (-dist_sq / (2.0 * sigma * sigma)).exp();
                 if intensity > 10.0 {
                     // Threshold to create mask
@@ -281,8 +281,7 @@ mod tests {
         let moment_ratio = result.m_xx / result.m_yy;
         assert!(
             moment_ratio > 0.8 && moment_ratio < 1.2,
-            "m_xx/m_yy should be close to 1.0 for circular pattern, got {}",
-            moment_ratio
+            "m_xx/m_yy should be close to 1.0 for circular pattern, got {moment_ratio}"
         );
     }
 
@@ -310,8 +309,7 @@ mod tests {
         let moment_ratio = result.m_xx / result.m_yy;
         assert!(
             (moment_ratio - 1.0).abs() < 0.1,
-            "m_xx/m_yy should be close to 1.0 for diagonal pattern, got {}",
-            moment_ratio
+            "m_xx/m_yy should be close to 1.0 for diagonal pattern, got {moment_ratio}"
         );
     }
 }

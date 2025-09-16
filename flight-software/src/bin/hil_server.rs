@@ -7,7 +7,9 @@ use axum::{
     Router,
 };
 use clap::Parser;
-use flight_software::camera::neutralino_imx455::read_sensor_temperatures;
+use flight_software::camera::neutralino_imx455::{
+    calculate_padding_pixels, calculate_stride, read_sensor_temperatures,
+};
 use flight_software::camera::v4l2_utils::{
     collect_camera_metadata, get_available_resolutions, query_menu_item,
 };
@@ -264,18 +266,9 @@ fn compute_histogram(pixels: &[u8]) -> Vec<u32> {
 }
 
 fn process_raw_to_pixels(frame_data: &[u8], width: u32, height: u32) -> Vec<u8> {
-    // Only the 8096x6324 resolution has 96 pixel padding
-    // All other resolutions have different stride patterns
-    let stride = if width == 8096 && height == 6324 {
-        // Max resolution: 96 pixel padding (192 bytes)
-        (width as usize + 96) * 2
-    } else {
-        // For all other resolutions, calculate stride from actual data size
-        frame_data.len() / height as usize
-    };
-
-    let stride_pixels = stride / 2;
-    let padding_pixels = stride_pixels - width as usize;
+    // Use the centralized stride calculation from neutralino_imx455
+    let stride = calculate_stride(width, height, frame_data.len());
+    let padding_pixels = calculate_padding_pixels(width, height, frame_data.len());
     let mut pixels_8bit = Vec::with_capacity((width * height) as usize);
 
     debug!(

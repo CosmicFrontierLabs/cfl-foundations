@@ -1,6 +1,25 @@
 use log::debug;
 use v4l::prelude::*;
 
+/// Calculate the stride (bytes per row) for the Neutralino IMX455 sensor.
+/// The sensor uses specific padding patterns based on resolution.
+pub fn calculate_stride(width: u32, height: u32, frame_size: usize) -> usize {
+    if width == 8096 && height == 6324 {
+        // Max resolution has 96 pixel padding (192 bytes)
+        (width as usize + 96) * 2
+    } else {
+        // For other resolutions, calculate stride from actual data size
+        frame_size / height as usize
+    }
+}
+
+/// Calculate padding in pixels for a given resolution
+pub fn calculate_padding_pixels(width: u32, height: u32, frame_size: usize) -> usize {
+    let stride = calculate_stride(width, height, frame_size);
+    let stride_pixels = stride / 2; // 16-bit pixels = 2 bytes each
+    stride_pixels - width as usize
+}
+
 pub fn read_sensor_temperatures(device_path: &str) -> (Option<f32>, Option<f32>) {
     let mut fpga_temp = None;
     let mut pcb_temp = None;

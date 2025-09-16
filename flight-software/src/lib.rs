@@ -1,5 +1,6 @@
 pub mod camera;
 pub mod errors;
+pub mod gpio;
 pub mod hardware_monitor;
 pub mod prometheus_server;
 pub mod v4l2_capture;

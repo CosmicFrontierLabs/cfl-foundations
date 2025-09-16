@@ -10,12 +10,19 @@ use v4l::video::Capture;
 
 #[derive(Debug, Clone)]
 pub struct CameraConfig {
+    /// Path to the V4L2 device (e.g., "/dev/video0")
     pub device_path: String,
+    /// Frame width in pixels
     pub width: u32,
+    /// Frame height in pixels
     pub height: u32,
+    /// Frame rate in Hz (e.g., 23000000 for 23 MHz)
     pub framerate: u32,
+    /// Analog gain value (sensor-specific units, typically 0-1023)
     pub gain: i32,
+    /// Exposure time (sensor-specific units, typically in lines or microseconds)
     pub exposure: i32,
+    /// Black level offset (sensor-specific units, typically 12-bit range 0-4095)
     pub black_level: i32,
 }
 

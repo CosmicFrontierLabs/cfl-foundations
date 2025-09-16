@@ -5,6 +5,7 @@
 //! consistency.
 
 pub mod algo;
+pub mod barker;
 pub mod image_proc;
 pub mod units;
 pub mod viz;
