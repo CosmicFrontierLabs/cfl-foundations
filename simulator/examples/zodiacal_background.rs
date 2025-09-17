@@ -13,11 +13,10 @@ use clap::Parser;
 use ndarray::{Array1, Array2};
 use plotters::prelude::*;
 use shared::algo::MinMaxScan;
-use simulator::hardware::sensor::models::ALL_SENSORS;
 use simulator::hardware::SatelliteConfig;
 use simulator::image_proc::render::quantize_image;
 use simulator::photometry::{spectrum::Spectrum, zodiacal::SolarAngularCoordinates, ZodiacalLight};
-use simulator::shared_args::{DurationArg, TelescopeModel};
+use simulator::shared_args::{DurationArg, SensorModel, TelescopeModel};
 use simulator::units::{LengthExt, Temperature, TemperatureExt, Wavelength};
 
 /// Command line arguments for zodiacal background computation
@@ -47,6 +46,14 @@ struct Args {
     /// Telescope model to use for simulations
     #[arg(long, default_value_t = TelescopeModel::Demo50cm)]
     telescope: TelescopeModel,
+
+    /// Sensor model to use for simulations
+    #[arg(long, default_value_t = SensorModel::Gsense6510bsi)]
+    sensor: SensorModel,
+
+    /// Sensor temperature in degrees Celsius
+    #[arg(long, default_value_t = -10.0)]
+    temperature: f64,
 }
 
 /// Parses a range specification string into an array of evenly spaced values.
@@ -251,13 +258,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let elongations = parse_range(&args.elongation_range)?;
     let latitudes = parse_range(&args.latitude_range)?;
 
-    // Define sensors to test
-    let sensors: Vec<_> = ALL_SENSORS
-        .iter()
-        .map(|sensor| sensor.with_dimensions(args.domain, args.domain))
-        .collect();
-
+    // Get telescope and sensor configurations
     let telescope = args.telescope.to_config().clone();
+    let sensor = args.sensor.to_config().clone();
     let exposure = args.exposure.0;
 
     println!("Zodiacal Background Analysis (DN/second & electrons/second)");
@@ -301,10 +304,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         elongations.len() * latitudes.len()
     );
     println!();
-    println!("Sensors to Analyze:");
-    for sensor in &sensors {
-        println!("  - {}: {}", sensor.name, sensor.dimensions);
-    }
+    println!("Sensor Configuration:");
+    println!("  Model Selected: {}", args.sensor);
+    println!("  Name: {}", sensor.name);
+    let (width, height) = sensor.dimensions.get_pixel_width_height();
+    println!("  Resolution: {}x{} pixels", width, height);
+    println!(
+        "  Pixel Size: {:.2}μm",
+        sensor.pixel_size().as_micrometers()
+    );
+    println!("  Temperature: {:.1}°C", args.temperature);
     println!();
     println!("Output Information:");
     println!("  Spectrum Plot: plots/zodiacal_spectrum.png");
@@ -334,119 +343,116 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    for sensor in &sensors {
-        println!("Sensor: {}", sensor.name);
+    println!("Sensor: {}", sensor.name);
 
-        // Create result matrices for both DN and electrons
-        let mut dn_matrix = Array2::<f64>::zeros((elongations.len(), latitudes.len()));
-        let mut electron_matrix = Array2::<f64>::zeros((elongations.len(), latitudes.len()));
+    // Create result matrices for both DN and electrons
+    let mut dn_matrix = Array2::<f64>::zeros((elongations.len(), latitudes.len()));
+    let mut electron_matrix = Array2::<f64>::zeros((elongations.len(), latitudes.len()));
 
-        // Create SatelliteConfig for zodiacal background calculation
-        let satellite = SatelliteConfig::new(
-            telescope.clone(),
-            sensor.clone(),
-            Temperature::from_celsius(-10.0), // Default temperature for example
-        );
+    // Create SatelliteConfig for zodiacal background calculation
+    let satellite = SatelliteConfig::new(
+        telescope.clone(),
+        sensor.clone(),
+        simulator::units::Temperature::from_celsius(args.temperature),
+    );
 
-        // Calculate zodical minimum e-/s for this sensor
-        let min_zodiacal_e =
-            z_light.generate_zodiacal_background(&satellite, &exposure, &min_coords);
-        let min_electrons_total = min_zodiacal_e.mean().unwrap();
-        let min_electrons_per_s = min_electrons_total / exposure.as_secs_f64();
-        println!("  Zodiacal minimum: {min_electrons_per_s:.2e} e-/s");
+    // Calculate zodiacal minimum e-/s for this sensor
+    let min_zodiacal_e = z_light.generate_zodiacal_background(&satellite, &exposure, &min_coords);
+    let min_electrons_total = min_zodiacal_e.mean().unwrap();
+    let min_electrons_per_s = min_electrons_total / exposure.as_secs_f64();
+    println!("  Zodiacal minimum: {min_electrons_per_s:.2e} e-/s");
 
-        // Compute DN/s and electrons/s for each coordinate combination
-        for (elong_idx, &elongation) in elongations.iter().enumerate() {
-            for (lat_idx, &latitude) in latitudes.iter().enumerate() {
-                // Create coordinates
-                let coords = SolarAngularCoordinates::new(elongation, latitude)
-                    .expect("Invalid solar angular coordinates from parsed ranges");
+    // Compute DN/s and electrons/s for each coordinate combination
+    for (elong_idx, &elongation) in elongations.iter().enumerate() {
+        for (lat_idx, &latitude) in latitudes.iter().enumerate() {
+            // Create coordinates
+            let coords = SolarAngularCoordinates::new(elongation, latitude)
+                .expect("Invalid solar angular coordinates from parsed ranges");
 
-                // Try to generate zodiacal background, handle interpolation errors
-                match z_light.get_zodiacal_spectrum(&coords) {
-                    Ok(_) => {
-                        // Generate zodiacal background in electrons
-                        let zodiacal_e =
-                            z_light.generate_zodiacal_background(&satellite, &exposure, &coords);
+            // Try to generate zodiacal background, handle interpolation errors
+            match z_light.get_zodiacal_spectrum(&coords) {
+                Ok(_) => {
+                    // Generate zodiacal background in electrons
+                    let zodiacal_e =
+                        z_light.generate_zodiacal_background(&satellite, &exposure, &coords);
 
-                        // Calculate mean electrons/s (divide by exposure time to get per second)
-                        let mean_electrons_total = zodiacal_e.mean().unwrap();
-                        let mean_electrons_per_s = mean_electrons_total / exposure.as_secs_f64();
-                        electron_matrix[[elong_idx, lat_idx]] = mean_electrons_per_s;
+                    // Calculate mean electrons/s (divide by exposure time to get per second)
+                    let mean_electrons_total = zodiacal_e.mean().unwrap();
+                    let mean_electrons_per_s = mean_electrons_total / exposure.as_secs_f64();
+                    electron_matrix[[elong_idx, lat_idx]] = mean_electrons_per_s;
 
-                        // Convert to DN
-                        let zodiacal_dn = quantize_image(&zodiacal_e, &satellite.sensor);
+                    // Convert to DN
+                    let zodiacal_dn = quantize_image(&zodiacal_e, &satellite.sensor);
 
-                        // Calculate mean DN/s (divide by exposure time to get per second)
-                        let mean_dn_total = zodiacal_dn.map(|&x| x as f64).mean().unwrap();
-                        let mean_dn_per_s = mean_dn_total / exposure.as_secs_f64();
-                        dn_matrix[[elong_idx, lat_idx]] = mean_dn_per_s;
-                    }
-                    Err(_) => {
-                        // Set NaN for invalid interpolation points
-                        electron_matrix[[elong_idx, lat_idx]] = f64::NAN;
-                        dn_matrix[[elong_idx, lat_idx]] = f64::NAN;
-                    }
+                    // Calculate mean DN/s (divide by exposure time to get per second)
+                    let mean_dn_total = zodiacal_dn.map(|&x| x as f64).mean().unwrap();
+                    let mean_dn_per_s = mean_dn_total / exposure.as_secs_f64();
+                    dn_matrix[[elong_idx, lat_idx]] = mean_dn_per_s;
+                }
+                Err(_) => {
+                    // Set NaN for invalid interpolation points
+                    electron_matrix[[elong_idx, lat_idx]] = f64::NAN;
+                    dn_matrix[[elong_idx, lat_idx]] = f64::NAN;
                 }
             }
         }
+    }
 
-        // Print DN/s matrix with headers
-        println!("  DN/s Table:");
-        print!("  Elong\\Lat |");
-        for &lat in &latitudes {
-            print!(" {lat:8.1}° |");
-        }
-        println!();
+    // Print DN/s matrix with headers
+    println!("  DN/s Table:");
+    print!("  Elong\\Lat |");
+    for &lat in &latitudes {
+        print!(" {lat:8.1}° |");
+    }
+    println!();
 
-        print!("  ----------|");
-        for _ in &latitudes {
-            print!("----------|");
-        }
-        println!();
+    print!("  ----------|");
+    for _ in &latitudes {
+        print!("----------|");
+    }
+    println!();
 
-        for (elong_idx, &elong) in elongations.iter().enumerate() {
-            print!("  {elong:6.1}°   |");
-            for lat_idx in 0..latitudes.len() {
-                let dn_per_s = dn_matrix[[elong_idx, lat_idx]];
-                if dn_per_s.is_nan() {
-                    print!("     -    |");
-                } else {
-                    print!(" {dn_per_s:8.7} |");
-                }
+    for (elong_idx, &elong) in elongations.iter().enumerate() {
+        print!("  {elong:6.1}°   |");
+        for lat_idx in 0..latitudes.len() {
+            let dn_per_s = dn_matrix[[elong_idx, lat_idx]];
+            if dn_per_s.is_nan() {
+                print!("     -    |");
+            } else {
+                print!(" {dn_per_s:8.7} |");
             }
-            println!();
-        }
-        println!();
-
-        // Print electrons/s matrix with headers
-        println!("  Electrons/s Table:");
-        print!("  Elong\\Lat |");
-        for &lat in &latitudes {
-            print!(" {lat:8.1}° |");
-        }
-        println!();
-
-        print!("  ----------|");
-        for _ in &latitudes {
-            print!("----------|");
-        }
-        println!();
-
-        for (elong_idx, &elong) in elongations.iter().enumerate() {
-            print!("  {elong:6.1}°   |");
-            for lat_idx in 0..latitudes.len() {
-                let electrons_per_s = electron_matrix[[elong_idx, lat_idx]];
-                if electrons_per_s.is_nan() {
-                    print!("     -    |");
-                } else {
-                    print!(" {electrons_per_s:8.2e} |");
-                }
-            }
-            println!();
         }
         println!();
     }
+    println!();
+
+    // Print electrons/s matrix with headers
+    println!("  Electrons/s Table:");
+    print!("  Elong\\Lat |");
+    for &lat in &latitudes {
+        print!(" {lat:8.1}° |");
+    }
+    println!();
+
+    print!("  ----------|");
+    for _ in &latitudes {
+        print!("----------|");
+    }
+    println!();
+
+    for (elong_idx, &elong) in elongations.iter().enumerate() {
+        print!("  {elong:6.1}°   |");
+        for lat_idx in 0..latitudes.len() {
+            let electrons_per_s = electron_matrix[[elong_idx, lat_idx]];
+            if electrons_per_s.is_nan() {
+                print!("     -    |");
+            } else {
+                print!(" {electrons_per_s:8.2e} |");
+            }
+        }
+        println!();
+    }
+    println!();
 
     Ok(())
 }
