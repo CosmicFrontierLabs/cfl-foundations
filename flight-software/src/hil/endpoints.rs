@@ -3,7 +3,7 @@ use axum::{
     extract::State,
     http::{header, StatusCode},
     response::{Html, Response},
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use image::{ImageBuffer, Luma};
@@ -230,5 +230,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/jpeg", get(jpeg_frame_endpoint))
         .route("/raw", get(raw_frame_endpoint))
         .route("/stats", get(stats_endpoint))
+        .route("/gpio_pattern", post(super::latency::gpio_pattern_endpoint))
+        .route(
+            "/latency_measure",
+            post(super::latency::latency_measurement_endpoint),
+        )
         .with_state(state)
 }

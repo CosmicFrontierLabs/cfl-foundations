@@ -1,6 +1,7 @@
 pub mod camera_info;
 pub mod endpoints;
 pub mod image_utils;
+pub mod latency;
 pub mod state;
 pub mod stats;
 
