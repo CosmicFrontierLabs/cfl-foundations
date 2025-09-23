@@ -13,6 +13,13 @@ use std::time::Instant;
 
 pub mod filters;
 
+// Camera abstraction layer
+pub mod simulator_camera;
+pub mod v4l2_camera;
+
+// Test motion patterns
+pub mod test_motions;
+
 use shared::image_proc::detection::aabb::AABB;
 
 /// ROI (Region of Interest) around a guide star

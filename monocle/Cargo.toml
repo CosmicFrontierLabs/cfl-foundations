@@ -14,8 +14,14 @@ log = "0.4"
 # Array processing
 ndarray = "0.15"
 
+# Random number generation for test patterns
+rand = "0.8"
+rand_chacha = "0.3"
+
 # Internal dependencies
 shared = { path = "../shared" }
+simulator = { path = "../simulator" }
+starfield = "0.2.2"
 
 [dev-dependencies]
 env_logger = "0.11"
