@@ -37,6 +37,7 @@
 
 pub mod airy;
 pub mod centroid;
+pub mod contamination;
 pub mod convolve2d;
 pub mod detection;
 pub mod histogram_stretch;
