@@ -2,7 +2,12 @@
 //!
 //! This simplified test demonstrates the integration without requiring catalog loading
 
-use monocle::{FgsCallbackEvent, FgsConfig, FgsEvent, FineGuidanceSystem};
+use monocle::{
+    callback::FgsCallbackEvent,
+    config::FgsConfig,
+    state::{FgsEvent, FgsState},
+    FineGuidanceSystem,
+};
 use ndarray::Array2;
 use shared::image_proc::airy::PixelScaledAiryDisk;
 use shared::units::Wavelength;
@@ -166,7 +171,7 @@ fn test_basic_simulator_fgs_integration() {
     });
 
     // Start FGS
-    assert_eq!(fgs.state(), &monocle::FgsState::Idle);
+    assert_eq!(fgs.state(), &FgsState::Idle);
     fgs.process_event(FgsEvent::StartFgs).unwrap();
 
     // Acquisition phase
@@ -198,7 +203,7 @@ fn test_basic_simulator_fgs_integration() {
     assert!(result.is_ok());
 
     // Check if tracking
-    let is_tracking = matches!(fgs.state(), monocle::FgsState::Tracking { .. });
+    let is_tracking = matches!(fgs.state(), FgsState::Tracking { .. });
     if !is_tracking {
         println!("FGS did not enter tracking state: {:?}", fgs.state());
         println!("Detected stars: {:?}", fgs.get_detected_stars());

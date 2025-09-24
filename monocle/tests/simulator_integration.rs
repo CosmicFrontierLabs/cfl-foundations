@@ -3,7 +3,12 @@
 //! This test generates realistic telescope frames using the simulator and feeds them
 //! into the monocle Fine Guidance System to validate end-to-end tracking.
 
-use monocle::{FgsCallbackEvent, FgsConfig, FgsEvent, FineGuidanceSystem};
+use monocle::{
+    callback::FgsCallbackEvent,
+    config::FgsConfig,
+    state::{FgsEvent, FgsState},
+    FineGuidanceSystem,
+};
 use ndarray::Array2;
 use shared::image_proc::detection::StarFinder;
 use simulator::hardware::sensor::models as sensor_models;
@@ -118,7 +123,7 @@ fn test_simulator_to_fgs_tracking() {
     let base_pointing = Equatorial::from_degrees(83.82, -5.39); // Near M42
 
     // === Phase 1: Start FGS ===
-    assert_eq!(fgs.state(), &monocle::FgsState::Idle);
+    assert_eq!(fgs.state(), &FgsState::Idle);
     fgs.process_event(FgsEvent::StartFgs).unwrap();
 
     // === Phase 2: Acquisition (send multiple frames) ===
@@ -153,7 +158,7 @@ fn test_simulator_to_fgs_tracking() {
     assert!(result.is_ok());
 
     // Check if we're tracking
-    let is_tracking = matches!(fgs.state(), monocle::FgsState::Tracking { .. });
+    let is_tracking = matches!(fgs.state(), FgsState::Tracking { .. });
     if !is_tracking {
         println!(
             "Warning: FGS did not enter tracking state. State: {:?}",
@@ -221,7 +226,7 @@ fn test_simulator_to_fgs_tracking() {
 
     // Stop FGS
     fgs.process_event(FgsEvent::StopFgs).unwrap();
-    assert_eq!(fgs.state(), &monocle::FgsState::Idle);
+    assert_eq!(fgs.state(), &FgsState::Idle);
 
     println!("\n✅ Simulator integration test completed successfully!");
 }

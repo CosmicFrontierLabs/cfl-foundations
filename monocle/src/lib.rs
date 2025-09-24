@@ -1,17 +1,19 @@
-//! MONACLE - Modular Orientation, Navigation & Optical Control Logic Engine
+//! MONOCLE - Modular Orientation, Navigation & Optical Control Logic Engine
 //!
 //! Fine Guidance System state machine implementation based on the FGS ConOps.
 //! Processes images through states: Idle -> Acquiring -> Calibrating -> Tracking
 
 use ndarray::{Array2, ArrayView2};
-use serde::{Deserialize, Serialize};
 use shared::image_proc::detection::{detect_stars, StarDetection};
 use shared::image_proc::noise::quantify::estimate_noise_level;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+pub mod callback;
+pub mod config;
 pub mod filters;
+pub mod state;
 
 // Camera abstraction layer
 pub mod simulator_camera;
@@ -22,6 +24,11 @@ pub mod test_motions;
 // Tracking visualization
 pub mod tracking_plots;
 
+use crate::callback::{
+    CallbackId, FgsCallback, FgsCallbackEvent, PositionEstimate, TrackingLostReason,
+};
+use crate::config::FgsConfig;
+use crate::state::{FgsEvent, FgsState};
 use shared::image_proc::detection::aabb::AABB;
 
 /// ROI (Region of Interest) around a guide star
@@ -83,135 +90,6 @@ impl Default for GuidanceUpdate {
         }
     }
 }
-
-/// Fine Guidance System states
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum FgsState {
-    /// Waiting for START_FGS command
-    Idle,
-    /// Collecting frames for averaging
-    Acquiring { frames_collected: usize },
-    /// Detecting stars, selecting guides, setting references
-    Calibrating,
-    /// Continuous centroiding and FSM commanding
-    Tracking { frames_processed: usize },
-    /// Attempting to recover lost stars
-    Reacquiring { attempts: usize },
-}
-
-/// Events that trigger state transitions
-#[derive(Debug, Clone)]
-pub enum FgsEvent<'a> {
-    /// Start the FGS
-    StartFgs,
-    /// Abort current operation
-    Abort,
-    /// Stop FGS (graceful shutdown)
-    StopFgs,
-    /// Process a new image frame
-    ProcessFrame(ArrayView2<'a, u16>),
-}
-
-/// Configuration for the Fine Guidance System
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FgsConfig {
-    /// Number of frames to average during acquisition
-    pub acquisition_frames: usize,
-    /// Minimum SNR for guide star selection
-    pub min_guide_star_snr: f64,
-    /// Maximum number of guide stars to track
-    pub max_guide_stars: usize,
-    /// ROI size around each guide star (pixels)
-    pub roi_size: usize,
-    /// Maximum reacquisition attempts before recalibration
-    pub max_reacquisition_attempts: usize,
-    /// Centroid computation method
-    pub centroid_method: CentroidMethod,
-    /// Multiplier for FWHM to determine centroid computation radius (e.g., 5.0 for 5x FWHM)
-    pub centroid_radius_multiplier: f64,
-}
-
-impl Default for FgsConfig {
-    fn default() -> Self {
-        Self {
-            acquisition_frames: 10,
-            min_guide_star_snr: 20.0,
-            max_guide_stars: 3,
-            roi_size: 64,
-            max_reacquisition_attempts: 5,
-            centroid_method: CentroidMethod::CenterOfMass,
-            centroid_radius_multiplier: 5.0,
-        }
-    }
-}
-
-/// Centroid computation methods
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum CentroidMethod {
-    /// Intensity-weighted center of mass
-    CenterOfMass,
-    /// Gaussian PSF fitting
-    GaussianFit,
-    /// Quadratic interpolation
-    QuadraticInterpolation,
-}
-
-/// Position estimate for tracking callbacks
-#[derive(Debug, Clone)]
-pub struct PositionEstimate {
-    /// X position in pixels
-    pub x: f64,
-    /// Y position in pixels
-    pub y: f64,
-    /// Confidence level (0.0 to 1.0)
-    pub confidence: f64,
-    /// Timestamp in microseconds
-    pub timestamp_us: u64,
-}
-
-/// Events emitted for external callbacks
-#[derive(Debug, Clone)]
-pub enum FgsCallbackEvent {
-    /// Tracking has started
-    TrackingStarted {
-        track_id: u32,
-        initial_position: PositionEstimate,
-        num_guide_stars: usize,
-    },
-    /// Tracking position update
-    TrackingUpdate {
-        track_id: u32,
-        position: PositionEstimate,
-        delta_x: f64,
-        delta_y: f64,
-        num_stars_used: usize,
-    },
-    /// Tracking has been lost
-    TrackingLost {
-        track_id: u32,
-        last_position: PositionEstimate,
-        reason: TrackingLostReason,
-    },
-}
-
-/// Reasons for tracking loss
-#[derive(Debug, Clone)]
-pub enum TrackingLostReason {
-    /// Signal too weak to track
-    SignalTooWeak,
-    /// Target moved out of bounds
-    OutOfBounds,
-    /// User requested stop
-    UserRequested,
-    /// System error occurred
-    SystemError(String),
-}
-
-/// Callback ID for registration/deregistration
-pub type CallbackId = u64;
-
-/// Callback function type
-pub type FgsCallback = Arc<dyn Fn(&FgsCallbackEvent) + Send + Sync>;
 
 /// Main Fine Guidance System state machine
 pub struct FineGuidanceSystem {

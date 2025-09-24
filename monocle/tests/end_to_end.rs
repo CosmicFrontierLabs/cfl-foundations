@@ -1,4 +1,9 @@
-use monocle::{FgsCallbackEvent, FgsConfig, FgsEvent, FgsState, FineGuidanceSystem};
+use monocle::{
+    callback::FgsCallbackEvent,
+    config::FgsConfig,
+    state::{FgsEvent, FgsState},
+    FineGuidanceSystem,
+};
 use ndarray::Array2;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};

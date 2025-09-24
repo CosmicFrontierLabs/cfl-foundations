@@ -1,9 +1,12 @@
 use clap::Parser;
 use monocle::{
+    callback::FgsCallbackEvent,
+    config::FgsConfig,
     simulator_camera::SimulatorCamera,
+    state::{FgsEvent, FgsState},
     test_motions::TestMotions,
     tracking_plots::{TrackingDataPoint, TrackingPlotConfig, TrackingPlotter},
-    FgsCallbackEvent, FgsConfig, FgsEvent, FgsState, FineGuidanceSystem,
+    FineGuidanceSystem,
 };
 use shared::camera_interface::CameraInterface;
 use shared::star_projector::StarProjector;

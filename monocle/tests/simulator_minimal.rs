@@ -2,7 +2,11 @@
 //!
 //! This is a simplified test that just verifies the basic integration works
 
-use monocle::{FgsConfig, FgsEvent, FineGuidanceSystem};
+use monocle::{
+    config::FgsConfig,
+    state::{FgsEvent, FgsState},
+    FineGuidanceSystem,
+};
 use simulator::hardware::sensor::models as sensor_models;
 use simulator::hardware::{SatelliteConfig, TelescopeConfig};
 use simulator::photometry::zodiacal::SolarAngularCoordinates;
@@ -37,7 +41,7 @@ fn test_basic_setup() {
     let mut fgs = FineGuidanceSystem::new(fgs_config);
 
     // Verify basic state transitions work
-    assert_eq!(fgs.state(), &monocle::FgsState::Idle);
+    assert_eq!(fgs.state(), &FgsState::Idle);
     let result = fgs.process_event(FgsEvent::StartFgs);
     assert!(result.is_ok());
 
