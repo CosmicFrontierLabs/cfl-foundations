@@ -93,6 +93,11 @@ impl SimulatorCamera {
         camera
     }
 
+    /// Get the satellite configuration
+    pub fn satellite_config(&self) -> &SatelliteConfig {
+        &self.satellite
+    }
+
     /// Generate a frame using the simulator
     fn generate_frame(&mut self) -> CameraResult<Array2<u16>> {
         let pointing = self.pointing;

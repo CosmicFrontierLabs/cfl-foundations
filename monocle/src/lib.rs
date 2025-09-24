@@ -53,6 +53,8 @@ pub struct GuideStar {
     pub snr: f64,
     /// Region of interest for tracking
     pub roi: Roi,
+    /// Estimated star diameter in pixels
+    pub diameter: f64,
 }
 
 /// Guidance update produced by the system
@@ -125,6 +127,8 @@ pub struct FgsConfig {
     pub max_reacquisition_attempts: usize,
     /// Centroid computation method
     pub centroid_method: CentroidMethod,
+    /// Multiplier for FWHM to determine centroid computation radius (e.g., 5.0 for 5x FWHM)
+    pub centroid_radius_multiplier: f64,
 }
 
 impl Default for FgsConfig {
@@ -136,6 +140,7 @@ impl Default for FgsConfig {
             roi_size: 64,
             max_reacquisition_attempts: 5,
             centroid_method: CentroidMethod::CenterOfMass,
+            centroid_radius_multiplier: 5.0,
         }
     }
 }
@@ -631,6 +636,7 @@ impl FineGuidanceSystem {
                     reference_x: star.x,
                     reference_y: star.y,
                 },
+                diameter: star.diameter,
             })
             .collect();
 
@@ -647,19 +653,116 @@ impl FineGuidanceSystem {
         Ok(())
     }
 
+    /// Create a circular mask centered at given position with specified radius
+    fn create_circular_mask(
+        shape: (usize, usize),
+        center_x: f64,
+        center_y: f64,
+        radius: f64,
+    ) -> ndarray::Array2<bool> {
+        let (height, width) = shape;
+        ndarray::Array2::from_shape_fn((height, width), |(row, col)| {
+            let dx = col as f64 - center_x;
+            let dy = row as f64 - center_y;
+            let distance = (dx * dx + dy * dy).sqrt();
+            distance <= radius
+        })
+    }
+
     /// Track guide stars and compute guidance update
-    fn track(&mut self, _frame: ArrayView2<u16>) -> Result<GuidanceUpdate, String> {
-        // TODO: Implement tracking logic
-        // 1. Extract ROIs
-        // 2. Compute centroids
-        // 3. Calculate deltas from reference
-        // 4. Combine into guidance update
+    fn track(&mut self, frame: ArrayView2<u16>) -> Result<GuidanceUpdate, String> {
+        use shared::image_proc::centroid::compute_centroid_from_mask;
+
+        let mut delta_x_sum = 0.0;
+        let mut delta_y_sum = 0.0;
+        let mut total_quality = 0.0;
+        let stars_tracked = self.guide_stars.len();
+
+        // Process each guide star
+        for guide_star in &mut self.guide_stars {
+            // Extract ROI from the frame
+            let roi_bounds = &guide_star.roi.bounds;
+
+            // Ensure ROI is within frame bounds
+            let (frame_height, frame_width) = frame.dim();
+            if roi_bounds.min_row >= frame_height || roi_bounds.min_col >= frame_width {
+                continue;
+            }
+
+            let roi_min_row = roi_bounds.min_row.min(frame_height - 1);
+            let roi_max_row = roi_bounds.max_row.min(frame_height - 1);
+            let roi_min_col = roi_bounds.min_col.min(frame_width - 1);
+            let roi_max_col = roi_bounds.max_col.min(frame_width - 1);
+
+            // Extract the ROI subarray
+            let roi = frame.slice(ndarray::s![
+                roi_min_row..=roi_max_row,
+                roi_min_col..=roi_max_col
+            ]);
+
+            // Convert ROI to f64 for centroid calculation
+            let roi_f64 = roi.mapv(|v| v as f64);
+
+            // Create mask for centroid calculation based on configurable radius
+            // Use guide star diameter as FWHM estimate
+            let fwhm = guide_star.diameter;
+            let radius = fwhm * self.config.centroid_radius_multiplier;
+
+            // Create circular mask centered on expected position within ROI
+            let roi_height = roi_max_row - roi_min_row + 1;
+            let roi_width = roi_max_col - roi_min_col + 1;
+            let roi_center_x = (guide_star.x - roi_min_col as f64)
+                .max(0.0)
+                .min(roi_width as f64 - 1.0);
+            let roi_center_y = (guide_star.y - roi_min_row as f64)
+                .max(0.0)
+                .min(roi_height as f64 - 1.0);
+
+            let mask = Self::create_circular_mask(
+                (roi_height, roi_width),
+                roi_center_x,
+                roi_center_y,
+                radius,
+            );
+
+            // Compute centroid within the masked region
+            let centroid_result = compute_centroid_from_mask(&roi_f64.view(), &mask.view());
+
+            // Convert centroid position back to full frame coordinates
+            let new_x = roi_min_col as f64 + centroid_result.x;
+            let new_y = roi_min_row as f64 + centroid_result.y;
+
+            // Calculate delta from reference position
+            let delta_x = new_x - guide_star.roi.reference_x;
+            let delta_y = new_y - guide_star.roi.reference_y;
+
+            // Update guide star position
+            guide_star.x = new_x;
+            guide_star.y = new_y;
+            guide_star.flux = centroid_result.flux;
+            guide_star.diameter = centroid_result.diameter;
+
+            // Accumulate deltas
+            delta_x_sum += delta_x;
+            delta_y_sum += delta_y;
+
+            // Estimate quality based on flux and shape
+            let quality = (centroid_result.flux / 1000.0).min(1.0)
+                * (1.0 / centroid_result.aspect_ratio).min(1.0);
+            total_quality += quality;
+        }
+
+        // Calculate average deltas and quality
+        let avg_delta_x = delta_x_sum / stars_tracked as f64;
+        let avg_delta_y = delta_y_sum / stars_tracked as f64;
+        let avg_quality = total_quality / stars_tracked as f64;
+
         Ok(GuidanceUpdate {
-            delta_x: 0.0,
-            delta_y: 0.0,
-            num_stars_used: self.guide_stars.len(),
+            delta_x: avg_delta_x,
+            delta_y: avg_delta_y,
+            num_stars_used: stars_tracked,
             timestamp: Instant::now(),
-            quality: 1.0,
+            quality: avg_quality,
         })
     }
 

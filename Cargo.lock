@@ -1953,6 +1953,7 @@ name = "monocle"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "clap",
  "env_logger",
  "log",
  "ndarray 0.15.6",
