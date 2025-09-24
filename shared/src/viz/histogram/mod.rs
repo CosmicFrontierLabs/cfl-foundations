@@ -43,103 +43,16 @@
 //! # Usage Examples
 //!
 //! ## Basic Magnitude Distribution
-//! ```rust
-//! use shared::viz::histogram::{create_magnitude_histogram, HistogramConfig};
-//!
-//! // Stellar magnitudes from photometric catalog
-//! let magnitudes = vec![12.3, 13.1, 13.7, 14.2, 14.8, 15.1, 15.9, 16.2];
-//!
-//! // Create magnitude histogram with standard 1-magnitude bins
-//! let hist = create_magnitude_histogram(
-//!     &magnitudes,
-//!     Some("V-band Magnitude Distribution".to_string()),
-//!     false  // Linear scale
-//! )?;
-//!
-//! // Display with statistics
-//! hist.print()?;
-//! println!("\nStatistical Summary:");
-//! println!("{}", hist.statistics_summary());
-//! # Ok::<(), Box<dyn std::error::Error>>(())
-//! ```
+//! Create magnitude histogram with standard 1-magnitude bins for stellar photometry analysis.
 //!
 //! ## Photometric Error Analysis
-//! ```rust
-//! use shared::viz::histogram::{Histogram, HistogramConfig, Scale};
-//!
-//! // Photometric uncertainties in magnitudes
-//! let errors = vec![0.01, 0.02, 0.03, 0.05, 0.08, 0.12, 0.18, 0.25];
-//!
-//! // Create fine-binned histogram for error distribution
-//! let mut hist = Histogram::new_equal_bins(0.0..0.5, 20)?;
-//!
-//! // Configure for error analysis
-//! let config = HistogramConfig {
-//!     title: Some("Photometric Error Distribution".to_string()),
-//!     scale: Scale::Log10,  // Logarithmic scale for wide error range
-//!     bar_char: '▓',
-//!     show_percentage: true,
-//!     show_counts: false,
-//!     max_bar_width: 50,
-//!     ..Default::default()
-//! };
-//!
-//! hist = hist.with_config(config);
-//! hist.add_all(errors.iter().copied());
-//!
-//! // Analyze error characteristics
-//! if let Some(median_error) = hist.median() {
-//!     println!("Median photometric error: {:.3} mag", median_error);
-//! }
-//! # Ok::<(), Box<dyn std::error::Error>>(())
-//! ```
+//! Configure histograms with logarithmic scaling for analyzing measurement uncertainties.
 //!
 //! ## Color Index Distribution
-//! ```rust
-//! use shared::viz::histogram::histogram;
-//!
-//! // B-V color indices from stellar photometry
-//! let bv_colors = vec![-0.3, -0.1, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4];
-//!
-//! // Quick histogram generation
-//! let color_hist = histogram(
-//!     &bv_colors,
-//!     15,                    // Number of bins
-//!     -0.5..1.5,            // Color range
-//!     Some("B-V Color Distribution".to_string()),
-//!     false                  // Linear scale
-//! )?;
-//!
-//! println!("{}", color_hist);
-//! # Ok::<(), Box<dyn std::error::Error>>(())
-//! ```
+//! Generate quick histograms for stellar color distributions.
 //!
 //! ## Survey Completeness Analysis
-//! ```rust
-//! use shared::viz::histogram::{create_magnitude_histogram, Scale};
-//!
-//! // Detected star magnitudes from survey
-//! let survey_mags = vec![10.1, 11.3, 12.5, 13.8, 14.2, 15.1, 15.9, 16.5];
-//!
-//! // Create histogram with logarithmic scaling for wide magnitude range
-//! let completeness_hist = create_magnitude_histogram(
-//!     &survey_mags,
-//!     Some("Survey Completeness vs Magnitude".to_string()),
-//!     true  // Use log scale to emphasize faint-end dropoff
-//! )?;
-//!
-//! // Check for completeness limit
-//! let stats = completeness_hist.statistics_summary();
-//! println!("{}", stats);
-//!
-//! // Look for skewness indicating completeness limit
-//! if let Some(skew) = completeness_hist.skewness() {
-//!     if skew < -0.5 {
-//!         println!("Warning: Negative skewness suggests completeness limit reached");
-//!     }
-//! }
-//! # Ok::<(), Box<dyn std::error::Error>>(())
-//! ```
+//! Assess detection limits and observational bias using skewness detection.
 //!
 //! # Performance and Accuracy
 //!
@@ -373,14 +286,7 @@ where
     /// * `Err(VizError)` - Invalid bin edge configuration
     ///
     /// # Examples
-    /// ```rust
-    /// use shared::viz::histogram::Histogram;
-    ///
-    /// // Custom magnitude bins with finer resolution at bright end
-    /// let mag_edges = vec![10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0];
-    /// let hist = Histogram::new(mag_edges)?;
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// Custom magnitude bins with finer resolution at bright end.
     pub fn new(bin_edges: Vec<T>) -> Result<Self> {
         if bin_edges.len() < 2 {
             return Err(VizError::HistogramError(
@@ -433,16 +339,8 @@ where
     /// * `Err(VizError)` - Invalid parameters (zero bins, invalid range)
     ///
     /// # Examples
-    /// ```rust
-    /// use shared::viz::histogram::Histogram;
-    ///
-    /// // Color index histogram with 0.1 magnitude bins
-    /// let color_hist = Histogram::new_equal_bins(-0.5..2.0, 25)?;
-    ///
-    /// // Photometric error histogram with fine resolution
-    /// let error_hist = Histogram::new_equal_bins(0.0..0.5, 50)?;
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// Color index histogram with 0.1 magnitude bins.
+    /// Photometric error histogram with fine resolution.
     pub fn new_equal_bins(range: Range<T>, num_bins: usize) -> Result<Self>
     where
         T: std::ops::Sub<Output = T>
@@ -484,23 +382,7 @@ where
     /// Updated histogram with new configuration applied
     ///
     /// # Examples
-    /// ```rust
-    /// use shared::viz::histogram::{Histogram, HistogramConfig, Scale};
-    ///
-    /// let mut hist = Histogram::new_equal_bins(0.0..10.0, 10)?;
-    ///
-    /// // Apply custom configuration
-    /// let config = HistogramConfig {
-    ///     title: Some("Stellar Magnitudes".to_string()),
-    ///     scale: Scale::Log10,
-    ///     bar_char: '█',
-    ///     max_bar_width: 60,
-    ///     ..Default::default()
-    /// };
-    ///
-    /// hist = hist.with_config(config);
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// Apply custom configuration with logarithmic scaling and custom bar character.
     pub fn with_config(mut self, config: HistogramConfig) -> Self {
         self.config = config;
         self
@@ -522,17 +404,7 @@ where
     /// * `value` - Measurement to add to histogram
     ///
     /// # Examples
-    /// ```rust
-    /// use shared::viz::histogram::Histogram;
-    ///
-    /// let mut mag_hist = Histogram::new_equal_bins(10.0..20.0, 10)?;
-    ///
-    /// // Add stellar magnitudes from photometric catalog
-    /// mag_hist.add(12.34);  // Bin for magnitude 12-13
-    /// mag_hist.add(15.67);  // Bin for magnitude 15-16
-    /// mag_hist.add(9.99);   // Outside range, ignored
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// Add stellar magnitudes from photometric catalog to appropriate bins.
     pub fn add(&mut self, value: T) {
         let bin_idx = self.find_bin(value);
         if let Some(idx) = bin_idx {
@@ -556,19 +428,7 @@ where
     /// * `values` - Any iterable collection of values
     ///
     /// # Examples
-    /// ```rust
-    /// use shared::viz::histogram::Histogram;
-    ///
-    /// let mut hist = Histogram::new_equal_bins(0.0..5.0, 10)?;
-    ///
-    /// // Add from vector
-    /// let measurements = vec![1.2, 2.3, 3.4, 4.5];
-    /// hist.add_all(measurements);
-    ///
-    /// // Add from iterator
-    /// hist.add_all((0..100).map(|i| i as f64 / 20.0));
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// Add values from vectors or iterators for bulk data loading.
     pub fn add_all<I>(&mut self, values: I)
     where
         I: IntoIterator<Item = T>,
@@ -668,17 +528,7 @@ where
     /// * `None` - Empty histogram (no data)
     ///
     /// # Examples
-    /// ```rust,ignore
-    /// // NOTE: This doctest is ignored due to Result handling issues
-    /// use shared::viz::histogram::Histogram;
-    ///
-    /// let mut hist = Histogram::new_equal_bins(0.0..10.0, 10)?;
-    /// hist.add_all(vec![2.0, 4.0, 6.0, 8.0]);
-    ///
-    /// let mean = hist.mean().unwrap();
-    /// assert!((mean - 5.0).abs() < 0.1);  // Should be approximately 5.0
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// Compute mean from binned histogram data for statistical analysis.
     pub fn mean(&self) -> Option<f64>
     where
         T: Into<f64> + Copy,
@@ -725,16 +575,7 @@ where
     /// * `None` - Insufficient data (n < 2)
     ///
     /// # Examples
-    /// ```rust
-    /// use shared::viz::histogram::Histogram;
-    ///
-    /// let mut hist = Histogram::new_equal_bins(0.0..10.0, 10)?;
-    /// hist.add_all(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
-    ///
-    /// let variance = hist.variance().unwrap();
-    /// assert!(variance > 0.0);  // Should be positive for varied data
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// Calculate variance from binned data with Bessel's correction.
     pub fn variance(&self) -> Option<f64>
     where
         T: Into<f64> + Copy,
@@ -795,17 +636,7 @@ where
     /// * `None` - Insufficient data (n < 2)
     ///
     /// # Examples
-    /// ```rust
-    /// use shared::viz::histogram::Histogram;
-    ///
-    /// let mut mag_errors = Histogram::new_equal_bins(0.0..0.5, 20)?;
-    /// mag_errors.add_all(vec![0.01, 0.02, 0.03, 0.05, 0.08]);
-    ///
-    /// if let Some(sigma) = mag_errors.std_dev() {
-    ///     println!("Typical photometric error: {:.3} mag", sigma);
-    /// }
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// Calculate photometric error distribution spread.
     pub fn std_dev(&self) -> Option<f64>
     where
         T: Into<f64> + Copy,
@@ -847,20 +678,7 @@ where
     /// * `None` - Insufficient data (n < 3)
     ///
     /// # Examples
-    /// ```rust
-    /// use shared::viz::histogram::Histogram;
-    ///
-    /// let mut survey_mags = Histogram::new_equal_bins(10.0..20.0, 20)?;
-    /// // Simulate survey with completeness limit at faint end
-    /// survey_mags.add_all(vec![12.1, 13.2, 14.1, 15.3, 16.2, 17.1, 17.9]);
-    ///
-    /// if let Some(skew) = survey_mags.skewness() {
-    ///     if skew < -0.5 {
-    ///         println!("Warning: Negative skewness suggests completeness limit");
-    ///     }
-    /// }
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// Detect survey completeness limits through negative skewness.
     pub fn skewness(&self) -> Option<f64>
     where
         T: Into<f64> + Copy,
@@ -928,20 +746,7 @@ where
     /// * `None` - Insufficient data (n < 4)
     ///
     /// # Examples
-    /// ```rust
-    /// use shared::viz::histogram::Histogram;
-    ///
-    /// let mut errors = Histogram::new_equal_bins(0.0..1.0, 50)?;
-    /// // Add photometric errors with some outliers
-    /// errors.add_all(vec![0.01, 0.02, 0.02, 0.03, 0.15, 0.02, 0.45]);
-    ///
-    /// if let Some(kurt) = errors.kurtosis() {
-    ///     if kurt > 2.0 {
-    ///         println!("High kurtosis: {} - check for systematic errors", kurt);
-    ///     }
-    /// }
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// Identify systematic errors through excess kurtosis in error distributions.
     pub fn kurtosis(&self) -> Option<f64>
     where
         T: Into<f64> + Copy,
@@ -1003,20 +808,7 @@ where
     /// * `None` - Empty histogram
     ///
     /// # Examples
-    /// ```rust
-    /// use shared::viz::histogram::Histogram;
-    ///
-    /// let mut mags = Histogram::new_equal_bins(10.0..20.0, 20)?;
-    /// mags.add_all(vec![12.1, 13.5, 14.2, 15.1, 16.8, 17.2, 18.5]);
-    ///
-    /// let median = mags.median().unwrap();
-    /// let mean = mags.mean().unwrap();
-    ///
-    /// if median < mean {
-    ///     println!("Right-skewed distribution detected");
-    /// }
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// Compare median vs mean to detect distribution skewness.
     pub fn median(&self) -> Option<f64>
     where
         T: Into<f64> + Copy,
@@ -1072,24 +864,7 @@ where
     /// Formatted string with complete statistical analysis
     ///
     /// # Examples
-    /// ```rust
-    /// use shared::viz::histogram::create_magnitude_histogram;
-    ///
-    /// let mags = vec![12.3, 13.1, 13.8, 14.2, 14.9, 15.1, 15.7, 16.2];
-    /// let hist = create_magnitude_histogram(&mags, None, false)?;
-    ///
-    /// println!("{}", hist.statistics_summary());
-    /// // Output includes:
-    /// // Mean: 14.662500
-    /// // Standard Deviation: 1.204159
-    /// // Median: 14.550000
-    /// // Skewness: 0.123456
-    /// //   Interpretation: Approximately symmetric distribution
-    /// // Kurtosis (excess): -0.567890
-    /// //   Interpretation: Light-tailed (fewer outliers than normal)
-    /// // Sample size: 8
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// Generate complete statistical summary with interpretations.
     pub fn statistics_summary(&self) -> String
     where
         T: Into<f64> + Copy,
@@ -1211,16 +986,7 @@ where
     /// * `Err(VizError)` - Formatting error
     ///
     /// # Examples
-    /// ```rust
-    /// use shared::viz::histogram::{Histogram, HistogramConfig};
-    ///
-    /// let mut hist = Histogram::new_equal_bins(0.0..5.0, 5)?;
-    /// hist.add_all(vec![1.2, 2.3, 2.7, 3.1, 4.2]);
-    ///
-    /// let formatted = hist.format()?;
-    /// println!("{}", formatted);
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// Format histogram as ASCII text for display or reporting.
     pub fn format(&self) -> Result<String> {
         let mut output = String::new();
 
@@ -1371,16 +1137,7 @@ where
     /// * `Err(VizError)` - Formatting or I/O error
     ///
     /// # Examples
-    /// ```rust
-    /// use shared::viz::histogram::create_magnitude_histogram;
-    ///
-    /// let mags = vec![12.1, 13.5, 14.2, 15.8, 16.1];
-    /// let hist = create_magnitude_histogram(&mags,
-    ///     Some("Stellar Magnitudes".to_string()), false)?;
-    ///
-    /// hist.print()?;  // Displays formatted histogram
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// Display formatted histogram directly to standard output.
     pub fn print(&self) -> Result<()> {
         println!("{}", self.format()?);
         Ok(())
@@ -1428,45 +1185,8 @@ where
 /// * `Err(VizError)` - Empty input or other error
 ///
 /// # Examples
-/// ```rust
-/// use shared::viz::histogram::create_magnitude_histogram;
-///
-/// // V-band magnitudes from photometric catalog
-/// let v_mags = vec![11.2, 12.8, 13.1, 13.9, 14.2, 15.1, 15.8, 16.5];
-///
-/// let hist = create_magnitude_histogram(
-///     &v_mags,
-///     Some("V-band Magnitude Distribution".to_string()),
-///     false
-/// )?;
-///
-/// hist.print()?;
-/// println!("\nStatistics:");
-/// println!("{}", hist.statistics_summary());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
-///
-/// # Survey Completeness Example
-/// ```rust
-/// use shared::viz::histogram::create_magnitude_histogram;
-///
-/// // Survey data showing completeness limit
-/// let survey_mags = vec![10.1, 11.3, 12.1, 13.2, 14.1, 15.3, 16.1, 16.8];
-///
-/// let completeness = create_magnitude_histogram(
-///     &survey_mags,
-///     Some("Survey Magnitude Distribution".to_string()),
-///     true  // Log scale emphasizes faint-end dropoff
-/// )?;
-///
-/// // Check for completeness limit indicators
-/// if let Some(skew) = completeness.skewness() {
-///     if skew < -0.5 {
-///         println!("Warning: Survey may be incomplete at faint end");
-///     }
-/// }
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
+/// V-band magnitude distribution with statistics.
+/// Survey completeness analysis using skewness detection.
 pub fn create_magnitude_histogram(
     magnitudes: &[f64],
     title: Option<String>,
@@ -1570,42 +1290,8 @@ pub fn create_magnitude_histogram(
 /// * `Err(VizError)` - Invalid parameters or formatting error
 ///
 /// # Examples
-/// ```rust
-/// use shared::viz::histogram::histogram;
-///
-/// // Quick analysis of color indices
-/// let bv_colors = vec![-0.2, 0.1, 0.3, 0.5, 0.7, 0.9, 1.1, 1.3];
-///
-/// let color_hist = histogram(
-///     &bv_colors,
-///     10,                    // 10 bins
-///     -0.5..1.5,            // Color range
-///     Some("B-V Color Index Distribution".to_string()),
-///     false                  // Linear scale
-/// )?;
-///
-/// println!("{}", color_hist);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
-///
-/// # Measurement Error Analysis
-/// ```rust
-/// use shared::viz::histogram::histogram;
-///
-/// // Photometric error analysis
-/// let errors = vec![0.005, 0.01, 0.02, 0.03, 0.05, 0.08, 0.12, 0.20];
-///
-/// let error_hist = histogram(
-///     &errors,
-///     15,                    // Fine binning for error analysis
-///     0.0..0.25,            // Error range
-///     Some("Photometric Error Distribution".to_string()),
-///     true                   // Log scale for wide error range
-/// )?;
-///
-/// println!("{}", error_hist);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
+/// Quick analysis of color indices.
+/// Photometric error analysis with logarithmic scaling.
 pub fn histogram<T>(
     values: &[T],
     bin_count: usize,
@@ -1651,6 +1337,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_histogram_creation() {
@@ -1697,15 +1384,12 @@ mod tests {
         let expected_width = 2.0;
         for i in 0..hist.bin_edges.len() - 1 {
             let actual_width = hist.bin_edges[i + 1] - hist.bin_edges[i];
-            assert!(
-                (actual_width - expected_width).abs() < 1e-10,
-                "Bin {i} width: expected {expected_width}, got {actual_width}"
-            );
+            assert_relative_eq!(actual_width, expected_width, epsilon = 1e-10);
         }
 
         // Verify range coverage
-        assert!((hist.bin_edges[0] - 0.0).abs() < 1e-10);
-        assert!((hist.bin_edges[5] - 10.0).abs() < 1e-10);
+        assert_relative_eq!(hist.bin_edges[0], 0.0, epsilon = 1e-10);
+        assert_relative_eq!(hist.bin_edges[5], 10.0, epsilon = 1e-10);
     }
 
     #[test]
@@ -1728,10 +1412,7 @@ mod tests {
         // Verify bin edges are 1.0 wide
         for i in 0..hist.bin_edges().len() - 1 {
             let width = hist.bin_edges()[i + 1] - hist.bin_edges()[i];
-            assert!(
-                (width - 1.0).abs() < 1e-6,
-                "Bin width should be 1.0 but was {width}"
-            );
+            assert_relative_eq!(width, 1.0, epsilon = 1e-6);
         }
 
         // Check that the bins with stars have the right counts
@@ -1796,10 +1477,7 @@ mod tests {
         // Each bin should be exactly 1.0 wide
         for i in 0..hist.bin_edges().len() - 1 {
             let width = hist.bin_edges()[i + 1] - hist.bin_edges()[i];
-            assert!(
-                (width - 1.0).abs() < 1e-6,
-                "Bin width should be 1.0 but was {width}"
-            );
+            assert_relative_eq!(width, 1.0, epsilon = 1e-6);
         }
     }
 
@@ -1884,24 +1562,15 @@ mod tests {
 
         // Test mean calculation - allow a bit more flexibility with the larger dataset
         let mean = hist.mean().unwrap();
-        assert!(
-            (mean - 10.0).abs() < 0.5,
-            "Mean should be approximately 10.0"
-        );
+        assert_relative_eq!(mean, 10.0, epsilon = 0.5);
 
         // Test standard deviation with some flexibility for binned data
         let std_dev = hist.std_dev().unwrap();
-        assert!(
-            (std_dev - 1.0).abs() < 0.6,
-            "Std dev should be approximately 1.0"
-        );
+        assert_relative_eq!(std_dev, 1.0, epsilon = 0.6);
 
         // Test median
         let median = hist.median().unwrap();
-        assert!(
-            (median - 10.0).abs() < 0.3,
-            "Median should be approximately 10.0"
-        );
+        assert_relative_eq!(median, 10.0, epsilon = 0.3);
 
         // We just verify skewness calculation works - exact values can vary with binning
         let _skewness = hist.skewness().unwrap();
@@ -1951,5 +1620,287 @@ mod tests {
             kurtosis > 0.0,
             "Kurtosis should be positive due to outliers"
         );
+    }
+
+    // Ported from doctests
+
+    #[test]
+    fn test_basic_magnitude_distribution() {
+        // Stellar magnitudes from photometric catalog
+        let magnitudes = vec![12.3, 13.1, 13.7, 14.2, 14.8, 15.1, 15.9, 16.2];
+
+        // Create magnitude histogram with standard 1-magnitude bins
+        let hist = create_magnitude_histogram(
+            &magnitudes,
+            Some("V-band Magnitude Distribution".to_string()),
+            false, // Linear scale
+        )
+        .unwrap();
+
+        // Display with statistics
+        let formatted = hist.format().unwrap();
+        assert!(formatted.contains("V-band Magnitude Distribution"));
+
+        let stats = hist.statistics_summary();
+        assert!(stats.contains("Mean:"));
+        assert!(stats.contains("Sample size: 8"));
+    }
+
+    #[test]
+    fn test_photometric_error_analysis() {
+        // Photometric uncertainties in magnitudes
+        let errors = vec![0.01, 0.02, 0.03, 0.05, 0.08, 0.12, 0.18, 0.25];
+
+        // Create fine-binned histogram for error distribution
+        let mut hist = Histogram::new_equal_bins(0.0..0.5, 20).unwrap();
+
+        // Configure for error analysis
+        let config = HistogramConfig {
+            title: Some("Photometric Error Distribution".to_string()),
+            scale: Scale::Log10, // Logarithmic scale for wide error range
+            bar_char: '▓',
+            show_percentage: true,
+            show_counts: false,
+            max_bar_width: 50,
+            ..Default::default()
+        };
+
+        hist = hist.with_config(config);
+        hist.add_all(errors.iter().copied());
+
+        // Analyze error characteristics
+        let median_error = hist.median().unwrap();
+        assert!(median_error > 0.0 && median_error < 0.5);
+    }
+
+    #[test]
+    fn test_color_index_distribution() {
+        // B-V color indices from stellar photometry
+        let bv_colors = vec![-0.3, -0.1, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4];
+
+        // Quick histogram generation
+        let color_hist = histogram(
+            &bv_colors,
+            15,        // Number of bins
+            -0.5..1.5, // Color range
+            Some("B-V Color Distribution".to_string()),
+            false, // Linear scale
+        )
+        .unwrap();
+
+        assert!(color_hist.contains("B-V Color Distribution"));
+    }
+
+    #[test]
+    fn test_survey_completeness_analysis() {
+        // Detected star magnitudes from survey
+        let survey_mags = vec![10.1, 11.3, 12.5, 13.8, 14.2, 15.1, 15.9, 16.5];
+
+        // Create histogram with logarithmic scaling for wide magnitude range
+        let completeness_hist = create_magnitude_histogram(
+            &survey_mags,
+            Some("Survey Completeness vs Magnitude".to_string()),
+            true, // Use log scale to emphasize faint-end dropoff
+        )
+        .unwrap();
+
+        // Check for completeness limit
+        let stats = completeness_hist.statistics_summary();
+        assert!(stats.contains("Sample size: 8"));
+
+        // Look for skewness indicating completeness limit
+        let skew = completeness_hist.skewness();
+        assert!(skew.is_some());
+    }
+
+    #[test]
+    fn test_histogram_with_config() {
+        let mut hist = Histogram::new_equal_bins(0.0..10.0, 10).unwrap();
+
+        // Apply custom configuration
+        let config = HistogramConfig {
+            title: Some("Stellar Magnitudes".to_string()),
+            scale: Scale::Log10,
+            bar_char: '█',
+            max_bar_width: 60,
+            ..Default::default()
+        };
+
+        hist = hist.with_config(config);
+        assert_eq!(hist.config.bar_char, '█');
+        assert_eq!(hist.config.scale, Scale::Log10);
+    }
+
+    #[test]
+    fn test_add_all_from_iterator() {
+        let mut hist = Histogram::new_equal_bins(0.0..5.0, 10).unwrap();
+
+        // Add from vector
+        let measurements = vec![1.2, 2.3, 3.4, 4.5];
+        hist.add_all(measurements);
+        assert_eq!(hist.total_count(), 4);
+
+        // Add from iterator
+        hist.add_all((0..100).map(|i| i as f64 / 20.0));
+        assert_eq!(hist.total_count(), 104); // 4 + 100
+    }
+
+    #[test]
+    fn test_mean_calculation() {
+        let mut hist = Histogram::new_equal_bins(0.0..10.0, 10).unwrap();
+        hist.add_all(vec![2.0, 4.0, 6.0, 8.0]);
+
+        let mean = hist.mean().unwrap();
+        assert_relative_eq!(mean, 5.0, epsilon = 1.0); // Should be approximately 5.0 (within bin width tolerance)
+    }
+
+    #[test]
+    fn test_variance_calculation() {
+        let mut hist = Histogram::new_equal_bins(0.0..10.0, 10).unwrap();
+        hist.add_all(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+
+        let variance = hist.variance().unwrap();
+        assert!(variance > 0.0); // Should be positive for varied data
+    }
+
+    #[test]
+    fn test_photometric_error_std_dev() {
+        let mut mag_errors = Histogram::new_equal_bins(0.0..0.5, 20).unwrap();
+        mag_errors.add_all(vec![0.01, 0.02, 0.03, 0.05, 0.08]);
+
+        let sigma = mag_errors.std_dev().unwrap();
+        assert!(sigma > 0.0);
+    }
+
+    #[test]
+    fn test_skewness_for_completeness_limit() {
+        let mut survey_mags = Histogram::new_equal_bins(10.0..20.0, 20).unwrap();
+        // Simulate survey with completeness limit at faint end
+        survey_mags.add_all(vec![12.1, 13.2, 14.1, 15.3, 16.2, 17.1, 17.9]);
+
+        let skew = survey_mags.skewness();
+        assert!(skew.is_some());
+    }
+
+    #[test]
+    fn test_kurtosis_for_outliers() {
+        let mut errors = Histogram::new_equal_bins(0.0..1.0, 50).unwrap();
+        // Add photometric errors with some outliers
+        errors.add_all(vec![0.01, 0.02, 0.02, 0.03, 0.15, 0.02, 0.45]);
+
+        let kurt = errors.kurtosis();
+        assert!(kurt.is_some());
+    }
+
+    #[test]
+    fn test_median_vs_mean_skewness() {
+        let mut mags = Histogram::new_equal_bins(10.0..20.0, 20).unwrap();
+        mags.add_all(vec![12.1, 13.5, 14.2, 15.1, 16.8, 17.2, 18.5]);
+
+        let median = mags.median().unwrap();
+        let mean = mags.mean().unwrap();
+
+        // For this data set, the relationship helps detect skewness
+        assert!(median > 0.0);
+        assert!(mean > 0.0);
+    }
+
+    #[test]
+    fn test_statistics_summary_output() {
+        let mags = vec![12.3, 13.1, 13.8, 14.2, 14.9, 15.1, 15.7, 16.2];
+        let hist = create_magnitude_histogram(&mags, None, false).unwrap();
+
+        let summary = hist.statistics_summary();
+        assert!(summary.contains("Mean:"));
+        assert!(summary.contains("Standard Deviation:"));
+        assert!(summary.contains("Median:"));
+        assert!(summary.contains("Skewness:"));
+        assert!(summary.contains("Interpretation:"));
+        assert!(summary.contains("Kurtosis"));
+        assert!(summary.contains("Sample size: 8"));
+    }
+
+    #[test]
+    fn test_format_histogram() {
+        let mut hist = Histogram::new_equal_bins(0.0..5.0, 5).unwrap();
+        hist.add_all(vec![1.2, 2.3, 2.7, 3.1, 4.2]);
+
+        let formatted = hist.format().unwrap();
+        assert!(formatted.contains("Range"));
+        assert!(formatted.contains("Count"));
+        assert!(formatted.contains("Percentage"));
+    }
+
+    #[test]
+    fn test_vband_magnitude_example() {
+        // V-band magnitudes from photometric catalog
+        let v_mags = vec![11.2, 12.8, 13.1, 13.9, 14.2, 15.1, 15.8, 16.5];
+
+        let hist = create_magnitude_histogram(
+            &v_mags,
+            Some("V-band Magnitude Distribution".to_string()),
+            false,
+        )
+        .unwrap();
+
+        let formatted = hist.format().unwrap();
+        assert!(formatted.contains("V-band"));
+
+        let stats = hist.statistics_summary();
+        assert!(stats.contains("Mean:"));
+    }
+
+    #[test]
+    fn test_survey_completeness_example() {
+        // Survey data showing completeness limit
+        let survey_mags = vec![10.1, 11.3, 12.1, 13.2, 14.1, 15.3, 16.1, 16.8];
+
+        let completeness = create_magnitude_histogram(
+            &survey_mags,
+            Some("Survey Magnitude Distribution".to_string()),
+            true, // Log scale emphasizes faint-end dropoff
+        )
+        .unwrap();
+
+        // Check for completeness limit indicators
+        if let Some(skew) = completeness.skewness() {
+            // Just test that skewness is calculated
+            assert!(!skew.is_nan());
+        }
+    }
+
+    #[test]
+    fn test_quick_color_analysis() {
+        // Quick analysis of color indices
+        let bv_colors = vec![-0.2, 0.1, 0.3, 0.5, 0.7, 0.9, 1.1, 1.3];
+
+        let color_hist = histogram(
+            &bv_colors,
+            10,        // 10 bins
+            -0.5..1.5, // Color range
+            Some("B-V Color Index Distribution".to_string()),
+            false, // Linear scale
+        )
+        .unwrap();
+
+        assert!(color_hist.contains("B-V Color Index"));
+    }
+
+    #[test]
+    fn test_measurement_error_analysis() {
+        // Photometric error analysis
+        let errors = vec![0.005, 0.01, 0.02, 0.03, 0.05, 0.08, 0.12, 0.20];
+
+        let error_hist = histogram(
+            &errors,
+            15,        // Fine binning for error analysis
+            0.0..0.25, // Error range
+            Some("Photometric Error Distribution".to_string()),
+            true, // Log scale for wide error range
+        )
+        .unwrap();
+
+        assert!(error_hist.contains("Photometric Error Distribution"));
+        assert!(error_hist.contains("log10"));
     }
 }
