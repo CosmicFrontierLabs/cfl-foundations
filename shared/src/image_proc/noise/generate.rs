@@ -57,14 +57,6 @@ use rand_distr::{Distribution, Normal, Poisson};
 /// # Returns
 /// A 2D array with values sampled from Normal(mean, std_dev)
 ///
-/// # Example
-/// ```
-/// use shared::image_proc::noise::simple_normal_array;
-///
-/// // Create 10x10 array with mean=100, std_dev=10, seed=42
-/// let noise = simple_normal_array((10, 10), 100.0, 10.0, 42);
-/// assert_eq!(noise.dim(), (10, 10));
-/// ```
 ///
 /// # Use Cases
 /// - Unit testing algorithms that need controlled noise input
@@ -234,4 +226,40 @@ pub fn apply_poisson_photon_noise(
             });
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn test_doctest_simple_normal_array() {
+        // Test the example from the simple_normal_array function documentation
+        // Create 10x10 array with mean=100, std_dev=10, seed=42
+        let noise = simple_normal_array((10, 10), 100.0, 10.0, 42);
+        assert_eq!(noise.dim(), (10, 10));
+
+        // Test statistical properties with larger array for better accuracy
+        let large_noise = simple_normal_array((100, 100), 50.0, 5.0, 123);
+        let mean_actual = large_noise.mean().unwrap();
+        let std_actual = large_noise.std(0.0);
+
+        // Should be approximately correct for large arrays
+        assert_relative_eq!(mean_actual, 50.0, epsilon = 0.5);
+        assert_relative_eq!(std_actual, 5.0, epsilon = 0.5);
+    }
+
+    #[test]
+    fn test_deterministic_output() {
+        // Same seed should produce same output
+        let noise1 = simple_normal_array((5, 5), 0.0, 1.0, 42);
+        let noise2 = simple_normal_array((5, 5), 0.0, 1.0, 42);
+
+        for i in 0..5 {
+            for j in 0..5 {
+                assert_eq!(noise1[[i, j]], noise2[[i, j]]);
+            }
+        }
+    }
 }

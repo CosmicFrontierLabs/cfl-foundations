@@ -52,22 +52,6 @@ pub enum InterpError {
 ///   - `MismatchedLengths`: xs and ys have different lengths
 ///   - `UnsortedData`: xs values are not in ascending order
 ///
-/// # Examples
-///
-/// ```rust
-/// use shared::algo::misc::interp;
-///
-/// let xs = vec![0.0, 1.0, 2.0, 3.0];
-/// let ys = vec![0.0, 2.0, 4.0, 6.0];
-///
-/// // Interpolate at x=1.5
-/// let result = interp(1.5, &xs, &ys).unwrap();
-/// assert_eq!(result, 3.0);
-///
-/// // Exact match returns exact value
-/// let result = interp(2.0, &xs, &ys).unwrap();
-/// assert_eq!(result, 4.0);
-/// ```
 ///
 /// # Performance
 ///
@@ -142,15 +126,6 @@ pub fn interp(x: f64, xs: &[f64], ys: &[f64]) -> Result<f64, InterpError> {
 ///
 /// A new vector with normalized values in the range [0, 1]
 ///
-/// # Example
-///
-/// ```
-/// use shared::algo::misc::normalize;
-///
-/// let data = vec![0.5, 2.0, 1.0, 3.0];
-/// let normalized = normalize(data);
-/// assert_eq!(normalized, vec![0.5/3.0, 2.0/3.0, 1.0/3.0, 1.0]);
-/// ```
 pub fn normalize(pts: Vec<f64>) -> Vec<f64> {
     // Find maximum value using iterator max_by
     let max_val = pts
@@ -283,5 +258,28 @@ mod tests {
         // Test negative declination
         let neg_dec_deg = dec_dms_to_deg(-30.0, 15.0, 30.0);
         assert!((neg_dec_deg - (-30.2583333)).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_doctest_interp_example() {
+        // Test the example from the interp function documentation
+        let xs = vec![0.0, 1.0, 2.0, 3.0];
+        let ys = vec![0.0, 2.0, 4.0, 6.0];
+
+        // Interpolate at x=1.5
+        let result = interp(1.5, &xs, &ys).unwrap();
+        assert_eq!(result, 3.0);
+
+        // Exact match returns exact value
+        let result = interp(2.0, &xs, &ys).unwrap();
+        assert_eq!(result, 4.0);
+    }
+
+    #[test]
+    fn test_doctest_normalize_example() {
+        // Test the example from the normalize function documentation
+        let data = vec![0.5, 2.0, 1.0, 3.0];
+        let normalized = normalize(data);
+        assert_eq!(normalized, vec![0.5 / 3.0, 2.0 / 3.0, 1.0 / 3.0, 1.0]);
     }
 }

@@ -29,29 +29,6 @@
 //! 3. **Inverse FFT**: Convert to time-domain angular displacements
 //! 4. **Quaternion composition**: Combine multiple axes into 3D orientations
 //!
-//! # Examples
-//!
-//! ```rust,no_run
-//! use shared::algo::psd::*;
-//! use nalgebra::Vector3;
-//! use std::time::Duration;
-//!
-//! // Define telescope mount resonance at 10 Hz
-//! let mount_psd = PsdCurve::new(
-//!     vec![
-//!         PsdPoint { frequency: 1.0, amplitude_squared: 1e-6 },
-//!         PsdPoint { frequency: 10.0, amplitude_squared: 1e-4 },  // Resonance
-//!         PsdPoint { frequency: 100.0, amplitude_squared: 1e-7 },
-//!     ],
-//!     Vector3::new(1.0, 0.0, 0.0), // X-axis vibrations
-//! );
-//!
-//! // Create vibration simulator
-//! let simulator = VibrationSimulator::new(vec![mount_psd], 1000.0); // 1 kHz sample rate
-//!
-//! // Generate 1 second of vibration data
-//! let orientations = simulator.generate_orientations(Duration::from_secs(1), Some(42));
-//! ```
 
 use nalgebra::{Unit, UnitQuaternion, Vector3};
 use rand::prelude::*;
@@ -1033,5 +1010,45 @@ mod tests {
         assert_relative_eq!(total_rms.x, 0.2);
         assert_relative_eq!(total_rms.y, 0.3);
         assert_relative_eq!(total_rms.z, 0.0);
+    }
+
+    #[test]
+    fn test_doctest_telescope_mount_example() {
+        // Test the example from the module documentation
+        use nalgebra::Vector3;
+        use std::time::Duration;
+
+        // Define telescope mount resonance at 10 Hz
+        let mount_psd = PsdCurve::new(
+            vec![
+                PsdPoint {
+                    frequency: 1.0,
+                    amplitude_squared: 1e-6,
+                },
+                PsdPoint {
+                    frequency: 10.0,
+                    amplitude_squared: 1e-4,
+                }, // Resonance
+                PsdPoint {
+                    frequency: 100.0,
+                    amplitude_squared: 1e-7,
+                },
+            ],
+            Vector3::new(1.0, 0.0, 0.0), // X-axis vibrations
+        );
+
+        // Create vibration simulator
+        let simulator = VibrationSimulator::new(vec![mount_psd], 1000.0); // 1 kHz sample rate
+
+        // Generate a short duration of vibration data with fixed seed for deterministic testing
+        let orientations = simulator.generate_orientations(Duration::from_millis(10), Some(42));
+
+        // Basic validation - should generate the expected number of samples
+        assert_eq!(orientations.len(), 10); // 0.01s * 1000Hz = 10 samples
+
+        // All quaternions should be unit quaternions
+        for q in &orientations {
+            assert_relative_eq!(q.as_vector().norm(), 1.0, epsilon = 1e-10);
+        }
     }
 }

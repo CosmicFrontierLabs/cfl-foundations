@@ -22,34 +22,6 @@
 //! | Naive     | Fast  | Medium   | Bright, isolated sources |
 //! | Threshold | Fastest| Basic   | Quick analysis, preprocessing |
 //!
-//! # Examples
-//!
-//! ```rust,no_run
-//! use shared::image_proc::detection::{detect_stars_unified, StarFinder, detect_stars};
-//! use shared::image_proc::airy::PixelScaledAiryDisk;
-//! use shared::units::{LengthExt, Wavelength};
-//! use ndarray::Array2;
-//!
-//! // Create a test image
-//! let image = Array2::from_elem((100, 100), 10u16);
-//!
-//! // Method 1: Unified interface with automatic parameter tuning
-//! let airy_disk = PixelScaledAiryDisk::with_fwhm(2.5, Wavelength::from_nanometers(550.0));
-//! let stars = detect_stars_unified(
-//!     image.view(),
-//!     StarFinder::Dao,
-//!     &airy_disk,  // Airy disk
-//!     1.0,  // Background RMS
-//!     5.0   // 5-sigma threshold
-//! ).unwrap();
-//!
-//! // Method 2: Direct naive detection for speed
-//! let image_f64 = image.mapv(|x| x as f64);
-//! let quick_stars = detect_stars(&image_f64.view(), Some(50.0));
-//!
-//! println!("Sophisticated: {} stars, Quick: {} stars",
-//!          stars.len(), quick_stars.len());
-//! ```
 
 pub mod aabb;
 pub mod config;

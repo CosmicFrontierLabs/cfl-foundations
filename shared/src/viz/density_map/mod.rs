@@ -55,114 +55,12 @@
 //! # Usage Examples
 //!
 //! ## Basic Point Distribution
-//! ```rust
-//! use shared::viz::density_map::{Point, DensityMapConfig, create_density_map};
-//!
-//! // Create sample data points
-//! let points = vec![
-//!     Point::new(0.1, 0.2),  // Lower left
-//!     Point::new(0.9, 0.8),  // Upper right
-//!     Point::new(0.5, 0.5),  // Center
-//!     Point::new(0.5, 0.5),  // Center (duplicate for higher density)
-//! ];
-//!
-//! // Configure visualization
-//! let config = DensityMapConfig {
-//!     title: Some("Point Distribution"),
-//!     x_label: Some("X Coordinate"),
-//!     y_top_label: Some("Y=1.0"),
-//!     y_bottom_label: Some("Y=0.0"),
-//!     density_chars: " .o*#",
-//!     width: 40,
-//!     height: 20,
-//!     ..Default::default()
-//! };
-//!
-//! // Generate ASCII density map
-//! let map = create_density_map(&points, &config).unwrap();
-//! println!("{}", map);
-//! ```
 //!
 //! ## Star Field Visualization
-//! ```rust
-//! use shared::viz::density_map::create_celestial_density_map;
-//!
-//! // Star catalog data (RA, Dec in degrees)
-//! let stars = vec![
-//!     (0.0, 90.0),      // North pole star
-//!     (90.0, 0.0),      // Equatorial star
-//!     (180.0, -30.0),   // Southern sky star
-//!     (270.0, 45.0),    // Northern sky star
-//!     (45.0, -60.0),    // Southern constellation
-//! ];
-//!
-//! // Create celestial density map
-//! let sky_map = create_celestial_density_map(
-//!     &stars,
-//!     80,    // 80 character width
-//!     24,    // 24 line height
-//!     " .'*#" // Character progression
-//! ).unwrap();
-//!
-//! println!("{}", sky_map);
-//! ```
 //!
 //! ## Custom Position Data
-//! ```rust
-//! use shared::viz::density_map::{PositionData, DensityMapConfig, create_density_map};
-//!
-//! // Custom data structure
-//! struct Star {
-//!     ra: f64,   // Right ascension (degrees)
-//!     dec: f64,  // Declination (degrees)
-//!     mag: f64,  // Magnitude
-//! }
-//!
-//! impl PositionData for Star {
-//!     fn x(&self) -> f64 {
-//!         self.ra / 360.0  // Normalize RA to [0,1]
-//!     }
-//!     
-//!     fn y(&self) -> f64 {
-//!         (self.dec + 90.0) / 180.0  // Normalize Dec to [0,1]
-//!     }
-//! }
-//!
-//! let catalog = vec![
-//!     Star { ra: 45.0, dec: 30.0, mag: 5.5 },
-//!     Star { ra: 120.0, dec: -15.0, mag: 7.2 },
-//!     Star { ra: 300.0, dec: 60.0, mag: 4.1 },
-//! ];
-//!
-//! let config = DensityMapConfig::default();
-//! let map = create_density_map(&catalog, &config).unwrap();
-//! ```
 //!
 //! ## Algorithm Debugging
-//! ```rust
-//! use shared::viz::density_map::{Point, DensityMapConfig, create_density_map};
-//!
-//! // Debug coordinate transformation results
-//! fn debug_projection_results(projected_stars: &[(f64, f64)]) {
-//!     let points: Vec<Point> = projected_stars.iter()
-//!         .map(|&(x, y)| Point::new(x, y))
-//!         .collect();
-//!     
-//!     let config = DensityMapConfig {
-//!         title: Some("Projected Star Positions"),
-//!         x_label: Some("Pixel X (normalized)"),
-//!         y_top_label: Some("Pixel Y=0"),
-//!         y_bottom_label: Some("Pixel Y=max"),
-//!         density_chars: " .o#",
-//!         width: 60,
-//!         height: 30,
-//!         ..Default::default()
-//!     };
-//!     
-//!     let debug_map = create_density_map(&points, &config).unwrap();
-//!     println!("\nProjection Debug Map:\n{}", debug_map);
-//! }
-//! ```
 //!
 //! # Character Set Design
 //!
@@ -224,30 +122,6 @@ use super::Result;
 /// - **Clamping**: Values outside \[0,1\] will be clamped to grid boundaries
 ///
 /// # Implementation Examples
-/// ```rust
-/// use shared::viz::density_map::PositionData;
-///
-/// // Simple 2D point
-/// struct Point2D { x: f64, y: f64 }
-/// impl PositionData for Point2D {
-///     fn x(&self) -> f64 { self.x }
-///     fn y(&self) -> f64 { self.y }
-/// }
-///
-/// // Astronomical star with coordinate transformation
-/// struct Star { ra_deg: f64, dec_deg: f64 }
-/// impl PositionData for Star {
-///     fn x(&self) -> f64 { self.ra_deg / 360.0 }
-///     fn y(&self) -> f64 { (self.dec_deg + 90.0) / 180.0 }
-/// }
-///
-/// // Detector pixel with normalization
-/// struct Pixel { col: usize, row: usize, width: usize, height: usize }
-/// impl PositionData for Pixel {
-///     fn x(&self) -> f64 { self.col as f64 / self.width as f64 }
-///     fn y(&self) -> f64 { self.row as f64 / self.height as f64 }
-/// }
-/// ```
 pub trait PositionData {
     /// Extract normalized X-coordinate for density mapping.
     ///
@@ -279,18 +153,6 @@ pub trait PositionData {
 /// coordinates in the [0.0, 1.0] range. Values outside this range will
 /// be clamped to the grid boundaries during visualization.
 ///
-/// # Examples
-/// ```rust
-/// use shared::viz::density_map::Point;
-///
-/// // Create points at various positions
-/// let origin = Point::new(0.0, 0.0);       // Bottom-left corner
-/// let center = Point::new(0.5, 0.5);       // Center of grid
-/// let top_right = Point::new(1.0, 1.0);    // Top-right corner
-///
-/// // Points outside [0,1] range (will be clamped)
-/// let outside = Point::new(-0.1, 1.2);     // Will map to (0.0, 1.0)
-/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Point {
     pub x: f64,
@@ -334,24 +196,6 @@ impl PositionData for Point {
 /// - **Labeling**: Title and axis labels for context
 /// - **Coordinate system**: Interpretation of spatial coordinates
 ///
-/// # Examples
-/// ```rust
-/// use shared::viz::density_map::DensityMapConfig;
-///
-/// // Minimal configuration with defaults
-/// let simple = DensityMapConfig::default();
-///
-/// // Fully customized configuration
-/// let custom = DensityMapConfig {
-///     title: Some("Star Distribution Analysis"),
-///     x_label: Some("Right Ascension (hours)"),
-///     y_top_label: Some("+90° Dec"),
-///     y_bottom_label: Some("-90° Dec"),
-///     density_chars: " .:*#@",
-///     width: 120,
-///     height: 40,
-/// };
-/// ```
 #[derive(Debug, Clone)]
 pub struct DensityMapConfig<'a> {
     /// Optional title displayed above the density map.
@@ -455,35 +299,6 @@ impl Default for DensityMapConfig<'_> {
 /// * `Ok(String)` - Complete ASCII density map with formatting
 /// * `Err(VizError)` - Configuration or rendering error
 ///
-/// # Examples
-/// ```rust
-/// use shared::viz::density_map::{Point, DensityMapConfig, create_density_map};
-///
-/// // Create clustered point data
-/// let points = vec![
-///     Point::new(0.2, 0.3),  // Cluster 1
-///     Point::new(0.25, 0.35),
-///     Point::new(0.18, 0.28),
-///     Point::new(0.8, 0.7),  // Cluster 2
-///     Point::new(0.82, 0.72),
-///     Point::new(0.78, 0.68),
-/// ];
-///
-/// // Configure for detailed visualization
-/// let config = DensityMapConfig {
-///     title: Some("Point Clustering Analysis"),
-///     x_label: Some("X Coordinate (normalized)"),
-///     y_top_label: Some("Y=1.0"),
-///     y_bottom_label: Some("Y=0.0"),
-///     density_chars: " .o*#@",  // 6-level progression
-///     width: 50,
-///     height: 25,
-/// };
-///
-/// let map = create_density_map(&points, &config)?;
-/// println!("{}", map);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
 ///
 /// # Performance Notes
 /// - **Time complexity**: O(n + w*h) where n=points, w=width, h=height
@@ -617,30 +432,6 @@ pub fn create_density_map<T: PositionData>(
 /// * `Ok(String)` - Complete celestial density map with astronomical labels
 /// * `Err(VizError)` - Configuration or rendering error
 ///
-/// # Examples
-/// ```rust
-/// use shared::viz::density_map::create_celestial_density_map;
-///
-/// // Sample star catalog data
-/// let bright_stars = vec![
-///     (0.0, 90.0),        // Polaris (North Star)
-///     (95.99, 7.41),      // Betelgeuse (Orion)
-///     (201.3, -11.2),     // Spica (Virgo)
-///     (310.36, 45.28),    // Vega (Lyra)
-///     (279.23, 38.78),    // Deneb (Cygnus)
-/// ];
-///
-/// // Generate all-sky map
-/// let sky_map = create_celestial_density_map(
-///     &bright_stars,
-///     80,         // 80-character width
-///     24,         // 24-line height
-///     " .'*#@"    // 6-level density characters
-/// )?;
-///
-/// println!("{}", sky_map);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
 ///
 /// # Use Cases
 /// - **Catalog validation**: Verify star catalog coordinate coverage
@@ -763,5 +554,159 @@ mod tests {
         let map = result.unwrap();
         assert!(map.contains("North Pole"));
         assert!(map.contains("South Pole"));
+    }
+
+    #[test]
+    fn test_doctest_basic_point_distribution() {
+        // Test the basic point distribution example from the module docs
+        let points = vec![
+            Point::new(0.1, 0.2), // Lower left
+            Point::new(0.9, 0.8), // Upper right
+            Point::new(0.5, 0.5), // Center
+            Point::new(0.5, 0.5), // Center (duplicate for higher density)
+        ];
+
+        let config = DensityMapConfig {
+            title: Some("Point Distribution"),
+            x_label: Some("X Coordinate"),
+            y_top_label: Some("Y=1.0"),
+            y_bottom_label: Some("Y=0.0"),
+            density_chars: " .o*#",
+            width: 40,
+            height: 20,
+            ..Default::default()
+        };
+
+        let result = create_density_map(&points, &config);
+        assert!(result.is_ok());
+
+        let map = result.unwrap();
+        assert!(map.contains("Point Distribution"));
+        assert!(map.contains("X Coordinate"));
+        assert!(map.contains("Y=1.0"));
+        assert!(map.contains("Y=0.0"));
+    }
+
+    #[test]
+    fn test_doctest_star_field_visualization() {
+        // Test the star field visualization example
+        let stars = vec![
+            (0.0, 90.0),    // North pole star
+            (90.0, 0.0),    // Equatorial star
+            (180.0, -30.0), // Southern sky star
+            (270.0, 45.0),  // Northern sky star
+            (45.0, -60.0),  // Southern constellation
+        ];
+
+        let result = create_celestial_density_map(
+            &stars, 80,      // 80 character width
+            24,      // 24 line height
+            " .'*#", // Character progression
+        );
+
+        assert!(result.is_ok());
+
+        let sky_map = result.unwrap();
+        assert!(sky_map.contains("Star Density Map"));
+        assert!(sky_map.contains("North Pole"));
+        assert!(sky_map.contains("South Pole"));
+        assert!(sky_map.contains("RA increases left to right"));
+    }
+
+    #[test]
+    fn test_doctest_position_data_trait() {
+        // Test the PositionData trait examples
+
+        // Simple 2D point
+        struct Point2D {
+            x: f64,
+            y: f64,
+        }
+        impl PositionData for Point2D {
+            fn x(&self) -> f64 {
+                self.x
+            }
+            fn y(&self) -> f64 {
+                self.y
+            }
+        }
+
+        // Astronomical star with coordinate transformation
+        struct Star {
+            ra_deg: f64,
+            dec_deg: f64,
+        }
+        impl PositionData for Star {
+            fn x(&self) -> f64 {
+                self.ra_deg / 360.0
+            }
+            fn y(&self) -> f64 {
+                (self.dec_deg + 90.0) / 180.0
+            }
+        }
+
+        // Test Point2D
+        let point_data = vec![Point2D { x: 0.5, y: 0.5 }];
+        let config = DensityMapConfig::default();
+        let result = create_density_map(&point_data, &config);
+        assert!(result.is_ok());
+
+        // Test Star
+        let star_data = vec![Star {
+            ra_deg: 180.0,
+            dec_deg: 0.0,
+        }];
+        let result = create_density_map(&star_data, &config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_doctest_point_examples() {
+        // Test the Point examples from documentation
+        let origin = Point::new(0.0, 0.0); // Bottom-left corner
+        let center = Point::new(0.5, 0.5); // Center of grid
+        let top_right = Point::new(1.0, 1.0); // Top-right corner
+
+        assert_eq!(origin.x(), 0.0);
+        assert_eq!(origin.y(), 0.0);
+        assert_eq!(center.x(), 0.5);
+        assert_eq!(center.y(), 0.5);
+        assert_eq!(top_right.x(), 1.0);
+        assert_eq!(top_right.y(), 1.0);
+
+        // Points outside [0,1] range (will be clamped)
+        let outside = Point::new(-0.1, 1.2); // Will map to (0.0, 1.0)
+        assert_eq!(outside.x(), -0.1); // Point stores actual values
+        assert_eq!(outside.y(), 1.2); // Clamping happens in create_density_map
+    }
+
+    #[test]
+    fn test_doctest_clustering_analysis() {
+        // Test the clustering analysis example
+        let points = vec![
+            Point::new(0.2, 0.3), // Cluster 1
+            Point::new(0.25, 0.35),
+            Point::new(0.18, 0.28),
+            Point::new(0.8, 0.7), // Cluster 2
+            Point::new(0.82, 0.72),
+            Point::new(0.78, 0.68),
+        ];
+
+        let config = DensityMapConfig {
+            title: Some("Point Clustering Analysis"),
+            x_label: Some("X Coordinate (normalized)"),
+            y_top_label: Some("Y=1.0"),
+            y_bottom_label: Some("Y=0.0"),
+            density_chars: " .o*#@", // 6-level progression
+            width: 50,
+            height: 25,
+        };
+
+        let result = create_density_map(&points, &config);
+        assert!(result.is_ok());
+
+        let map = result.unwrap();
+        assert!(map.contains("Point Clustering Analysis"));
+        assert!(map.contains("X Coordinate (normalized)"));
     }
 }

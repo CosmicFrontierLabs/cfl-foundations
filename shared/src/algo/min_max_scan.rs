@@ -32,14 +32,6 @@ impl<T: Float + fmt::Debug> MinMaxScan<T> {
     /// # Arguments
     /// * `data` - A slice of floating point values
     ///
-    /// # Example
-    /// ```
-    /// use shared::algo::min_max_scan::MinMaxScan;
-    ///
-    /// let scanner = MinMaxScan::<f64>::new(&[1.0, 5.0, 3.0, 2.0]);
-    /// assert_eq!(scanner.min().unwrap(), 1.0);
-    /// assert_eq!(scanner.max().unwrap(), 5.0);
-    /// ```
     pub fn new(data: &[T]) -> Self {
         let mut min_value = None;
         let mut max_value = None;
@@ -206,5 +198,17 @@ mod tests {
         assert!(scanner.has_nan());
         assert_eq!(scanner.min(), Err(MinMaxError::NaNEncountered(1)));
         assert_eq!(scanner.max(), Err(MinMaxError::NaNEncountered(1)));
+    }
+
+    #[test]
+    fn test_doctest_example() {
+        // Test the example from the new function documentation
+        let scanner = MinMaxScan::<f64>::new(&[1.0, 5.0, 3.0, 2.0]);
+        assert_eq!(scanner.min().unwrap(), 1.0);
+        assert_eq!(scanner.max().unwrap(), 5.0);
+
+        // Test the combined function as well
+        assert_eq!(scanner.min_max().unwrap(), (1.0, 5.0));
+        assert!(!scanner.has_nan());
     }
 }

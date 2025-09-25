@@ -287,23 +287,6 @@ fn calculate_error(
 /// # Returns
 /// * `ICPResult` - Struct containing transformation parameters and matching information
 ///
-/// # Examples
-/// ```
-/// use ndarray::Array2;
-/// use shared::algo::iterative_closest_point;
-///
-/// // Create two point sets
-/// let source = Array2::from_shape_vec((3, 2), vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0]).unwrap();
-/// let target = Array2::from_shape_vec((3, 2), vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0]).unwrap();
-///
-/// // Run ICP algorithm
-/// let result = iterative_closest_point(&source, &target, 100, 1e-6);
-///
-/// // Access transformation and matches
-/// println!("Rotation quaternion: {:?}", result.rotation_quat);
-/// println!("Rotation matrix: {:?}", result.rotation);
-/// println!("Translation: {:?}", result.translation);
-/// ```
 pub fn iterative_closest_point(
     source_points: &Array2<f64>,
     target_points: &Array2<f64>,
@@ -1242,6 +1225,24 @@ mod tests {
         // Test zero convergence threshold
         let result = icp_match_objects(&source_objs, &target_objs, 10, 0.0);
         assert!(matches!(result, Err(ICPError::ArgumentError(_))));
+    }
+
+    #[test]
+    fn test_doctest_example() {
+        // Test the example from the main function documentation
+        use ndarray::Array2;
+
+        // Create two point sets
+        let source = Array2::from_shape_vec((3, 2), vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0]).unwrap();
+        let target = Array2::from_shape_vec((3, 2), vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0]).unwrap();
+
+        // Run ICP algorithm
+        let result = iterative_closest_point(&source, &target, 100, 1e-6);
+
+        // Verify the result structure is valid
+        assert_eq!(result.matches.len(), 3); // Should match 3 source points
+        assert!(result.mean_squared_error >= 0.0); // MSE should be non-negative
+        assert!(result.iterations > 0 && result.iterations <= 100); // Should have run some iterations
     }
 }
 

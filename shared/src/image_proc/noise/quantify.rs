@@ -68,14 +68,6 @@ fn im2patch(image: &ArrayView2<f64>, patch_size: usize, stride: usize) -> Array2
 /// # Returns
 /// Estimated noise standard deviation in same units as input
 ///
-/// # Example
-/// ```ignore
-/// use ndarray::Array2;
-/// use shared::image_proc::noise::quantify::estimate_noise_level;
-///
-/// let noisy_image = Array2::zeros((100, 100));
-/// let noise_level = estimate_noise_level(&noisy_image.view(), 8);
-/// ```
 pub fn estimate_noise_level(image: &ArrayView2<f64>, patch_size: usize) -> f64 {
     // Extract patches with stride of 3 (as in original paper)
     let patches = im2patch(image, patch_size, 3);
@@ -192,5 +184,23 @@ mod tests {
 
         // Just check it doesn't panic and returns positive value
         assert!(estimated_noise > 0.0);
+    }
+
+    #[test]
+    fn test_doctest_example() {
+        // Test the example from the estimate_noise_level function documentation
+        use ndarray::Array2;
+
+        // Create an image with some structure (not just zeros)
+        let mut noisy_image = Array2::zeros((100, 100));
+        // Add some noise to make the test more realistic
+        let noise = simple_normal_array((100, 100), 0.0, 1.0, 42);
+        noisy_image = noisy_image + noise;
+
+        let noise_level = estimate_noise_level(&noisy_image.view(), 8);
+
+        // Should return a positive noise estimate
+        assert!(noise_level > 0.0);
+        assert!(noise_level < 10.0); // Should be reasonable for our test case
     }
 }

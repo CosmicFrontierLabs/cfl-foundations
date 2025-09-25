@@ -12,19 +12,6 @@
 //! - Configurable table size and domain
 //! - Generic over floating point types
 //!
-//! # Example
-//!
-//! ```
-//! use shared::algo::lookup_table::LookupTable;
-//!
-//! // Create a lookup table for exp(x) from -5 to 5 with 1000 points
-//! let exp_table = LookupTable::new(-5.0, 5.0, 1000, |x| x.exp());
-//!
-//! // Fast evaluation using interpolation
-//! let approx_value = exp_table.eval(2.3).unwrap();
-//! let exact_value = 2.3_f64.exp();
-//! assert!((approx_value - exact_value).abs() < 1e-6);
-//! ```
 
 use std::fmt::Debug;
 use thiserror::Error;
@@ -327,6 +314,27 @@ mod tests {
         // Test that they produce same results
         for x in [0.1, 0.5, 0.9] {
             assert_eq!(cloned.eval(x).unwrap(), original.eval(x).unwrap());
+        }
+    }
+
+    #[test]
+    fn test_doctest_exponential_table() {
+        // Test the example from the module documentation
+        // Create a lookup table for exp(x) from -5 to 5 with 1000 points
+        let exp_table = LookupTable::new(-5.0, 5.0, 1000, |x| x.exp());
+
+        // Fast evaluation using interpolation
+        let approx_value = exp_table.eval(2.3).unwrap();
+        let exact_value = 2.3_f64.exp();
+
+        // The approximation should be very close to the exact value
+        assert!((approx_value - exact_value).abs() < 1e-6);
+
+        // Test additional values to ensure good interpolation
+        for test_x in [-2.0, -1.0, 0.0, 1.0, 3.0] {
+            let approx = exp_table.eval(test_x).unwrap();
+            let exact = test_x.exp();
+            assert_relative_eq!(approx, exact, epsilon = 1e-6);
         }
     }
 }
