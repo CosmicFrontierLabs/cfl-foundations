@@ -1953,14 +1953,28 @@ name = "monocle"
 version = "0.1.0"
 dependencies = [
  "approx",
- "clap",
  "env_logger",
  "log",
+ "ndarray 0.15.6",
+ "rand",
+ "rand_chacha",
+ "serde",
+ "shared",
+]
+
+[[package]]
+name = "monocle_harness"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "chrono",
+ "clap",
+ "env_logger",
+ "monocle",
  "ndarray 0.15.6",
  "plotters",
  "rand",
  "rand_chacha",
- "serde",
  "shared",
  "simulator",
  "starfield",

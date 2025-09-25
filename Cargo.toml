@@ -4,6 +4,7 @@ members = [
     "test_helpers",
     "flight-software",
     "monocle",
+    "monocle_harness",
     "shared",
 ]
 resolver = "2"

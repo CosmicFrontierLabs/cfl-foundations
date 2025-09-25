@@ -15,21 +15,13 @@ pub mod config;
 pub mod filters;
 pub mod state;
 
-// Camera abstraction layer
-pub mod simulator_camera;
-
-// Test motion patterns
-pub mod test_motions;
-
-// Tracking visualization
-pub mod tracking_plots;
-
-use crate::callback::{
-    CallbackId, FgsCallback, FgsCallbackEvent, PositionEstimate, TrackingLostReason,
-};
-use crate::config::FgsConfig;
-use crate::state::{FgsEvent, FgsState};
+use crate::callback::{CallbackId, FgsCallback, PositionEstimate, TrackingLostReason};
 use shared::image_proc::detection::aabb::AABB;
+
+// Re-export commonly used types for external use
+pub use crate::callback::FgsCallbackEvent;
+pub use crate::config::FgsConfig;
+pub use crate::state::{FgsEvent, FgsState};
 
 /// ROI (Region of Interest) around a guide star
 #[derive(Debug, Clone)]
@@ -445,6 +437,19 @@ impl FineGuidanceSystem {
         let detections = detect_stars(&averaged_frame.view(), Some(detection_threshold));
         self.detected_stars = detections.clone();
 
+        log::debug!("Detected {} raw stars before filtering", detections.len());
+        for (i, star) in detections.iter().enumerate() {
+            log::debug!(
+                "  Star {}: pos=({:.1},{:.1}), diameter={:.2}, aspect_ratio={:.2}, flux={:.0}",
+                i,
+                star.x,
+                star.y,
+                star.diameter,
+                star.aspect_ratio,
+                star.flux
+            );
+        }
+
         // Apply filters for guide star selection
         let image_shape = averaged_frame.dim();
         let image_diagonal =
@@ -455,12 +460,26 @@ impl FineGuidanceSystem {
             .into_iter()
             .filter(|star| {
                 // Basic shape filter
-                star.aspect_ratio < 2.5 && star.diameter > 2.0 && star.diameter < 20.0
+                let passes = star.aspect_ratio < 2.5 && star.diameter > 2.0 && star.diameter < 20.0;
+                if !passes {
+                    log::debug!(
+                        "Star filtered by shape: aspect_ratio={:.2}, diameter={:.2} (needs <2.5, 2-20)",
+                        star.aspect_ratio, star.diameter
+                    );
+                }
+                passes
             })
             .filter(|star| {
                 // SNR filter
                 let snr = filters::calculate_snr(star, &averaged_frame.view(), star.diameter / 2.0);
-                snr >= self.config.min_guide_star_snr
+                let passes = snr >= self.config.min_guide_star_snr;
+                if !passes {
+                    log::debug!(
+                        "Star filtered by SNR: {:.2} < {:.2} (min required)",
+                        snr, self.config.min_guide_star_snr
+                    );
+                }
+                passes
             })
             .map(|star| {
                 // Calculate quality score
