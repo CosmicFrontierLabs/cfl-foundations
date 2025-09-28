@@ -6,7 +6,7 @@ use starfield::{catalogs::StarData, Equatorial};
 use crate::{
     hardware::{sensor_noise::generate_sensor_noise, SatelliteConfig, SensorConfig},
     photometry::{photoconversion::SourceFlux, zodiacal::SolarAngularCoordinates, ZodiacalLight},
-    star_math::{field_diameter, star_data_to_fluxes},
+    star_math::star_data_to_fluxes,
 };
 use shared::{
     algo::icp::Locatable2d,
@@ -360,12 +360,8 @@ pub fn project_stars_to_pixels(
 ) -> Vec<StarInFrame> {
     let (image_width, image_height) = satellite.sensor.dimensions.get_pixel_width_height();
 
-    // Calculate field of view from telescope and sensor
-    let fov_angle = field_diameter(&satellite.telescope, &satellite.sensor);
-
-    // Create star projector for coordinate transformation
-    let fov_rad = fov_angle.as_radians();
-    let radians_per_pixel = fov_rad / image_width.max(image_height) as f64;
+    // Create star projector for coordinate transformation using satellite's pixel scale
+    let radians_per_pixel = satellite.plate_scale_per_pixel().as_radians();
     let projector = StarProjector::new(center, radians_per_pixel, image_width, image_height);
 
     let mut projected_stars = Vec::new();

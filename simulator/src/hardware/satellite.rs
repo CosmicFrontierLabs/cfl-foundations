@@ -268,6 +268,70 @@ mod tests {
     }
 
     #[test]
+    fn test_plate_scale_per_pixel() {
+        // Create a test telescope with known focal length
+        let aperture = Length::from_meters(0.1); // 100mm aperture
+        let focal_length = Length::from_meters(1.0); // 1000mm focal length
+        let telescope = TelescopeConfig::new("Test Telescope", aperture, focal_length, 0.8);
+
+        // Create a test sensor with known pixel size
+        let sensor = crate::hardware::sensor::models::GSENSE4040BSI.clone();
+        let pixel_size_um = sensor.pixel_size().as_micrometers();
+        assert_eq!(pixel_size_um, 9.0); // GSENSE4040BSI has 9μm pixels
+
+        let satellite = SatelliteConfig::new(telescope, sensor, Temperature::from_celsius(-10.0));
+
+        // Calculate expected plate scale
+        // plate_scale = arctan(pixel_size / focal_length) ≈ pixel_size / focal_length (small angle)
+        let pixel_size_m = 9.0e-6; // 9 micrometers
+        let focal_length_m = 1.0; // 1 meter
+        let expected_rad_per_pixel = pixel_size_m / focal_length_m;
+
+        // Convert to arcseconds for easier comparison
+        let expected_arcsec_per_pixel = expected_rad_per_pixel * 206265.0; // rad to arcsec
+
+        let actual_rad_per_pixel = satellite.plate_scale_per_pixel().as_radians();
+        let actual_arcsec_per_pixel = satellite.plate_scale_arcsec_per_pixel();
+
+        // Check radians per pixel (should be 9e-6 radians)
+        assert!((actual_rad_per_pixel - expected_rad_per_pixel).abs() < 1e-12);
+
+        // Check arcseconds per pixel (should be ~1.86 arcsec/pixel)
+        assert!((actual_arcsec_per_pixel - expected_arcsec_per_pixel).abs() < 0.01);
+        assert!((actual_arcsec_per_pixel - 1.855).abs() < 0.01); // Precise value
+    }
+
+    #[test]
+    fn test_field_of_view_vs_plate_scale_consistency() {
+        let telescope = TelescopeConfig::new(
+            "Test Scope",
+            Length::from_meters(0.2),
+            Length::from_meters(1.0),
+            0.8,
+        );
+        let sensor = crate::hardware::sensor::models::GSENSE4040BSI.clone();
+
+        // Get sensor dimensions in pixels before moving sensor
+        let (width_px, height_px) = sensor.dimensions.get_pixel_width_height();
+
+        let satellite = SatelliteConfig::new(telescope, sensor, Temperature::from_celsius(-10.0));
+
+        // Calculate FOV from plate scale
+        let rad_per_pixel = satellite.plate_scale_per_pixel().as_radians();
+        let expected_width_rad = rad_per_pixel * width_px as f64;
+        let expected_height_rad = rad_per_pixel * height_px as f64;
+
+        // Get FOV from dedicated method
+        let (actual_width, actual_height) = satellite.field_of_view();
+        let actual_width_rad = actual_width.as_radians();
+        let actual_height_rad = actual_height.as_radians();
+
+        // They should match exactly
+        assert!((actual_width_rad - expected_width_rad).abs() < 1e-10);
+        assert!((actual_height_rad - expected_height_rad).abs() < 1e-10);
+    }
+
+    #[test]
     fn test_airy_disk_pixel_space() {
         let telescope = TelescopeConfig::new(
             "Test Scope",

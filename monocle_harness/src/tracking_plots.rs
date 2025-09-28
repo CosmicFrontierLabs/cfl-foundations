@@ -163,7 +163,7 @@ impl TrackingPlotter {
             .x_desc("Time (seconds)")
             .y_desc("Position (pixels)")
             .x_label_formatter(&|x| format!("{x:.1}"))
-            .y_label_formatter(&|y| format!("{y:.1}"))
+            .y_label_formatter(&|y| format!("{y:.3}"))
             .draw()?;
 
         // Draw shaded regions for different states

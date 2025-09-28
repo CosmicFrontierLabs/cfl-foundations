@@ -12,6 +12,8 @@ use monocle_harness::{
     tracking_plots::{TrackingDataPoint, TrackingPlotConfig, TrackingPlotter},
 };
 use shared::camera_interface::CameraInterface;
+use shared::star_projector::StarProjector;
+use shared::units::AngleExt;
 use starfield::Equatorial;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -24,7 +26,7 @@ use std::time::Duration;
     about = "FGS Tracking Demonstration with Motion Patterns"
 )]
 struct Args {
-    /// Motion pattern type (sine_ra, sine_dec, circular, drift, step, chaotic)
+    /// Motion pattern type (stationary, sine_ra, sine_dec, circular, chaotic)
     #[arg(short, long, default_value = "sine_ra")]
     motion: String,
 
@@ -68,6 +70,10 @@ struct Args {
     #[arg(long, default_value_t = 10.0)]
     frame_rate: f64,
 
+    /// Amplitude of motion in arcseconds (applies to all motion types)
+    #[arg(short = 'a', long, default_value_t = 10.0)]
+    amplitude: f64,
+
     /// Enable verbose output
     #[arg(short, long)]
     verbose: bool,
@@ -96,8 +102,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let base_pointing = Equatorial::from_degrees(83.0, -5.0);
     let test_motions = TestMotions::new(83.0, -5.0);
     let motion = test_motions
-        .get_motion(&args.motion)
+        .get_motion_with_amplitude(&args.motion, args.amplitude)
         .ok_or_else(|| format!("Unknown motion type: {}", args.motion))?;
+
+    // Clone motion for tracking actual positions during callbacks
+    let motion_for_tracking = motion.clone();
 
     // Create camera with motion profile
     let mut camera = create_test_camera_with_motion(base_pointing, motion);
@@ -107,6 +116,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get actual sensor dimensions and telescope config for accurate projection
     let satellite_config = camera.satellite_config().clone();
     let (sensor_width, sensor_height) = satellite_config.sensor.dimensions.get_pixel_width_height();
+
+    // Get pixel scale from satellite configuration
+    let radians_per_pixel = satellite_config.plate_scale_per_pixel().as_radians();
 
     // Create FGS with configuration and camera
     let config = FgsConfig {
@@ -220,9 +232,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        // For tracking demo, we'll use the center position as "actual" since
-        // we can't access camera pointing directly anymore
-        let (actual_x, actual_y) = (center_x, center_y);
+        // Get actual pointing from motion at current time
+        let actual_pointing = motion_for_tracking.get_pointing(current_time);
+
+        // Create projector for actual pointing to compute where star should be
+        let actual_projector = StarProjector::new(
+            &actual_pointing,
+            radians_per_pixel,
+            sensor_width,
+            sensor_height,
+        );
+
+        // Project the base (stationary) star position to get actual pixel position
+        // The star is at the base_pointing when stationary
+        let actual_position = actual_projector
+            .project(&base_pointing)
+            .expect("Failed to project star position - star may be outside field of view");
+        let (actual_x, actual_y) = (actual_position.0, actual_position.1);
 
         // Get estimated position from FGS
         let has_lock = *lock_established.lock().unwrap();

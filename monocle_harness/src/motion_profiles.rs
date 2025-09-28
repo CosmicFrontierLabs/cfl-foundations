@@ -15,9 +15,19 @@ pub trait PointingMotion: Send + Sync {
 
     /// Get motion description
     fn description(&self) -> &str;
+
+    /// Clone the motion into a box
+    fn clone_box(&self) -> Box<dyn PointingMotion>;
+}
+
+impl Clone for Box<dyn PointingMotion> {
+    fn clone(&self) -> Box<dyn PointingMotion> {
+        self.clone_box()
+    }
 }
 
 /// Static pointing (no motion)
+#[derive(Clone)]
 pub struct StaticPointing {
     /// Base pointing coordinates
     base: Equatorial,
@@ -39,9 +49,14 @@ impl PointingMotion for StaticPointing {
     fn description(&self) -> &str {
         "Static (no motion)"
     }
+
+    fn clone_box(&self) -> Box<dyn PointingMotion> {
+        Box::new(self.clone())
+    }
 }
 
 /// Sinusoidal motion in RA (x-axis)
+#[derive(Clone)]
 pub struct SinusoidalRA {
     /// Base pointing
     base: Equatorial,
@@ -76,9 +91,14 @@ impl PointingMotion for SinusoidalRA {
     fn description(&self) -> &str {
         "Sinusoidal motion in RA"
     }
+
+    fn clone_box(&self) -> Box<dyn PointingMotion> {
+        Box::new(self.clone())
+    }
 }
 
 /// Sinusoidal motion in Dec (y-axis)
+#[derive(Clone)]
 pub struct SinusoidalDec {
     /// Base pointing
     base: Equatorial,
@@ -113,9 +133,14 @@ impl PointingMotion for SinusoidalDec {
     fn description(&self) -> &str {
         "Sinusoidal motion in Dec"
     }
+
+    fn clone_box(&self) -> Box<dyn PointingMotion> {
+        Box::new(self.clone())
+    }
 }
 
 /// Circular motion pattern
+#[derive(Clone)]
 pub struct CircularMotion {
     /// Base pointing (center of circle)
     base: Equatorial,
@@ -152,9 +177,14 @@ impl PointingMotion for CircularMotion {
     fn description(&self) -> &str {
         "Circular motion"
     }
+
+    fn clone_box(&self) -> Box<dyn PointingMotion> {
+        Box::new(self.clone())
+    }
 }
 
 /// Smooth chaotic motion using interpolated random walk
+#[derive(Clone)]
 pub struct ChaoticMotion {
     /// Base pointing
     base: Equatorial,
@@ -244,6 +274,10 @@ impl PointingMotion for ChaoticMotion {
     fn description(&self) -> &str {
         "Chaotic smooth motion"
     }
+
+    fn clone_box(&self) -> Box<dyn PointingMotion> {
+        Box::new(self.clone())
+    }
 }
 
 /// Collection of standard test motions
@@ -271,36 +305,47 @@ impl TestMotions {
         ]
     }
 
-    /// Get motion by name
-    pub fn get_motion(&self, name: &str) -> Option<Box<dyn PointingMotion>> {
+    /// Get motion by name with custom amplitude
+    pub fn get_motion_with_amplitude(
+        &self,
+        name: &str,
+        amplitude_arcsec: f64,
+    ) -> Option<Box<dyn PointingMotion>> {
         match name.to_lowercase().as_str() {
-            "static" => Some(Box::new(StaticPointing::new(self.base_ra, self.base_dec))),
+            "static" | "stationary" => {
+                Some(Box::new(StaticPointing::new(self.base_ra, self.base_dec)))
+            }
             "sine_ra" => Some(Box::new(SinusoidalRA::new(
                 self.base_ra,
                 self.base_dec,
-                10.0,
+                amplitude_arcsec,
                 20.0,
             ))),
             "sine_dec" => Some(Box::new(SinusoidalDec::new(
                 self.base_ra,
                 self.base_dec,
-                10.0,
+                amplitude_arcsec,
                 20.0,
             ))),
             "circular" => Some(Box::new(CircularMotion::new(
                 self.base_ra,
                 self.base_dec,
-                10.0,
+                amplitude_arcsec,
                 30.0,
             ))),
             "chaotic" => Some(Box::new(ChaoticMotion::new(
                 self.base_ra,
                 self.base_dec,
-                15.0,
+                amplitude_arcsec,
                 20,
             ))),
             _ => None,
         }
+    }
+
+    /// Get motion by name (uses default amplitudes)
+    pub fn get_motion(&self, name: &str) -> Option<Box<dyn PointingMotion>> {
+        self.get_motion_with_amplitude(name, 10.0)
     }
 }
 
