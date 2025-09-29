@@ -41,11 +41,15 @@ impl<C: StarCatalog> CachedStarCatalog<C> {
     /// * `catalog` - The underlying star catalog to wrap
     /// * `sensor_fov_diameter` - The diameter of the sensor's field of view
     pub fn new(catalog: C, sensor_fov_diameter: Angle) -> Self {
+        // Pre-calculate cache FOV diameter (larger than sensor FOV)
+        let cache_fov_diameter =
+            Angle::from_degrees(sensor_fov_diameter.as_degrees() * CACHE_FOV_MULTIPLIER);
+
         Self {
             catalog,
             cached_stars: Vec::new(),
             cache_center: None,
-            cache_fov_diameter: Angle::from_degrees(0.0),
+            cache_fov_diameter,
             sensor_fov_diameter,
         }
     }
@@ -92,14 +96,11 @@ impl<C: StarCatalog> CachedStarCatalog<C> {
 
     /// Refresh the cache with stars around the new pointing
     fn refresh_cache(&mut self, pointing: &Equatorial) {
-        // Calculate cache FOV (larger than sensor FOV)
-        self.cache_fov_diameter =
-            Angle::from_degrees(self.sensor_fov_diameter.as_degrees() * CACHE_FOV_MULTIPLIER);
-
         // Update cache center
         self.cache_center = Some(*pointing);
 
         // Query catalog for stars in the larger cached region using stars_in_field
+        // cache_fov_diameter is pre-calculated in new()
         self.cached_stars = self.catalog.stars_in_field(
             pointing.ra.to_degrees(),
             pointing.dec.to_degrees(),

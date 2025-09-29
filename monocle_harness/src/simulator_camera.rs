@@ -5,17 +5,17 @@
 
 use crate::motion_profiles::PointingMotion;
 use ndarray::Array2;
+use shared::cached_star_catalog::CachedStarCatalog;
 use shared::camera_interface::{
     AABBExt, CameraConfig, CameraError, CameraInterface, CameraResult, FrameMetadata, Timestamp,
 };
 use shared::image_proc::detection::AABB;
-use shared::units::{AngleExt, TemperatureExt};
+use shared::units::TemperatureExt;
 use simulator::hardware::{SatelliteConfig, TelescopeConfig};
 use simulator::photometry::zodiacal::SolarAngularCoordinates;
 use simulator::scene::Scene;
 use simulator::star_math::field_diameter;
 use starfield::catalogs::binary_catalog::BinaryCatalog;
-use starfield::catalogs::StarCatalog;
 use starfield::Equatorial;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -33,8 +33,8 @@ pub struct SimulatorCamera {
     config: CameraConfig,
     /// Satellite configuration (telescope + sensor)
     satellite: SatelliteConfig,
-    /// Star catalog
-    catalog: BinaryCatalog,
+    /// Cached star catalog for efficient repeated queries
+    cached_catalog: CachedStarCatalog<BinaryCatalog>,
     /// Pointing motion profile
     pointing_motion: Box<dyn PointingMotion>,
     /// Elapsed time since start
@@ -67,10 +67,16 @@ impl SimulatorCamera {
             exposure: Duration::from_millis(100),
         };
 
+        // Calculate FOV for cache size
+        let fov_diameter = field_diameter(&satellite.telescope, &satellite.sensor);
+
+        // Create cached catalog
+        let cached_catalog = CachedStarCatalog::new(catalog, fov_diameter);
+
         Self {
             config,
             satellite,
-            catalog,
+            cached_catalog,
             pointing_motion,
             elapsed_time: Duration::ZERO,
             roi: None,
@@ -125,18 +131,8 @@ impl SimulatorCamera {
     fn generate_frame(&mut self) -> CameraResult<Array2<u16>> {
         let pointing = self.pointing();
 
-        let catalog = &self.catalog;
-
-        // Calculate field diameter in degrees
-        let fov_diameter =
-            field_diameter(&self.satellite.telescope, &self.satellite.sensor).as_degrees();
-
-        // Get stars in the field of view using catalog's method
-        let stars = catalog.stars_in_field(
-            pointing.ra.to_degrees(),
-            pointing.dec.to_degrees(),
-            fov_diameter,
-        );
+        // Get stars using cached catalog
+        let stars = self.cached_catalog.get_stars_in_fov(&pointing);
 
         // Use minimum zodiacal light for best visibility
         let solar_angles = SolarAngularCoordinates::zodiacal_minimum();
