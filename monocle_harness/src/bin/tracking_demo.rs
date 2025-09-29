@@ -185,6 +185,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             *lock_clone.lock().unwrap() = false;
         }
+        FgsCallbackEvent::FrameSizeMismatch {
+            expected_width,
+            expected_height,
+            actual_width,
+            actual_height,
+        } => {
+            if verbose {
+                println!("Frame size mismatch: expected {expected_width}x{expected_height}, got {actual_width}x{actual_height}");
+            }
+        }
     });
 
     // Start FGS

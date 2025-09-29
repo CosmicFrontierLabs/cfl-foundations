@@ -9,7 +9,6 @@ use shared::image_proc::detection::{detect_stars, StarDetection};
 use shared::image_proc::noise::quantify::estimate_noise_level;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
 pub mod callback;
 pub mod config;
@@ -61,8 +60,6 @@ pub struct GuidanceUpdate {
     pub y: f64,
     /// Timestamp of update (from camera frame)
     pub timestamp: Timestamp,
-    /// Quality metric (0.0 to 1.0)
-    pub quality: f64,
 }
 
 /// Main Fine Guidance System state machine
@@ -187,7 +184,7 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
     fn handle_calibrating_frame(
         &mut self,
         frame: ArrayView2<u16>,
-        _timestamp: Timestamp,
+        timestamp: Timestamp,
     ) -> Result<FgsState, String> {
         self.detect_and_select_guides(frame)?;
 
@@ -210,7 +207,7 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
             self.current_track_id += 1;
 
             // Emit tracking started event
-            self.emit_tracking_started_event();
+            self.emit_tracking_started_event(timestamp);
 
             Ok(FgsState::Tracking {
                 frames_processed: 0,
@@ -228,28 +225,36 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
         frame: ArrayView2<u16>,
         timestamp: Timestamp,
     ) -> Result<FgsState, String> {
-        let update = self.track(frame, timestamp)?;
+        let update_opt = self.track(frame, timestamp)?;
 
-        if self.guide_star.is_some() {
-            // Emit tracking update event
-            self.emit_tracking_update_event(&update);
+        // Only process if we got a valid update
+        if let Some(update) = update_opt {
+            if self.guide_star.is_some() {
+                // Emit tracking update event
+                self.emit_tracking_update_event(&update);
 
-            self.last_update = Some(update.clone());
+                self.last_update = Some(update.clone());
+                Ok(FgsState::Tracking {
+                    frames_processed: frames_processed + 1,
+                })
+            } else {
+                log::warn!("Lost all guide stars, entering Reacquiring");
+
+                // Clear camera ROI when losing tracking
+                if let Err(e) = self.camera.clear_roi() {
+                    log::warn!("Failed to clear camera ROI: {e}");
+                }
+
+                // Emit tracking lost event
+                self.emit_tracking_lost_event(TrackingLostReason::SignalTooWeak, timestamp);
+
+                Ok(FgsState::Reacquiring { attempts: 0 })
+            }
+        } else {
+            // No update due to frame mismatch, stay in tracking
             Ok(FgsState::Tracking {
                 frames_processed: frames_processed + 1,
             })
-        } else {
-            log::warn!("Lost all guide stars, entering Reacquiring");
-
-            // Clear camera ROI when losing tracking
-            if let Err(e) = self.camera.clear_roi() {
-                log::warn!("Failed to clear camera ROI: {e}");
-            }
-
-            // Emit tracking lost event
-            self.emit_tracking_lost_event(TrackingLostReason::SignalTooWeak);
-
-            Ok(FgsState::Reacquiring { attempts: 0 })
         }
     }
 
@@ -278,15 +283,14 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
     }
 
     /// Emit tracking started event
-    fn emit_tracking_started_event(&self) {
+    fn emit_tracking_started_event(&self, timestamp: Timestamp) {
         if let Some(guide_star) = &self.guide_star {
             self.emit_event(&FgsCallbackEvent::TrackingStarted {
                 track_id: self.current_track_id,
                 initial_position: PositionEstimate {
                     x: guide_star.x,
                     y: guide_star.y,
-                    confidence: 1.0,
-                    timestamp_us: Instant::now().elapsed().as_micros() as u64,
+                    timestamp,
                 },
                 num_guide_stars: 1,
             });
@@ -301,22 +305,20 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
             position: PositionEstimate {
                 x: update.x,
                 y: update.y,
-                confidence: update.quality,
-                timestamp_us: Instant::now().elapsed().as_micros() as u64,
+                timestamp: update.timestamp,
             },
         });
     }
 
     /// Emit tracking lost event
-    fn emit_tracking_lost_event(&self, reason: TrackingLostReason) {
+    fn emit_tracking_lost_event(&self, reason: TrackingLostReason, timestamp: Timestamp) {
         if let Some(guide_star) = &self.guide_star {
             self.emit_event(&FgsCallbackEvent::TrackingLost {
                 track_id: self.current_track_id,
                 last_position: PositionEstimate {
                     x: guide_star.x,
                     y: guide_star.y,
-                    confidence: 0.0,
-                    timestamp_us: Instant::now().elapsed().as_micros() as u64,
+                    timestamp,
                 },
                 reason,
             });
@@ -585,7 +587,7 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
         &mut self,
         frame: ArrayView2<u16>,
         timestamp: Timestamp,
-    ) -> Result<GuidanceUpdate, String> {
+    ) -> Result<Option<GuidanceUpdate>, String> {
         use shared::image_proc::centroid::compute_centroid_from_mask;
 
         let guide_star = self
@@ -599,18 +601,22 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
         let expected_roi_height = roi_bounds.max_row - roi_bounds.min_row + 1;
         let expected_roi_width = roi_bounds.max_col - roi_bounds.min_col + 1;
 
-        // If frame size doesn't match expected ROI size, warn and skip
+        // If frame size doesn't match expected ROI size, emit event and return None
         if frame_height != expected_roi_height || frame_width != expected_roi_width {
             log::warn!(
                 "Expected ROI frame {expected_roi_height}x{expected_roi_width}, got {frame_height}x{frame_width} - skipping frame"
             );
-            // Return current position without update
-            return Ok(GuidanceUpdate {
-                x: guide_star.x,
-                y: guide_star.y,
-                timestamp,
-                quality: 0.0, // Low quality since we couldn't track
+
+            // Emit frame size mismatch event
+            self.emit_event(&FgsCallbackEvent::FrameSizeMismatch {
+                expected_width: expected_roi_width,
+                expected_height: expected_roi_height,
+                actual_width: frame_width,
+                actual_height: frame_height,
             });
+
+            // Return None to indicate no guidance update
+            return Ok(None);
         }
 
         // Frame is the ROI we expected
@@ -649,16 +655,11 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
         guide_star.flux = centroid_result.flux;
         guide_star.diameter = centroid_result.diameter;
 
-        // Estimate quality based on flux and shape
-        let quality = (centroid_result.flux / 1000.0).min(1.0)
-            * (1.0 / centroid_result.aspect_ratio).min(1.0);
-
-        Ok(GuidanceUpdate {
+        Ok(Some(GuidanceUpdate {
             x: new_x,
             y: new_y,
             timestamp,
-            quality,
-        })
+        }))
     }
 
     /// Attempt to reacquire lost guide stars
@@ -798,8 +799,7 @@ mod tests {
             initial_position: PositionEstimate {
                 x: 100.0,
                 y: 200.0,
-                confidence: 0.95,
-                timestamp_us: 1000,
+                timestamp: test_timestamp(),
             },
             num_guide_stars: 1,
         });
@@ -814,8 +814,7 @@ mod tests {
             position: PositionEstimate {
                 x: 101.0,
                 y: 201.0,
-                confidence: 0.95,
-                timestamp_us: 2000,
+                timestamp: test_timestamp(),
             },
         });
 
@@ -850,8 +849,7 @@ mod tests {
             last_position: PositionEstimate {
                 x: 100.0,
                 y: 200.0,
-                confidence: 0.0,
-                timestamp_us: 3000,
+                timestamp: test_timestamp(),
             },
             reason: TrackingLostReason::SignalTooWeak,
         });

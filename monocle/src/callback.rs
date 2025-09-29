@@ -1,3 +1,4 @@
+use shared::camera_interface::Timestamp;
 use std::sync::Arc;
 
 /// Position estimate for tracking callbacks
@@ -7,10 +8,8 @@ pub struct PositionEstimate {
     pub x: f64,
     /// Y position in pixels
     pub y: f64,
-    /// Confidence level (0.0 to 1.0)
-    pub confidence: f64,
-    /// Timestamp in microseconds
-    pub timestamp_us: u64,
+    /// Timestamp from camera frame
+    pub timestamp: Timestamp,
 }
 
 /// Events emitted for external callbacks
@@ -32,6 +31,13 @@ pub enum FgsCallbackEvent {
         track_id: u32,
         last_position: PositionEstimate,
         reason: TrackingLostReason,
+    },
+    /// Frame size doesn't match expected ROI
+    FrameSizeMismatch {
+        expected_width: usize,
+        expected_height: usize,
+        actual_width: usize,
+        actual_height: usize,
     },
 }
 
