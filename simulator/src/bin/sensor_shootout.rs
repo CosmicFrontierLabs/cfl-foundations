@@ -15,9 +15,10 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::info;
 use rayon::prelude::*;
 use shared::image_proc::detection::StarFinder;
+use shared::range_arg::RangeArg;
 use simulator::hardware::sensor::models as sensor_models;
 use simulator::hardware::SatelliteConfig;
-use simulator::shared_args::{RangeArg, SharedSimulationArgs};
+use simulator::shared_args::SharedSimulationArgs;
 use simulator::sims::scene_runner::{
     run_experiment, CsvWriter, ExperimentCommonArgs, ExperimentParams, ExperimentResult,
 };

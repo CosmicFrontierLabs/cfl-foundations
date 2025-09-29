@@ -8,6 +8,7 @@ pub mod algo;
 pub mod barker;
 pub mod camera_interface;
 pub mod image_proc;
+pub mod range_arg;
 pub mod star_projector;
 pub mod units;
 pub mod viz;
