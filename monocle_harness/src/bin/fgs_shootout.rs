@@ -17,7 +17,6 @@ use monocle::{
     FineGuidanceSystem,
 };
 use monocle_harness::{motion_profiles::StaticPointing, simulator_camera::SimulatorCamera};
-use rand::prelude::*;
 use rayon::prelude::*;
 use shared::camera_interface::CameraInterface;
 use shared::range_arg::RangeArg;
@@ -28,6 +27,7 @@ use simulator::{
     shared_args::{SensorModel, TelescopeModel},
 };
 use starfield::catalogs::binary_catalog::BinaryCatalog;
+use starfield::framelib::random::RandomEquatorial;
 use starfield::Equatorial;
 use std::fs::File;
 use std::io::Write;
@@ -112,7 +112,7 @@ struct Args {
     #[arg(short, long)]
     verbose: bool,
 
-    /// Random seed for reproducibility (0 = use random seed)
+    /// Random seed for reproducibility
     #[arg(long, default_value_t = 0)]
     seed: u64,
 
@@ -375,27 +375,6 @@ fn run_single_experiment(
     }
 }
 
-/// Generate random sky pointings
-fn generate_random_pointings(num: usize, seed: u64) -> Vec<Equatorial> {
-    let mut rng = if seed == 0 {
-        StdRng::from_entropy()
-    } else {
-        StdRng::seed_from_u64(seed)
-    };
-
-    (0..num)
-        .map(|_| {
-            // Random RA: 0-360 degrees
-            let ra_deg = rng.gen_range(0.0..360.0);
-            // Random Dec: -90 to +90 degrees (with cosine distribution for uniform sphere coverage)
-            let dec_rad = rng.gen_range(0.0..1.0f64).asin() - std::f64::consts::FRAC_PI_2;
-            let dec_deg = dec_rad.to_degrees();
-
-            Equatorial::from_degrees(ra_deg, dec_deg)
-        })
-        .collect()
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
     env_logger::init();
@@ -436,7 +415,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         vec![base_telescope.f_number()]
     };
     let exposures_ms = args.exposure_range_ms.to_vec()?;
-    let pointings = generate_random_pointings(args.num_pointings, args.seed);
+    // Generate random pointings using RandomEquatorial with seed for reproducibility
+    let mut randomizer = RandomEquatorial::with_seed(args.seed);
+    let pointings: Vec<Equatorial> = (0..args.num_pointings)
+        .map(|_| randomizer.next().unwrap())
+        .collect();
 
     println!("\nParameter space:");
     println!("  Sensor: {}", base_sensor.name);
