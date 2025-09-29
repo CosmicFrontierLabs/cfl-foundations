@@ -34,7 +34,7 @@ pub struct SimulatorCamera {
     /// Satellite configuration (telescope + sensor)
     satellite: SatelliteConfig,
     /// Star catalog
-    catalog: Option<BinaryCatalog>,
+    catalog: BinaryCatalog,
     /// Pointing motion profile
     pointing_motion: Box<dyn PointingMotion>,
     /// Elapsed time since start
@@ -70,7 +70,7 @@ impl SimulatorCamera {
         Self {
             config,
             satellite,
-            catalog: Some(catalog),
+            catalog,
             pointing_motion,
             elapsed_time: Duration::ZERO,
             roi: None,
@@ -125,10 +125,7 @@ impl SimulatorCamera {
     fn generate_frame(&mut self) -> CameraResult<Array2<u16>> {
         let pointing = self.pointing();
 
-        let catalog = self
-            .catalog
-            .as_ref()
-            .ok_or_else(|| CameraError::CaptureError("No catalog loaded".to_string()))?;
+        let catalog = &self.catalog;
 
         // Calculate field diameter in degrees
         let fov_diameter =
