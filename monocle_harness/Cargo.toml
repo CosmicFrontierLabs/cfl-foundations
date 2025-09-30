@@ -27,6 +27,7 @@ rand_chacha = "0.3"
 # For fgs_shootout parallel execution
 rayon = "1.7"
 indicatif = "0.17"
+log = "0.4.28"
 
 [dev-dependencies]
 approx = "0.5"

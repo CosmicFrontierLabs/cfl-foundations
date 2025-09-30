@@ -14,6 +14,7 @@ use shared::camera_interface::{
 use shared::image_proc::detection::AABB;
 use shared::units::TemperatureExt;
 use simulator::hardware::{SatelliteConfig, TelescopeConfig};
+use simulator::image_proc::render::StarInFrame;
 use simulator::photometry::zodiacal::SolarAngularCoordinates;
 use simulator::scene::Scene;
 use simulator::star_math::field_diameter;
@@ -54,6 +55,8 @@ pub struct SimulatorCamera {
     noise_seed: u64,
     /// Continuous capture state
     continuous_state: Arc<Mutex<ContinuousCaptureState>>,
+    /// Stars rendered in the last frame (with pixel positions)
+    last_rendered_stars: Vec<StarInFrame>,
 }
 
 impl SimulatorCamera {
@@ -94,6 +97,7 @@ impl SimulatorCamera {
                 latest_frame: None,
                 frame_counter: 0,
             })),
+            last_rendered_stars: Vec::new(),
         }
     }
 
@@ -138,6 +142,33 @@ impl SimulatorCamera {
         self.elapsed_time = Duration::ZERO;
     }
 
+    /// Get the stars that were rendered in the last frame.
+    /// Returns empty vector if no frame has been captured yet.
+    /// Each star contains pixel position (x, y) and original catalog data.
+    pub fn get_last_rendered_stars(&self) -> &[StarInFrame] {
+        &self.last_rendered_stars
+    }
+
+    /// Find the closest rendered star to a given pixel position.
+    /// Returns None if no stars were rendered or position is too far from any star.
+    pub fn find_closest_star(&self, x: f64, y: f64, max_distance: f64) -> Option<&StarInFrame> {
+        let mut min_distance = f64::MAX;
+        let mut closest_star = None;
+
+        for star in &self.last_rendered_stars {
+            let dx = star.x - x;
+            let dy = star.y - y;
+            let distance = (dx * dx + dy * dy).sqrt();
+
+            if distance < min_distance && distance <= max_distance {
+                min_distance = distance;
+                closest_star = Some(star);
+            }
+        }
+
+        closest_star
+    }
+
     /// Generate a frame using the simulator.
     /// Queries stars from cached catalog and renders them with realistic noise.
     fn generate_frame(&mut self) -> CameraResult<Array2<u16>> {
@@ -154,6 +185,9 @@ impl SimulatorCamera {
 
         // Generate frame
         let result = scene.render_with_seed(&self.exposure, Some(self.noise_seed));
+
+        // Store rendered stars for later matching with detections
+        self.last_rendered_stars = result.rendered_stars.clone();
 
         // Increment seed for next frame to get different noise
         self.noise_seed = self.noise_seed.wrapping_add(1);

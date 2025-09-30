@@ -11,6 +11,7 @@
 use chrono::Local;
 use clap::Parser;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use log::LevelFilter;
 use monocle::{
     config::FgsConfig,
     state::{FgsEvent, FgsState},
@@ -144,6 +145,7 @@ struct TrackingPoint {
     y_actual: f64,
     x_estimated: f64,
     y_estimated: f64,
+    magnitude: f64,
 }
 
 /// Results from a single FGS experiment
@@ -156,6 +158,7 @@ struct ExperimentResult {
     lock_acquired: bool,
     acquisition_time_s: f64,
     num_guide_stars: usize,
+    guide_star_magnitude: f64, // Gaia magnitude of tracked star (NaN if unknown)
 
     // Tracking results (empty if no lock)
     tracking_points: Vec<TrackingPoint>,
@@ -176,7 +179,7 @@ impl ExperimentResult {
             file,
             "experiment_id,pointing_ra_deg,pointing_dec_deg,f_number,exposure_ms,\
             sensor,telescope,temperature_c,\
-            lock_acquired,acquisition_time_s,num_guide_stars,\
+            lock_acquired,acquisition_time_s,num_guide_stars,guide_star_magnitude,\
             mean_x_error_pixels,mean_y_error_pixels,std_x_error_pixels,std_y_error_pixels,\
             max_error_pixels,rms_error_pixels,num_tracked_points"
         )
@@ -186,7 +189,7 @@ impl ExperimentResult {
     fn write_csv_row(&self, file: &mut File) -> std::io::Result<()> {
         writeln!(
             file,
-            "{},{:.6},{:.6},{:.1},{:.1},{},{},{:.1},{},{:.3},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{}",
+            "{},{:.6},{:.6},{:.1},{:.1},{},{},{:.1},{},{:.3},{},{:.2},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{}",
             self.params.experiment_id,
             self.params.pointing.ra.to_degrees(),
             self.params.pointing.dec.to_degrees(),
@@ -198,6 +201,7 @@ impl ExperimentResult {
             self.lock_acquired,
             self.acquisition_time_s,
             self.num_guide_stars,
+            if self.guide_star_magnitude.is_nan() { "".to_string() } else { format!("{:.2}", self.guide_star_magnitude) },
             self.mean_x_error,
             self.mean_y_error,
             self.std_x_error,
@@ -213,7 +217,7 @@ impl ExperimentResult {
         for point in &self.tracking_points {
             writeln!(
                 file,
-                "{},{:.6},{:.6},{:.1},{:.1},{:.3},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}",
+                "{},{:.6},{:.6},{:.1},{:.1},{:.3},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.2}",
                 self.params.experiment_id,
                 self.params.pointing.ra.to_degrees(),
                 self.params.pointing.dec.to_degrees(),
@@ -226,10 +230,35 @@ impl ExperimentResult {
                 point.y_estimated,
                 point.x_error_pixels,
                 point.y_error_pixels,
+                point.magnitude,
             )?;
         }
         Ok(())
     }
+}
+
+/// Find the closest rendered star to a given pixel position
+fn find_closest_rendered_star(
+    rendered_stars: &[simulator::image_proc::render::StarInFrame],
+    x: f64,
+    y: f64,
+    max_distance: f64,
+) -> Option<&simulator::image_proc::render::StarInFrame> {
+    let mut min_distance = f64::MAX;
+    let mut closest_star = None;
+
+    for star in rendered_stars {
+        let dx = star.x - x;
+        let dy = star.y - y;
+        let distance = (dx * dx + dy * dy).sqrt();
+
+        if distance < min_distance && distance <= max_distance {
+            min_distance = distance;
+            closest_star = Some(star);
+        }
+    }
+
+    closest_star
 }
 
 /// Run a single FGS experiment
@@ -258,6 +287,12 @@ fn run_single_experiment(
         .set_exposure(exposure)
         .expect("Failed to set exposure");
 
+    // Capture a frame to get rendered stars before passing camera to FGS
+    camera
+        .capture_frame()
+        .expect("Failed to capture initial frame");
+    let rendered_stars = camera.get_last_rendered_stars().to_vec();
+
     // Create FGS
     let mut fgs = FineGuidanceSystem::new(camera, fgs_config.clone());
 
@@ -277,22 +312,38 @@ fn run_single_experiment(
 
     let acquisition_time = start_time.elapsed().as_secs_f64();
 
-    // Check if we achieved lock
-    let (lock_acquired, num_guide_stars) = match fgs.state() {
-        FgsState::Tracking { .. } => (true, 1), // FGS currently tracks single star
-        _ => (false, 0),
+    // Check if we achieved lock and get guide star magnitude
+    let (lock_acquired, num_guide_stars, guide_star_magnitude) = match fgs.state() {
+        FgsState::Tracking { .. } => {
+            // Get guide star position and find matching rendered star
+            let magnitude = if let Some(guide_star) = fgs.guide_star() {
+                find_closest_rendered_star(&rendered_stars, guide_star.x, guide_star.y, 10.0)
+                    .map(|s| s.star.magnitude)
+                    .unwrap_or(f64::NAN)
+            } else {
+                f64::NAN
+            };
+            (true, 1, magnitude)
+        }
+        _ => (false, 0, f64::NAN),
     };
 
     if verbose {
+        let mag_display = if guide_star_magnitude.is_nan() {
+            "N/A".to_string()
+        } else {
+            format!("{guide_star_magnitude:.2}")
+        };
         println!(
-            "Experiment {}: Pointing ({:.2}, {:.2})°, f/{:.1}, {}ms exposure - Lock: {}, Stars: {}",
+            "Experiment {}: Pointing ({:.2}, {:.2})°, f/{:.1}, {}ms exposure - Lock: {}, Stars: {}, Mag: {}",
             params.experiment_id,
             params.pointing.ra.to_degrees(),
             params.pointing.dec.to_degrees(),
             params.satellite_config.telescope.f_number(),
             params.exposure_ms,
             lock_acquired,
-            num_guide_stars
+            num_guide_stars,
+            mag_display
         );
     }
 
@@ -300,26 +351,30 @@ fn run_single_experiment(
     let mut tracking_points = Vec::new();
 
     if lock_acquired {
-        // For simplicity, we'll track at the same position (no motion)
-        // In a real scenario, you might add motion here
+        // Get actual star position and magnitude from rendered stars for ground truth
+        let (actual_x, actual_y, magnitude) = if let Some(guide_star) = fgs.guide_star() {
+            if let Some(star) =
+                find_closest_rendered_star(&rendered_stars, guide_star.x, guide_star.y, 10.0)
+            {
+                (star.x, star.y, star.star.magnitude)
+            } else {
+                (f64::NAN, f64::NAN, f64::NAN)
+            }
+        } else {
+            (f64::NAN, f64::NAN, f64::NAN)
+        };
 
         for _ in 0..tracked_points {
             if let Ok(Some(update)) = fgs.process_next_frame() {
-                // Since we're using static pointing, actual position is center
-                // In a real implementation with motion, you'd calculate actual position
-                let sensor_width = 4096.0; // HWK4123 width
-                let sensor_height = 2300.0; // HWK4123 height
-                let center_x = sensor_width / 2.0;
-                let center_y = sensor_height / 2.0;
-
                 let point = TrackingPoint {
                     time_s: update.timestamp.to_duration().as_secs_f64(),
-                    x_actual: center_x,
-                    y_actual: center_y,
+                    x_actual: actual_x,
+                    y_actual: actual_y,
                     x_estimated: update.x,
                     y_estimated: update.y,
-                    x_error_pixels: update.x - center_x,
-                    y_error_pixels: update.y - center_y,
+                    x_error_pixels: update.x - actual_x,
+                    y_error_pixels: update.y - actual_y,
+                    magnitude,
                 };
 
                 tracking_points.push(point);
@@ -365,6 +420,7 @@ fn run_single_experiment(
         lock_acquired,
         acquisition_time_s: acquisition_time,
         num_guide_stars,
+        guide_star_magnitude,
         tracking_points,
         mean_x_error,
         mean_y_error,
@@ -376,11 +432,21 @@ fn run_single_experiment(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize logging
-    env_logger::init();
-
-    // Parse arguments
+    // Parse arguments first to get timestamp for log file
     let args = Args::parse();
+
+    // Generate timestamp for log file
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let log_filename = format!("fgs_shootout_{timestamp}.log");
+
+    // Initialize logging to file
+    let log_file = File::create(&log_filename)?;
+    env_logger::Builder::new()
+        .filter_level(LevelFilter::Info)
+        .target(env_logger::Target::Pipe(Box::new(log_file)))
+        .init();
+
+    log::info!("FGS Shootout starting - log file: {log_filename}");
 
     println!("FGS Performance Shootout");
     println!("========================");
@@ -560,7 +626,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     writeln!(
         tracking_file,
         "experiment_id,pointing_ra_deg,pointing_dec_deg,f_number,exposure_ms,\
-        time_s,x_actual,y_actual,x_estimated,y_estimated,x_error_pixels,y_error_pixels"
+        time_s,x_actual,y_actual,x_estimated,y_estimated,x_error_pixels,y_error_pixels,magnitude"
     )?;
 
     for result in &final_results {

@@ -404,6 +404,11 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
         &self.state
     }
 
+    /// Get information about the currently tracked guide star
+    pub fn guide_star(&self) -> Option<&GuideStar> {
+        self.guide_star.as_ref()
+    }
+
     /// Get the averaged accumulated frame
     pub fn get_averaged_frame(&self) -> Option<Array2<f64>> {
         self.accumulated_frame.as_ref().map(|frame| {

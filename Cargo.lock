@@ -1971,6 +1971,7 @@ dependencies = [
  "clap",
  "env_logger",
  "indicatif",
+ "log",
  "monocle",
  "ndarray 0.15.6",
  "plotters",
