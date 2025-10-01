@@ -58,6 +58,8 @@ pub struct GuidanceUpdate {
     pub x: f64,
     /// Y position in frame coordinates
     pub y: f64,
+    /// Integrated flux of the tracked star
+    pub flux: f64,
     /// Timestamp of update (from camera frame)
     pub timestamp: Timestamp,
 }
@@ -663,6 +665,7 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
         Ok(Some(GuidanceUpdate {
             x: new_x,
             y: new_y,
+            flux: centroid_result.flux,
             timestamp,
         }))
     }

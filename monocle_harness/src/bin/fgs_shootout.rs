@@ -142,6 +142,7 @@ struct TrackingPoint {
     x_estimated: f64,
     y_estimated: f64,
     magnitude: f64,
+    flux: f64,
 }
 
 /// Results from a single FGS experiment
@@ -207,7 +208,7 @@ impl ExperimentResult {
         for point in &self.tracking_points {
             writeln!(
                 file,
-                "{},{:.6},{:.6},{:.1},{:.1},{:.3},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.2}",
+                "{},{:.6},{:.6},{:.1},{:.1},{:.3},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.2},{:.2}",
                 self.params.experiment_id,
                 self.params.pointing.ra.to_degrees(),
                 self.params.pointing.dec.to_degrees(),
@@ -221,6 +222,7 @@ impl ExperimentResult {
                 point.x_error_pixels,
                 point.y_error_pixels,
                 point.magnitude,
+                point.flux,
             )?;
         }
         Ok(())
@@ -365,6 +367,7 @@ fn run_single_experiment(
                 x_error_pixels: update.x - actual_x,
                 y_error_pixels: update.y - actual_y,
                 magnitude,
+                flux: update.flux,
             };
 
             tracking_points.push(point);
@@ -602,7 +605,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     writeln!(
         tracking_file,
         "experiment_id,pointing_ra_deg,pointing_dec_deg,f_number,exposure_ms,\
-        time_s,x_actual,y_actual,x_estimated,y_estimated,x_error_pixels,y_error_pixels,magnitude"
+        time_s,x_actual,y_actual,x_estimated,y_estimated,x_error_pixels,y_error_pixels,magnitude,flux"
     )?;
 
     for result in &final_results {
