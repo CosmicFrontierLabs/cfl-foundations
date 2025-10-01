@@ -215,6 +215,17 @@ impl SensorConfig {
     pub fn pixel_size(&self) -> Length {
         self.dimensions.pixel_size()
     }
+
+    /// Get the saturating ADC reading in DN (Digital Numbers)
+    ///
+    /// Returns the ADC reading when the sensor reaches saturation, which is
+    /// limited by either the full well capacity or the ADC bit depth, whichever
+    /// is reached first.
+    pub fn saturating_reading(&self) -> f64 {
+        let well_saturation_dn = self.max_well_depth_e * self.dn_per_electron;
+        let adc_max_dn = (2_u32.pow(self.bit_depth as u32) - 1) as f64;
+        well_saturation_dn.min(adc_max_dn)
+    }
 }
 
 #[cfg(test)]
@@ -441,6 +452,46 @@ mod tests {
 
         // Verify QE stays the same
         assert_relative_eq!(resized.qe_at_wavelength(500), 0.5, epsilon = 1e-5);
+    }
+
+    #[test]
+    fn test_saturating_reading() {
+        let qe = create_flat_qe(0.5);
+        let geometry = SensorGeometry::of_width_height(1024, 768, Length::from_micrometers(5.5));
+
+        let sensor_well_limited = SensorConfig::new(
+            "Test Well Limited",
+            qe.clone(),
+            geometry,
+            ReadNoiseEstimator::constant(2.0),
+            DarkCurrentEstimator::from_reference_point(0.01, Temperature::from_celsius(20.0)),
+            16,
+            0.5,
+            10_000.0,
+            30.0,
+        );
+        assert_relative_eq!(
+            sensor_well_limited.saturating_reading(),
+            5000.0,
+            epsilon = 1e-10
+        );
+
+        let sensor_adc_limited = SensorConfig::new(
+            "Test ADC Limited",
+            qe,
+            geometry,
+            ReadNoiseEstimator::constant(2.0),
+            DarkCurrentEstimator::from_reference_point(0.01, Temperature::from_celsius(20.0)),
+            12,
+            1.0,
+            10_000.0,
+            30.0,
+        );
+        assert_relative_eq!(
+            sensor_adc_limited.saturating_reading(),
+            4095.0,
+            epsilon = 1e-10
+        );
     }
 }
 
