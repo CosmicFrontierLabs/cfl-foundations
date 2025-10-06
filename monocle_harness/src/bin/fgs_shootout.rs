@@ -97,10 +97,6 @@ struct Args {
     #[arg(long, default_value_t = 10.0)]
     min_snr: f64,
 
-    /// Maximum number of guide stars to track
-    #[arg(long, default_value_t = 3)]
-    max_guide_stars: usize,
-
     /// ROI size in pixels
     #[arg(long, default_value_t = 32)]
     roi_size: usize,
@@ -136,7 +132,6 @@ struct ExperimentParams {
 struct FgsParams {
     acquisition_frames: usize,
     min_snr: f64,
-    max_guide_stars: usize,
     roi_size: usize,
     centroid_radius_multiplier: f64,
 }
@@ -307,7 +302,6 @@ fn run_single_experiment(
             saturation_search_radius: 3.0,
             minimum_edge_distance: 10.0,
         },
-        max_guide_stars: fgs_params.max_guide_stars,
         roi_size: fgs_params.roi_size,
         max_reacquisition_attempts: 5,
         centroid_radius_multiplier: fgs_params.centroid_radius_multiplier,
@@ -560,7 +554,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fgs_params = FgsParams {
         acquisition_frames: args.acquisition_frames,
         min_snr: args.min_snr,
-        max_guide_stars: args.max_guide_stars,
         roi_size: args.roi_size,
         centroid_radius_multiplier: args.centroid_multiplier,
     };

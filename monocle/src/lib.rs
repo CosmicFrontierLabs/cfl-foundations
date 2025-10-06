@@ -589,7 +589,6 @@ mod tests {
                 saturation_search_radius: 3.0,
                 minimum_edge_distance: 10.0,
             },
-            max_guide_stars: 3,
             roi_size: 32,
             max_reacquisition_attempts: 5,
             centroid_radius_multiplier: 5.0,

@@ -26,8 +26,6 @@ pub struct FgsConfig {
     pub acquisition_frames: usize,
     /// Guide star filtering criteria
     pub filters: GuideStarFilters,
-    /// Maximum number of guide stars to track
-    pub max_guide_stars: usize,
     /// ROI size around each guide star (pixels)
     pub roi_size: usize,
     /// Maximum reacquisition attempts before recalibration
