@@ -1,8 +1,48 @@
-# Git Hooks Scripts
+# Development Scripts
 
-This directory contains scripts for managing git hooks in the repository.
+This directory contains scripts for git hooks, building, and deploying to Jetson Orin.
 
-## Available Scripts
+## Build & Deployment Scripts
+
+### build-arm64.sh
+Cross-compile packages for ARM64 (Jetson Orin).
+
+Usage:
+```bash
+# Build entire package
+./scripts/build-arm64.sh <package-name>
+
+# Build specific binary
+./scripts/build-arm64.sh <package-name> <binary-name>
+
+# Examples
+./scripts/build-arm64.sh flight-software
+./scripts/build-arm64.sh orin-dev playerone_info
+```
+
+### deploy-to-orin.sh
+Build and deploy packages to remote Jetson Orin device.
+
+Usage:
+```bash
+# Deploy package and run command
+./scripts/deploy-to-orin.sh --package orin-dev --binary playerone_info --run './playerone_info --detailed'
+
+# Deploy without building (use existing binaries)
+./scripts/deploy-to-orin.sh --package flight-software --skip-build --keep-remote
+```
+
+Options:
+- `--package PKG` - Package to deploy (flight-software, orin-dev)
+- `--binary BIN` - Specific binary to deploy
+- `--skip-build` - Skip build step
+- `--keep-remote` - Keep remote directory after deployment
+- `--run CMD` - Command to run remotely
+
+Environment variables:
+- `ORIN_HOST` - Remote host (default: cosmicfrontiers@192.168.15.229)
+
+## Git Hooks Scripts
 
 ### install-hooks.sh
 Installs pre-commit hooks that match the CI pipeline checks:
