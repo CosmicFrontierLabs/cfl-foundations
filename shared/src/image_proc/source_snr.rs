@@ -9,17 +9,19 @@
 //!
 //! The SNR calculation follows standard aperture photometry practices:
 //!
-//! 1. **Signal Measurement**: Peak pixel value within the aperture radius
+//! 1. **Signal Measurement**: Sum of all pixel values within the aperture radius minus background contribution
 //! 2. **Background Estimation**: Median of pixels in annulus (2-3× aperture radius)
 //! 3. **Noise Estimation**: Median Absolute Deviation (MAD) in annulus, converted to RMS
-//! 4. **SNR Calculation**: (signal - background) / noise_rms
+//! 4. **SNR Calculation**: (aperture_sum - background_contribution) / noise_rms
 //!
 //! The use of MAD for noise estimation provides robustness against outliers from
 //! cosmic rays or neighboring sources in the background annulus.
 
 use ndarray::ArrayView2;
 
+use super::aperture_photometry::collect_aperture_pixels;
 use super::detection::StarDetection;
+use crate::algo::stats::median;
 
 /// Calculate signal-to-noise ratio for a detected source using aperture photometry.
 ///
@@ -31,7 +33,7 @@ use super::detection::StarDetection;
 ///
 /// - **Aperture**: Circular region of radius `aperture_radius` centered on detection
 /// - **Background annulus**: Between `background_inner_radius` and `background_outer_radius`
-/// - **Signal**: Peak pixel value in aperture minus background median
+/// - **Signal**: Sum of all aperture pixels minus background contribution (median × n_pixels)
 /// - **Noise**: RMS estimated from MAD (σ ≈ 1.4826 × MAD for Gaussian noise)
 ///
 /// # Arguments
@@ -64,34 +66,14 @@ pub fn calculate_snr(
     background_inner_radius: f64,
     background_outer_radius: f64,
 ) -> Result<f64, String> {
-    let (height, width) = image.dim();
-
-    let x_center = detection.x.round() as isize;
-    let y_center = detection.y.round() as isize;
-
-    let x_min = (x_center - background_outer_radius.ceil() as isize).max(0) as usize;
-    let x_max =
-        ((x_center + background_outer_radius.ceil() as isize + 1).min(width as isize)) as usize;
-    let y_min = (y_center - background_outer_radius.ceil() as isize).max(0) as usize;
-    let y_max =
-        ((y_center + background_outer_radius.ceil() as isize + 1).min(height as isize)) as usize;
-
-    let mut background_pixels = Vec::new();
-    let mut aperture_pixels = Vec::new();
-
-    for y in y_min..y_max {
-        for x in x_min..x_max {
-            let dx = x as f64 - detection.x;
-            let dy = y as f64 - detection.y;
-            let distance = (dx * dx + dy * dy).sqrt();
-
-            if distance <= aperture_radius {
-                aperture_pixels.push(image[[y, x]]);
-            } else if distance >= background_inner_radius && distance <= background_outer_radius {
-                background_pixels.push(image[[y, x]]);
-            }
-        }
-    }
+    let (aperture_pixels, background_pixels) = collect_aperture_pixels(
+        image,
+        detection.x,
+        detection.y,
+        aperture_radius,
+        background_inner_radius,
+        background_outer_radius,
+    );
 
     if aperture_pixels.is_empty() {
         return Err(format!(
@@ -109,30 +91,30 @@ pub fn calculate_snr(
         ));
     }
 
-    background_pixels.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let background_median = if background_pixels.len() % 2 == 0 {
-        let mid = background_pixels.len() / 2;
-        (background_pixels[mid - 1] + background_pixels[mid]) / 2.0
-    } else {
-        background_pixels[background_pixels.len() / 2]
-    };
+    // Estimate local background level using median of background annulus pixels
+    let background_median = median(&background_pixels)
+        .map_err(|e| format!("Failed to compute background median: {e}"))?;
 
-    let peak_value = aperture_pixels.iter().fold(0.0, |max, &val| val.max(max));
-    let signal = peak_value - background_median;
+    // Calculate signal: total flux in aperture minus background contribution
+    // - aperture_sum: total flux from all pixels in the aperture (source + background)
+    // - background_contribution: expected background flux (median × number of aperture pixels)
+    // - signal: net flux from the source alone after background subtraction
+    let aperture_sum: f64 = aperture_pixels.iter().sum();
+    let background_contribution = background_median * aperture_pixels.len() as f64;
+    let signal = aperture_sum - background_contribution;
 
-    let mut deviations: Vec<f64> = background_pixels
+    // Calculate noise using Median Absolute Deviation (MAD) for robustness
+    // MAD is less sensitive to outliers than standard deviation
+    let deviations: Vec<f64> = background_pixels
         .iter()
         .map(|&val| (val - background_median).abs())
         .collect();
-    deviations.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-    let mad = if deviations.len() % 2 == 0 {
-        let mid = deviations.len() / 2;
-        (deviations[mid - 1] + deviations[mid]) / 2.0
-    } else {
-        deviations[deviations.len() / 2]
-    };
+    let mad = median(&deviations).map_err(|e| format!("Failed to compute MAD: {e}"))?;
 
+    // Convert MAD to RMS noise estimate
+    // For Gaussian noise: σ ≈ 1.4826 × MAD
+    // This constant is 1 / Φ⁻¹(3/4) where Φ⁻¹ is the inverse normal CDF
     let noise_rms = 1.4826 * mad;
 
     if noise_rms <= 0.0 {
@@ -192,6 +174,7 @@ pub fn filter_by_snr(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
     use ndarray::Array2;
 
     fn make_test_detection(x: f64, y: f64, flux: f64) -> StarDetection {
@@ -342,7 +325,7 @@ mod tests {
             .expect("SNR calculation should succeed");
 
         assert!(
-            snr > 5.0 && snr < 200.0,
+            snr > 5.0 && snr < 1000.0,
             "SNR should be reasonable for noisy background, got {}",
             snr
         );
@@ -509,5 +492,85 @@ mod tests {
                 radius
             );
         }
+    }
+
+    #[test]
+    fn test_snr_with_known_signal_and_noise() {
+        use crate::image_proc::noise::generate::simple_normal_array;
+
+        // Test with controlled synthetic data to verify SNR calculation accuracy
+        // Parameters:
+        // - Background level: 1000.0 ADU
+        // - Gaussian noise sigma: 10.0 ADU (clamped positive)
+        // - Gaussian spot: amplitude 500.0 ADU, sigma 1.5 pixels at center (50, 50)
+
+        const IMAGE_SIZE: usize = 100;
+        const BACKGROUND: f64 = 1000.0;
+        const NOISE_SIGMA: f64 = 10.0;
+        const SPOT_AMPLITUDE: f64 = 500.0;
+        const SPOT_SIGMA: f64 = 1.5;
+        const CENTER_X: f64 = 50.0;
+        const CENTER_Y: f64 = 50.0;
+        const RNG_SEED: u64 = 42;
+
+        // Generate background with properly seeded Gaussian noise
+        let noise = simple_normal_array((IMAGE_SIZE, IMAGE_SIZE), 0.0, NOISE_SIGMA, RNG_SEED);
+        let mut image = Array2::<f64>::zeros((IMAGE_SIZE, IMAGE_SIZE));
+
+        // Add background with Gaussian noise (clamped positive)
+        for i in 0..IMAGE_SIZE {
+            for j in 0..IMAGE_SIZE {
+                image[[i, j]] = (BACKGROUND + noise[[i, j]]).max(0.0); // Clamp positive
+            }
+        }
+
+        // Add Gaussian spot centered at (CENTER_X, CENTER_Y)
+        for i in 0..IMAGE_SIZE {
+            for j in 0..IMAGE_SIZE {
+                let dx = j as f64 - CENTER_X;
+                let dy = i as f64 - CENTER_Y;
+                let r_squared = dx * dx + dy * dy;
+                let gaussian =
+                    SPOT_AMPLITUDE * (-r_squared / (2.0 * SPOT_SIGMA * SPOT_SIGMA)).exp();
+                image[[i, j]] += gaussian;
+            }
+        }
+
+        let detection = make_test_detection(CENTER_X, CENTER_Y, SPOT_AMPLITUDE);
+
+        // Use aperture radius = 3*sigma to capture ~99% of Gaussian flux
+        let aperture_radius = 3.0 * SPOT_SIGMA;
+        let background_inner = aperture_radius * 2.0;
+        let background_outer = aperture_radius * 3.0;
+
+        let snr = calculate_snr(
+            &detection,
+            &image.view(),
+            aperture_radius,
+            background_inner,
+            background_outer,
+        )
+        .expect("SNR calculation should succeed");
+
+        // Expected SNR calculation:
+        // Signal = integrated Gaussian flux within aperture
+        // For a 2D Gaussian, total flux = 2π * amplitude * sigma^2
+        // Within radius r, fraction of flux ≈ 1 - exp(-r²/(2σ²))
+        let total_gaussian_flux =
+            2.0 * std::f64::consts::PI * SPOT_AMPLITUDE * SPOT_SIGMA * SPOT_SIGMA;
+        let aperture_fraction =
+            1.0 - (-aperture_radius * aperture_radius / (2.0 * SPOT_SIGMA * SPOT_SIGMA)).exp();
+        let expected_signal = total_gaussian_flux * aperture_fraction;
+
+        // Noise = background noise sigma (MAD converts back to sigma via 1.4826 factor)
+        let expected_noise = NOISE_SIGMA;
+
+        let expected_snr = expected_signal / expected_noise;
+
+        // Allow 5% relative tolerance due to:
+        // - Discrete pixel sampling of continuous Gaussian
+        // - MAD estimation variance on finite sample
+        // - Noise pattern approximation
+        assert_relative_eq!(snr, expected_snr, max_relative = 0.05);
     }
 }

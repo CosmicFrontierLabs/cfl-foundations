@@ -75,6 +75,57 @@ pub fn ks_critical_value(n: usize, alpha: f64) -> f64 {
     c_alpha / (n as f64).sqrt()
 }
 
+/// Calculate median of a slice of f64 values
+///
+/// This function computes the median while filtering out NaN values but including
+/// infinite values (±inf). For even-length data, returns the average of the two
+/// middle values.
+///
+/// # Arguments
+///
+/// * `values` - Slice of f64 values to compute median from
+///
+/// # Returns
+///
+/// * `Ok(median)` - The median value
+/// * `Err(message)` - If no valid values remain after filtering NaN
+///
+/// # Examples
+///
+/// ```
+/// use shared::algo::stats::median;
+///
+/// let values = vec![1.0, 3.0, 2.0, 5.0, 4.0];
+/// assert_eq!(median(&values).unwrap(), 3.0);
+///
+/// let with_nan = vec![1.0, f64::NAN, 3.0, 2.0];
+/// assert_eq!(median(&with_nan).unwrap(), 2.0);
+///
+/// let with_inf = vec![1.0, 2.0, f64::INFINITY, 3.0];
+/// assert_eq!(median(&with_inf).unwrap(), 2.5);
+/// ```
+pub fn median(values: &[f64]) -> Result<f64, String> {
+    let mut valid_values: Vec<f64> = values.iter().filter(|v| !v.is_nan()).copied().collect();
+
+    if valid_values.is_empty() {
+        return Err(format!(
+            "Insufficient data points to compute median: {} total values, 0 valid (all NaN)",
+            values.len()
+        ));
+    }
+
+    valid_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+    let median_value = if valid_values.len() % 2 == 0 {
+        let mid = valid_values.len() / 2;
+        (valid_values[mid - 1] + valid_values[mid]) / 2.0
+    } else {
+        valid_values[valid_values.len() / 2]
+    };
+
+    Ok(median_value)
+}
+
 /// Calculate Pearson correlation coefficient between two samples
 ///
 /// Returns correlation in range [-1, 1], or NaN if samples have zero variance
@@ -277,5 +328,87 @@ mod tests {
         let constant = vec![5.0, 5.0, 5.0, 5.0];
         let varying = vec![1.0, 2.0, 3.0, 4.0];
         assert!(pearson_correlation(&constant, &varying).is_nan());
+    }
+
+    #[test]
+    fn test_median_odd_length() {
+        let values = vec![1.0, 3.0, 2.0, 5.0, 4.0];
+        assert_eq!(median(&values).unwrap(), 3.0);
+    }
+
+    #[test]
+    fn test_median_even_length() {
+        let values = vec![1.0, 2.0, 3.0, 4.0];
+        assert_eq!(median(&values).unwrap(), 2.5);
+    }
+
+    #[test]
+    fn test_median_single_value() {
+        let values = vec![42.0];
+        assert_eq!(median(&values).unwrap(), 42.0);
+    }
+
+    #[test]
+    fn test_median_with_nan() {
+        let values = vec![1.0, f64::NAN, 3.0, 2.0, f64::NAN];
+        assert_eq!(median(&values).unwrap(), 2.0);
+    }
+
+    #[test]
+    fn test_median_with_positive_inf() {
+        let values = vec![1.0, 2.0, f64::INFINITY, 3.0];
+        assert_eq!(median(&values).unwrap(), 2.5);
+    }
+
+    #[test]
+    fn test_median_with_negative_inf() {
+        let values = vec![1.0, 2.0, f64::NEG_INFINITY, 3.0];
+        assert_eq!(median(&values).unwrap(), 1.5);
+    }
+
+    #[test]
+    fn test_median_with_both_inf() {
+        let values = vec![f64::NEG_INFINITY, 1.0, 2.0, 3.0, f64::INFINITY];
+        assert_eq!(median(&values).unwrap(), 2.0);
+    }
+
+    #[test]
+    fn test_median_all_nan() {
+        let values = vec![f64::NAN, f64::NAN, f64::NAN];
+        let result = median(&values);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("all NaN"));
+    }
+
+    #[test]
+    fn test_median_empty_slice() {
+        let values: Vec<f64> = vec![];
+        let result = median(&values);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Insufficient data points"));
+    }
+
+    #[test]
+    fn test_median_negative_values() {
+        let values = vec![-5.0, -2.0, -8.0, -1.0, -3.0];
+        assert_eq!(median(&values).unwrap(), -3.0);
+    }
+
+    #[test]
+    fn test_median_mixed_signs() {
+        let values = vec![-2.0, -1.0, 0.0, 1.0, 2.0];
+        assert_eq!(median(&values).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_median_unsorted_input() {
+        let values = vec![10.0, 1.0, 5.0, 3.0, 8.0];
+        assert_eq!(median(&values).unwrap(), 5.0);
+    }
+
+    #[test]
+    fn test_median_duplicates() {
+        let values = vec![1.0, 2.0, 2.0, 3.0, 3.0, 3.0];
+        assert_eq!(median(&values).unwrap(), 2.5);
     }
 }

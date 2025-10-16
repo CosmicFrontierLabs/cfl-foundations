@@ -36,6 +36,7 @@
 //! - **Bit depth optimization**: Efficient conversions between u16 (sensor) and u8 (display)
 
 pub mod airy;
+pub mod aperture_photometry;
 pub mod centroid;
 pub mod contamination;
 pub mod convolve2d;
@@ -51,6 +52,7 @@ pub mod test_patterns;
 
 // Re-export key functionality for easier access
 pub use airy::AiryDisk;
+pub use aperture_photometry::collect_aperture_pixels;
 pub use convolve2d::{convolve2d, gaussian_kernel, ConvolveMode, ConvolveOptions};
 pub use detection::{
     aabbs_to_tuples, apply_threshold, connected_components, detect_stars, detect_stars_unified,
