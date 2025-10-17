@@ -18,6 +18,4 @@ authors = []
 description = "Space telescope simulation system"
 repository = "https://github.com/meawoppl/meter-sim"
 license = "MIT"
-
-[workspace.dependencies]
 # Common dependencies will go here
