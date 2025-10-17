@@ -1,0 +1,16 @@
+[package]
+name = "test-bench"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "AprilTag detection and calibration test bench"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = "1.0"
+apriltag = "0.4.0"
+clap = { version = "4.5", features = ["derive"] }
+image = "0.25"
+ndarray = "0.16.1"
+thiserror = "1.0"
