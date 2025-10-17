@@ -1,3 +1,4 @@
+mod assets;
 mod patterns;
 
 use anyhow::{Context, Result};
@@ -43,14 +44,6 @@ struct Args {
         default_value = "april"
     )]
     pattern: PatternType,
-
-    #[arg(
-        short,
-        long,
-        help = "Path to SVG file for USAF pattern",
-        default_value = "display_assets/usaf-1951.svg"
-    )]
-    svg: PathBuf,
 
     #[arg(long, help = "Target width in pixels", default_value = "2560")]
     width: u32,
@@ -158,7 +151,6 @@ fn main() -> Result<()> {
         }
         PatternType::Usaf => {
             println!("Rendering USAF-1951 test target from SVG");
-            println!("  SVG: {}", args.svg.display());
             println!("  Target size: {}x{}", args.width, args.height);
             println!(
                 "  Display {}: {}x{} at ({}, {})",
@@ -169,7 +161,7 @@ fn main() -> Result<()> {
                 bounds.y()
             );
             (
-                patterns::usaf::generate(&args.svg, args.width, args.height)?,
+                patterns::usaf::generate(args.width, args.height)?,
                 "USAF-1951 Test Target",
             )
         }

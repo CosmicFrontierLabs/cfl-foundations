@@ -21,3 +21,18 @@ pub fn generate(width: u32, height: u32, checker_size: u32) -> ImageBuffer<Rgb<u
 
     img
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_checkerboard_pattern_generation() {
+        let img = generate(800, 600, 50);
+        assert_eq!(img.width(), 800);
+        assert_eq!(img.height(), 600);
+
+        let corner_pixel = img.get_pixel(0, 0);
+        assert_eq!(*corner_pixel, Rgb([255, 255, 255]));
+    }
+}

@@ -1,17 +1,14 @@
+use crate::assets::Assets;
 use anyhow::{Context, Result};
 use image::{ImageBuffer, Rgb};
-use std::path::PathBuf;
 use std::sync::Arc;
 use tiny_skia::{Pixmap, Transform};
 use usvg::{fontdb, Options, Tree};
 
-pub fn generate(
-    svg_path: &PathBuf,
-    width: u32,
-    height: u32,
-) -> Result<ImageBuffer<Rgb<u8>, Vec<u8>>> {
-    let svg_data = std::fs::read_to_string(svg_path)
-        .with_context(|| format!("Failed to read SVG file: {}", svg_path.display()))?;
+pub fn generate(width: u32, height: u32) -> Result<ImageBuffer<Rgb<u8>, Vec<u8>>> {
+    let asset_data =
+        Assets::get("usaf-1951.svg").context("Failed to load embedded USAF-1951 SVG")?;
+    let svg_data = std::str::from_utf8(&asset_data.data).context("SVG file is not valid UTF-8")?;
 
     let mut fontdb = fontdb::Database::new();
     fontdb.load_system_fonts();
@@ -25,7 +22,7 @@ pub fn generate(
         ..Default::default()
     };
 
-    let svg_tree = Tree::from_str(&svg_data, &options).context("Failed to parse SVG")?;
+    let svg_tree = Tree::from_str(svg_data, &options).context("Failed to parse SVG")?;
 
     let svg_size = svg_tree.size();
     let scale_x = width as f32 / svg_size.width();
@@ -54,4 +51,21 @@ pub fn generate(
     }
 
     Ok(img)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_usaf_pattern_generation() {
+        let result = generate(1024, 768);
+        if let Err(e) = &result {
+            panic!("USAF pattern generation failed: {e}");
+        }
+
+        let img = result.unwrap();
+        assert_eq!(img.width(), 1024);
+        assert_eq!(img.height(), 768);
+    }
 }

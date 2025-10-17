@@ -1,3 +1,4 @@
+use crate::assets::Assets;
 use anyhow::{Context, Result};
 use image::{ImageBuffer, Rgb};
 use ndarray::{concatenate, Array2, Axis};
@@ -6,9 +7,11 @@ const TAG_SIZE: u32 = 8;
 const GRID_SIZE: usize = 9;
 
 fn load_apriltag_as_array(tag_id: usize) -> Result<Array2<u8>> {
-    let tag_path = format!("display_assets/apriltags/tag16h5/tag16_05_{tag_id:05}.png");
-    let tag_img = image::open(&tag_path)
-        .with_context(|| format!("Failed to load AprilTag: {tag_path}"))?
+    let tag_path = format!("apriltags/tag16h5/{tag_id:02}.png");
+    let asset_data = Assets::get(&tag_path)
+        .with_context(|| format!("Failed to load embedded AprilTag: {tag_path}"))?;
+    let tag_img = image::load_from_memory(&asset_data.data)
+        .with_context(|| format!("Failed to decode AprilTag image: {tag_path}"))?
         .to_luma8();
 
     let mut array = Array2::zeros((TAG_SIZE as usize, TAG_SIZE as usize));
@@ -149,4 +152,21 @@ pub fn generate(width: u32, height: u32) -> Result<ImageBuffer<Rgb<u8>, Vec<u8>>
     }
 
     Ok(img)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_apriltag_pattern_generation() {
+        let result = generate(1024, 1024);
+        if let Err(e) = &result {
+            panic!("AprilTag pattern generation failed: {e}");
+        }
+
+        let img = result.unwrap();
+        assert_eq!(img.width(), 1024);
+        assert_eq!(img.height(), 1024);
+    }
 }

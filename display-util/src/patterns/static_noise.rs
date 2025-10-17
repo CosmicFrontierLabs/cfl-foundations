@@ -33,3 +33,15 @@ pub fn generate(width: u32, height: u32, block_size: u32) -> ImageBuffer<Rgb<u8>
     generate_into_buffer(&mut buffer, width, height, block_size);
     ImageBuffer::from_raw(width, height, buffer).unwrap()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_static_noise_pattern_generation() {
+        let img = generate(640, 480, 10);
+        assert_eq!(img.width(), 640);
+        assert_eq!(img.height(), 480);
+    }
+}
