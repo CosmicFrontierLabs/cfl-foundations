@@ -119,7 +119,18 @@ pub fn generate(width: u32, height: u32) -> Result<ImageBuffer<Rgb<u8>, Vec<u8>>
     let row_views: Vec<_> = rows.iter().map(|r| r.view()).collect();
     let full_pattern = concatenate(Axis(0), &row_views).context("Failed to concatenate rows")?;
 
-    let scaled_pattern = scale_array(&full_pattern, scale_factor);
+    let mut scaled_pattern = scale_array(&full_pattern, scale_factor);
+
+    for grid_row in 0..GRID_SIZE {
+        for grid_col in 0..GRID_SIZE {
+            let is_white_block = (grid_row % 2 == 1) && (grid_col % 2 == 1);
+            if is_white_block {
+                let center_y = (grid_row * actual_cell_size) + (actual_cell_size / 2);
+                let center_x = (grid_col * actual_cell_size) + (actual_cell_size / 2);
+                scaled_pattern[[center_y, center_x]] = 0;
+            }
+        }
+    }
 
     let mut img = ImageBuffer::from_pixel(width, height, Rgb([255, 255, 255]));
 
