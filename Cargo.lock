@@ -3442,7 +3442,6 @@ dependencies = [
  "shared",
  "starfield",
  "tempfile",
- "test_helpers",
  "thiserror 1.0.69",
  "tiny-skia",
  "uom",
@@ -3702,14 +3701,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "usvg",
-]
-
-[[package]]
-name = "test_helpers"
-version = "0.1.0"
-dependencies = [
- "once_cell",
- "thiserror 1.0.69",
 ]
 
 [[package]]

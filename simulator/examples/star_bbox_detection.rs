@@ -40,6 +40,7 @@ use shared::image_proc::{
     draw_stars_with_x_markers, gaussian_kernel, get_bounding_boxes, merge_overlapping_aabbs,
     ConvolveMode, ConvolveOptions, StarDetection,
 };
+use shared::test_util;
 use std::collections::HashMap;
 
 fn main() {
@@ -47,7 +48,7 @@ fn main() {
     let input_image = create_test_image();
 
     // Get output directory and save original image
-    let output_dir = test_helpers::get_output_dir();
+    let output_dir = test_util::get_output_dir();
     let original_path = output_dir.join("original_starfield.png");
     input_image
         .save(&original_path)
