@@ -3,6 +3,8 @@
 //! Provides a unified interface for camera operations that can be backed by
 //! either the simulator (for testing) or actual hardware (for production).
 
+pub mod mock;
+
 use crate::image_proc::detection::AABB;
 use ndarray::{Array2, ArrayView2};
 use starfield::Equatorial;

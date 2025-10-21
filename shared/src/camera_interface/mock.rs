@@ -1,0 +1,255 @@
+use super::{AABBExt, CameraConfig, CameraInterface, CameraResult, FrameMetadata, Timestamp};
+use crate::image_proc::detection::AABB;
+use ndarray::Array2;
+use std::collections::HashMap;
+use std::time::Duration;
+
+pub struct MockCameraInterface {
+    config: CameraConfig,
+    roi: Option<AABB>,
+    frame_count: u64,
+    saturation: f64,
+    frame_data: Array2<u16>,
+    is_capturing: bool,
+}
+
+impl MockCameraInterface {
+    pub fn new(config: CameraConfig, frame_data: Array2<u16>) -> Self {
+        Self {
+            config,
+            roi: None,
+            frame_count: 0,
+            saturation: 65535.0,
+            frame_data,
+            is_capturing: false,
+        }
+    }
+
+    pub fn new_zeros(config: CameraConfig) -> Self {
+        let frame_data = Array2::zeros((config.height, config.width));
+        Self::new(config, frame_data)
+    }
+
+    pub fn with_saturation(mut self, saturation: f64) -> Self {
+        self.saturation = saturation;
+        self
+    }
+
+    fn generate_frame(&self) -> Array2<u16> {
+        if let Some(roi) = &self.roi {
+            roi.extract_from_frame(&self.frame_data.view())
+        } else {
+            self.frame_data.clone()
+        }
+    }
+
+    fn generate_metadata(&self) -> FrameMetadata {
+        let timestamp = Timestamp::new(self.frame_count, 0);
+        FrameMetadata {
+            frame_number: self.frame_count,
+            exposure: self.config.exposure,
+            timestamp,
+            pointing: None,
+            roi: self.roi,
+            temperatures: HashMap::new(),
+        }
+    }
+}
+
+impl CameraInterface for MockCameraInterface {
+    fn set_roi(&mut self, roi: AABB) -> CameraResult<()> {
+        roi.validate_for_sensor(self.config.width, self.config.height)?;
+        self.roi = Some(roi);
+        Ok(())
+    }
+
+    fn clear_roi(&mut self) -> CameraResult<()> {
+        self.roi = None;
+        Ok(())
+    }
+
+    fn capture_frame(&mut self) -> CameraResult<(Array2<u16>, FrameMetadata)> {
+        self.frame_count += 1;
+        let frame = self.generate_frame();
+        let metadata = self.generate_metadata();
+        Ok((frame, metadata))
+    }
+
+    fn set_exposure(&mut self, exposure: Duration) -> CameraResult<()> {
+        self.config.exposure = exposure;
+        Ok(())
+    }
+
+    fn get_exposure(&self) -> Duration {
+        self.config.exposure
+    }
+
+    fn get_config(&self) -> &CameraConfig {
+        &self.config
+    }
+
+    fn is_ready(&self) -> bool {
+        true
+    }
+
+    fn get_roi(&self) -> Option<AABB> {
+        self.roi
+    }
+
+    fn start_continuous_capture(&mut self) -> CameraResult<()> {
+        self.is_capturing = true;
+        Ok(())
+    }
+
+    fn stop_continuous_capture(&mut self) -> CameraResult<()> {
+        self.is_capturing = false;
+        Ok(())
+    }
+
+    fn get_latest_frame(&mut self) -> Option<(Array2<u16>, FrameMetadata)> {
+        if !self.is_capturing {
+            return None;
+        }
+
+        self.frame_count += 1;
+        let frame = self.generate_frame();
+        let metadata = self.generate_metadata();
+        Some((frame, metadata))
+    }
+
+    fn is_capturing(&self) -> bool {
+        self.is_capturing
+    }
+
+    fn saturation_value(&self) -> f64 {
+        self.saturation
+    }
+
+    fn name(&self) -> &str {
+        "MockCamera"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn create_test_camera() -> MockCameraInterface {
+        let config = CameraConfig {
+            width: 640,
+            height: 480,
+            exposure: Duration::from_millis(100),
+        };
+        MockCameraInterface::new_zeros(config)
+    }
+
+    #[test]
+    fn test_basic_capture() {
+        let mut camera = create_test_camera();
+        assert!(camera.is_ready());
+
+        let (frame, metadata) = camera.capture_frame().unwrap();
+        assert_eq!(frame.shape(), &[480, 640]);
+        assert_eq!(metadata.frame_number, 1);
+    }
+
+    #[test]
+    fn test_exposure_setting() {
+        let mut camera = create_test_camera();
+        assert_eq!(camera.get_exposure(), Duration::from_millis(100));
+        let new_exposure = Duration::from_millis(200);
+        camera.set_exposure(new_exposure).unwrap();
+        assert_eq!(camera.get_exposure(), new_exposure);
+    }
+
+    #[test]
+    fn test_roi_operations() {
+        let mut camera = create_test_camera();
+
+        let roi = AABB {
+            min_col: 100,
+            min_row: 100,
+            max_col: 200,
+            max_row: 200,
+        };
+
+        camera.set_roi(roi).unwrap();
+        assert_eq!(camera.get_roi(), Some(roi));
+
+        let (frame, metadata) = camera.capture_frame().unwrap();
+        assert_eq!(frame.shape(), &[101, 101]);
+        assert_eq!(metadata.roi, Some(roi));
+
+        camera.clear_roi().unwrap();
+        assert_eq!(camera.get_roi(), None);
+
+        let (frame, _) = camera.capture_frame().unwrap();
+        assert_eq!(frame.shape(), &[480, 640]);
+    }
+
+    #[test]
+    fn test_invalid_roi() {
+        let mut camera = create_test_camera();
+
+        let roi = AABB {
+            min_col: 600,
+            min_row: 100,
+            max_col: 700,
+            max_row: 200,
+        };
+
+        assert!(camera.set_roi(roi).is_err());
+    }
+
+    #[test]
+    fn test_continuous_capture() {
+        let mut camera = create_test_camera();
+
+        assert!(!camera.is_capturing());
+        assert!(camera.get_latest_frame().is_none());
+
+        camera.start_continuous_capture().unwrap();
+        assert!(camera.is_capturing());
+
+        let result = camera.get_latest_frame();
+        assert!(result.is_some());
+
+        let (frame, metadata) = result.unwrap();
+        assert_eq!(frame.shape(), &[480, 640]);
+        assert_eq!(metadata.frame_number, 1);
+
+        camera.stop_continuous_capture().unwrap();
+        assert!(!camera.is_capturing());
+    }
+
+    #[test]
+    fn test_frame_counting() {
+        let mut camera = create_test_camera();
+
+        for i in 1..=5 {
+            let (_, metadata) = camera.capture_frame().unwrap();
+            assert_eq!(metadata.frame_number, i);
+        }
+    }
+
+    #[test]
+    fn test_saturation_value() {
+        let camera = create_test_camera();
+        assert_eq!(camera.saturation_value(), 65535.0);
+
+        let custom_camera = MockCameraInterface::new_zeros(CameraConfig {
+            width: 640,
+            height: 480,
+            exposure: Duration::from_millis(100),
+        })
+        .with_saturation(16383.0);
+        assert_eq!(custom_camera.saturation_value(), 16383.0);
+    }
+
+    #[test]
+    fn test_camera_name() {
+        let camera = create_test_camera();
+        assert_eq!(camera.name(), "MockCamera");
+    }
+}
