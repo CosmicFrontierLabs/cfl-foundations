@@ -15,7 +15,7 @@ num-complex = "0.4.6"
 float-cmp = "0.9"
 
 # Image processing
-image = "0.24"
+image = "0.25"
 fitsio = { version = "0.21", features = ["array"] }
 starfield = "0.2.2"
 
