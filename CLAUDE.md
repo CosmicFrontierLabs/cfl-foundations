@@ -72,6 +72,7 @@ IMPORTANT: Always run `cargo fmt` before committing any code changes!
 - Prefer shorter, more focused commits over large monolithic ones
 - Reference issue numbers when applicable
 - Always check `git status` before committing to ensure no unwanted files are staged
+- **When pushing a new branch to remote, ALWAYS provide both the PR creation URL and diff URL** - Makes it easy to review changes immediately
 
 ## Acronyms
 - HIL: Hardware In the Loop - Testing real hardware components with simulated environments

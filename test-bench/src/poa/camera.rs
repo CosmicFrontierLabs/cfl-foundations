@@ -1,5 +1,5 @@
 use ndarray::Array2;
-use playerone_sdk::{Camera, CameraDescription, ImageFormat};
+use playerone_sdk::{Camera, CameraDescription, ImageFormat, ROI};
 use shared::camera_interface::{
     CameraConfig, CameraError, CameraInterface, CameraResult, FrameMetadata, Timestamp,
 };
@@ -11,10 +11,20 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 type FrameBuffer = Arc<Mutex<Option<(Array2<u16>, FrameMetadata)>>>;
 
+fn aabb_to_roi(aabb: &AABB) -> ROI {
+    let width = (aabb.max_col - aabb.min_col + 1) as u32;
+    let height = (aabb.max_row - aabb.min_row + 1) as u32;
+    ROI {
+        start_x: aabb.min_col as u32,
+        start_y: aabb.min_row as u32,
+        width,
+        height,
+    }
+}
+
 pub struct PlayerOneCamera {
     camera: Arc<Mutex<Camera>>,
     config: CameraConfig,
-    exposure: Duration,
     roi: Option<AABB>,
     frame_number: Arc<AtomicU64>,
     is_capturing: Arc<AtomicBool>,
@@ -59,7 +69,6 @@ impl PlayerOneCamera {
         Ok(Self {
             camera: Arc::new(Mutex::new(camera)),
             config,
-            exposure: Duration::from_millis(100),
             roi: None,
             frame_number: Arc::new(AtomicU64::new(0)),
             is_capturing: Arc::new(AtomicBool::new(false)),
@@ -70,34 +79,17 @@ impl PlayerOneCamera {
     }
 
     fn capture_internal(&mut self) -> CameraResult<(Array2<u16>, FrameMetadata)> {
-        let exposure_us = self
-            .exposure
-            .as_micros()
-            .try_into()
-            .map_err(|_| CameraError::ConfigError("Exposure time too large".to_string()))?;
-
         let mut camera = self
             .camera
             .lock()
             .map_err(|_| CameraError::HardwareError("Camera mutex poisoned".to_string()))?;
 
-        camera
-            .set_exposure(exposure_us, false)
-            .map_err(|e| CameraError::ConfigError(format!("Failed to set exposure: {e}")))?;
-
-        let (width, height) = if let Some(roi) = &self.roi {
-            let roi_width = (roi.max_col - roi.min_col + 1) as u32;
-            let roi_height = (roi.max_row - roi.min_row + 1) as u32;
-
+        let (width, height) = if let Some(aabb) = &self.roi {
+            let roi = aabb_to_roi(aabb);
             camera
-                .set_image_start_pos(roi.min_col as u32, roi.min_row as u32)
-                .map_err(|e| CameraError::ConfigError(format!("Failed to set ROI start: {e}")))?;
-
-            camera
-                .set_image_size(roi_width, roi_height)
-                .map_err(|e| CameraError::ConfigError(format!("Failed to set ROI size: {e}")))?;
-
-            (roi_width as usize, roi_height as usize)
+                .set_roi(&roi)
+                .map_err(|e| CameraError::ConfigError(format!("Failed to set ROI: {e}")))?;
+            (roi.width as usize, roi.height as usize)
         } else {
             (self.config.width, self.config.height)
         };
@@ -120,6 +112,14 @@ impl PlayerOneCamera {
             .temperature()
             .map_err(|e| CameraError::HardwareError(format!("Failed to read temperature: {e}")))?;
 
+        let (exposure_us, _auto) = camera
+            .exposure()
+            .map_err(|e| CameraError::HardwareError(format!("Failed to read exposure: {e}")))?;
+
+        drop(camera);
+
+        let exposure = Duration::from_micros(exposure_us as u64);
+
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or(Duration::from_secs(0));
@@ -132,7 +132,7 @@ impl PlayerOneCamera {
 
         let metadata = FrameMetadata {
             frame_number: frame_num,
-            exposure: self.exposure,
+            exposure,
             timestamp,
             pointing: None,
             roi: self.roi,
@@ -186,12 +186,29 @@ impl CameraInterface for PlayerOneCamera {
     }
 
     fn set_exposure(&mut self, exposure: Duration) -> CameraResult<()> {
-        self.exposure = exposure;
-        Ok(())
+        let mut camera = self
+            .camera
+            .lock()
+            .map_err(|_| CameraError::HardwareError("Camera mutex poisoned".to_string()))?;
+
+        camera
+            .set_exposure(
+                exposure
+                    .as_micros()
+                    .try_into()
+                    .map_err(|_| CameraError::ConfigError("Exposure time too large".to_string()))?,
+                false,
+            )
+            .map_err(|e| CameraError::ConfigError(format!("Failed to set exposure: {e}")))
     }
 
     fn get_exposure(&self) -> Duration {
-        self.exposure
+        self.camera
+            .lock()
+            .ok()
+            .and_then(|camera| camera.exposure().ok())
+            .map(|(exposure_us, _auto)| Duration::from_micros(exposure_us as u64))
+            .unwrap_or(Duration::from_millis(100))
     }
 
     fn get_config(&self) -> &CameraConfig {
@@ -214,7 +231,6 @@ impl CameraInterface for PlayerOneCamera {
         self.is_capturing.store(true, Ordering::SeqCst);
 
         let camera = Arc::clone(&self.camera);
-        let exposure = self.exposure;
         let roi = self.roi;
         let config = self.config.clone();
         let is_capturing = Arc::clone(&self.is_capturing);
@@ -223,35 +239,22 @@ impl CameraInterface for PlayerOneCamera {
 
         let handle = std::thread::spawn(move || {
             while is_capturing.load(Ordering::SeqCst) {
-                let exposure_us: i64 = match exposure.as_micros().try_into() {
-                    Ok(v) => v,
-                    Err(_) => break,
-                };
-
                 let mut camera = match camera.lock() {
                     Ok(cam) => cam,
                     Err(_) => break,
                 };
 
-                if camera.set_exposure(exposure_us, false).is_err() {
-                    break;
-                }
+                let exposure = match camera.exposure() {
+                    Ok((exposure_us, _auto)) => Duration::from_micros(exposure_us as u64),
+                    Err(_) => break,
+                };
 
-                let (width, height) = if let Some(roi) = roi {
-                    let roi_width = (roi.max_col - roi.min_col + 1) as u32;
-                    let roi_height = (roi.max_row - roi.min_row + 1) as u32;
-
-                    if camera
-                        .set_image_start_pos(roi.min_col as u32, roi.min_row as u32)
-                        .is_err()
-                    {
+                let (width, height) = if let Some(aabb) = roi {
+                    let roi = aabb_to_roi(&aabb);
+                    if camera.set_roi(&roi).is_err() {
                         break;
                     }
-                    if camera.set_image_size(roi_width, roi_height).is_err() {
-                        break;
-                    }
-
-                    (roi_width as usize, roi_height as usize)
+                    (roi.width as usize, roi.height as usize)
                 } else {
                     (config.width, config.height)
                 };
