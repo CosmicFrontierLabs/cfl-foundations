@@ -1,7 +1,8 @@
 use axum::{
     body::Body,
-    extract::State,
+    extract::{ConnectInfo, Request, State},
     http::{header, StatusCode},
+    middleware::{self, Next},
     response::{Html, Response},
     routing::get,
     Router,
@@ -11,6 +12,7 @@ use image::{DynamicImage, ImageBuffer, Luma};
 use ndarray::Array2;
 use rust_embed::RustEmbed;
 use shared::camera_interface::{CameraInterface, FrameMetadata};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify, RwLock};
 
@@ -393,6 +395,29 @@ async fn annotated_raw_endpoint<C: CameraInterface + 'static>(
     }
 }
 
+async fn logging_middleware(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let start = std::time::Instant::now();
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+
+    let response = next.run(req).await;
+
+    let elapsed = start.elapsed();
+    tracing::info!(
+        "{} {} from {} - {:.1}ms",
+        method,
+        uri.path(),
+        addr.ip(),
+        elapsed.as_secs_f64() * 1000.0
+    );
+
+    response
+}
+
 pub fn create_router<C: CameraInterface + 'static>(state: Arc<AppState<C>>) -> Router {
     Router::new()
         .route("/", get(camera_status_page::<C>))
@@ -402,6 +427,7 @@ pub fn create_router<C: CameraInterface + 'static>(state: Arc<AppState<C>>) -> R
         .route("/annotated_raw", get(annotated_raw_endpoint::<C>))
         .route("/stats", get(stats_endpoint::<C>))
         .with_state(state)
+        .layer(middleware::from_fn(logging_middleware))
 }
 
 pub async fn capture_loop<C: CameraInterface + Send + 'static>(state: Arc<AppState<C>>) {
@@ -446,7 +472,7 @@ pub async fn capture_loop<C: CameraInterface + Send + 'static>(state: Arc<AppSta
                 let mut latest = state.latest_frame.write().await;
                 *latest = Some((frame, metadata, capture_timestamp));
 
-                tracing::info!(
+                tracing::debug!(
                     "Capture: {:.1}ms, frame_num={}",
                     capture_time.as_secs_f64() * 1000.0,
                     frame_num
@@ -523,7 +549,7 @@ pub async fn analysis_loop<C: CameraInterface + Send + 'static>(state: Arc<AppSt
 
                     state.annotated_notify.notify_waiters();
 
-                    tracing::info!(
+                    tracing::debug!(
                         "Pipeline: frame={}, interval={:.1}ms, age={:.1}ms, analysis={:.1}ms, render={:.1}ms, total={:.1}ms",
                         frame_num,
                         analysis_interval.as_secs_f64() * 1000.0,

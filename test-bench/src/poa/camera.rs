@@ -123,7 +123,7 @@ impl PlayerOneCamera {
             .map_err(|e| CameraError::HardwareError(format!("Failed to read temperature: {e}")))?;
         let temp_elapsed = temp_start.elapsed();
 
-        tracing::info!(
+        tracing::debug!(
             "temperature() took {:.2}ms",
             temp_elapsed.as_secs_f64() * 1000.0
         );
@@ -208,7 +208,7 @@ impl CameraInterface for PlayerOneCamera {
             camera
                 .set_roi(&poa_roi)
                 .map_err(|e| CameraError::ConfigError(format!("Failed to set ROI: {e}")))?;
-            tracing::info!(
+            tracing::debug!(
                 "ROI set took {:.2}ms",
                 roi_set_start.elapsed().as_secs_f64() * 1000.0
             );
