@@ -3749,6 +3749,8 @@ dependencies = [
  "serde",
  "serde_json",
  "shared",
+ "simulator",
+ "tempfile",
  "thiserror 1.0.69",
  "tiny-skia",
  "tokio",

@@ -458,6 +458,68 @@ async fn annotated_raw_endpoint<C: CameraInterface + 'static>(
     }
 }
 
+async fn fits_frame_endpoint<C: CameraInterface + 'static>(
+    State(state): State<Arc<AppState<C>>>,
+) -> Response {
+    let (frame, metadata) = match capture_frame_data(&state).await {
+        Ok(data) => data,
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from(format!("Failed to capture frame: {e}")))
+                .unwrap()
+        }
+    };
+
+    // Create FITS file in memory using a temporary file
+    let temp_file = match tempfile::NamedTempFile::new() {
+        Ok(f) => f,
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from(format!("Failed to create temp file: {e}")))
+                .unwrap()
+        }
+    };
+
+    // Write frame to FITS file
+    let mut fits_data = std::collections::HashMap::new();
+    fits_data.insert(
+        "FRAME".to_string(),
+        simulator::io::fits::FitsDataType::UInt16(frame),
+    );
+
+    if let Err(e) = simulator::io::fits::write_typed_fits(&fits_data, temp_file.path()) {
+        return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from(format!("Failed to write FITS: {e}")))
+            .unwrap();
+    }
+
+    // Read the FITS file into memory
+    let fits_bytes = match std::fs::read(temp_file.path()) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from(format!("Failed to read FITS file: {e}")))
+                .unwrap()
+        }
+    };
+
+    // Generate filename with frame number
+    let filename = format!("frame_{:06}.fits", metadata.frame_number);
+
+    Response::builder()
+        .header(header::CONTENT_TYPE, "application/fits")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{filename}\""),
+        )
+        .body(Body::from(fits_bytes))
+        .unwrap()
+}
+
 async fn set_zoom_endpoint<C: CameraInterface + 'static>(
     State(state): State<Arc<AppState<C>>>,
     Json(coords): Json<ZoomCoords>,
@@ -594,6 +656,7 @@ pub fn create_router<C: CameraInterface + 'static>(state: Arc<AppState<C>>) -> R
         .route("/", get(camera_status_page::<C>))
         .route("/jpeg", get(jpeg_frame_endpoint::<C>))
         .route("/raw", get(raw_frame_endpoint::<C>))
+        .route("/fits", get(fits_frame_endpoint::<C>))
         .route("/annotated", get(annotated_frame_endpoint::<C>))
         .route("/annotated_raw", get(annotated_raw_endpoint::<C>))
         .route("/stats", get(stats_endpoint::<C>))
