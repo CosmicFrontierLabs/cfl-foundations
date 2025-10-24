@@ -12,6 +12,15 @@ BINARY_NAME=""
 RUN_AFTER_BUILD=false
 RUN_COMMAND=""
 
+# Apt dependencies management
+# The semaphore file caches apt package verification to speed up repeated builds.
+# When you add a new apt package to the check_package list below:
+#   1. Increment APT_DEPS_VERSION
+#   2. Add the check_package call in the apt checks section
+# The script will detect the version change and recheck all packages on the next run.
+APT_DEPS_VERSION=1
+APT_SEMAPHORE_FILE=".meter-sim-apt-deps-installed"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -104,34 +113,48 @@ fi
 # Step 3: Check and install required system libraries
 print_info "Checking required system libraries on Orin..."
 
-MISSING_PACKAGES=()
-
-check_package() {
-    local package_name=$1
-    local check_result=$(ssh "$REMOTE_HOST" "dpkg -l | grep \"^ii  $package_name\" || echo 'not_found'")
-    if [ "$check_result" = "not_found" ]; then
-        MISSING_PACKAGES+=("$package_name")
-        return 1
-    else
-        print_success "$package_name already installed"
-        return 0
-    fi
-}
-
-check_package "libusb-1.0-0-dev" || print_warning "libusb-1.0-0-dev not found"
-check_package "libssl-dev" || print_warning "libssl-dev not found"
-check_package "pkg-config" || print_warning "pkg-config not found"
-check_package "libcfitsio-dev" || print_warning "libcfitsio-dev not found"
-check_package "libclang-dev" || print_warning "libclang-dev not found"
-check_package "clang" || print_warning "clang not found"
-
-if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
-    print_warning "Missing packages: ${MISSING_PACKAGES[*]}"
-    print_info "Installing missing packages..."
-    ssh "$REMOTE_HOST" "sudo apt-get update && sudo apt-get install -y ${MISSING_PACKAGES[*]}"
-    print_success "All required packages installed"
+# Check semaphore file to skip repeated apt checks
+SEMAPHORE_VERSION=$(ssh "$REMOTE_HOST" "cat ~/$APT_SEMAPHORE_FILE 2>/dev/null || echo '0'")
+if [ "$SEMAPHORE_VERSION" = "$APT_DEPS_VERSION" ]; then
+    print_success "Apt dependencies already verified (version $APT_DEPS_VERSION)"
 else
-    print_success "All required system libraries already installed"
+    if [ "$SEMAPHORE_VERSION" != "0" ]; then
+        print_info "Apt dependencies version mismatch (found $SEMAPHORE_VERSION, expected $APT_DEPS_VERSION)"
+    fi
+
+    MISSING_PACKAGES=()
+
+    check_package() {
+        local package_name=$1
+        local check_result=$(ssh "$REMOTE_HOST" "dpkg -l | grep \"^ii  $package_name\" || echo 'not_found'")
+        if [ "$check_result" = "not_found" ]; then
+            MISSING_PACKAGES+=("$package_name")
+            return 1
+        else
+            print_success "$package_name already installed"
+            return 0
+        fi
+    }
+
+    check_package "libusb-1.0-0-dev" || print_warning "libusb-1.0-0-dev not found"
+    check_package "libssl-dev" || print_warning "libssl-dev not found"
+    check_package "pkg-config" || print_warning "pkg-config not found"
+    check_package "libcfitsio-dev" || print_warning "libcfitsio-dev not found"
+    check_package "libclang-dev" || print_warning "libclang-dev not found"
+    check_package "clang" || print_warning "clang not found"
+
+    if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
+        print_warning "Missing packages: ${MISSING_PACKAGES[*]}"
+        print_info "Installing missing packages..."
+        ssh "$REMOTE_HOST" "sudo apt-get update && sudo apt-get install -y ${MISSING_PACKAGES[*]}"
+        print_success "All required packages installed"
+    else
+        print_success "All required system libraries already installed"
+    fi
+
+    # Write semaphore file with current version
+    ssh "$REMOTE_HOST" "echo '$APT_DEPS_VERSION' > ~/$APT_SEMAPHORE_FILE"
+    print_success "Apt dependencies verified, semaphore updated to version $APT_DEPS_VERSION"
 fi
 
 # Step 4: Create build directory structure

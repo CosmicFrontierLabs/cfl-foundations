@@ -10,9 +10,6 @@
   - Duplicate conversion code exists in multiple locations (calibration_analysis.rs, display_patterns/apriltag.rs, etc.)
   - Create shared utility functions for bidirectional conversions with proper grayscale handling
   - Update all call sites to use shared functions
-- [ ] Optimize Orin build script apt checks
-  - Add flag file to skip repeated apt package checks on subsequent builds
-  - Only recheck if flag file missing or after timeout period
 - [ ] Add uncompressed frame endpoint for speed testing
   - Create endpoint that returns raw frame data without JPEG compression
   - Useful for benchmarking network throughput vs compression overhead
