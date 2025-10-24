@@ -178,7 +178,7 @@ pub async fn stats_endpoint(State(state): State<Arc<AppState>>) -> Response {
 }
 
 pub async fn camera_status_page(State(state): State<Arc<AppState>>) -> Html<String> {
-    let template_content = Templates::get("camera_status.html")
+    let template_content = Templates::get("live_view.html")
         .map(|file| String::from_utf8_lossy(&file.data).to_string())
         .unwrap_or_else(|| "<html><body>Template not found</body></html>".to_string());
     // Collect camera metadata

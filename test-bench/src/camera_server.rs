@@ -4,25 +4,56 @@ use axum::{
     http::{header, StatusCode},
     middleware::{self, Next},
     response::{Html, Response},
-    routing::get,
-    Router,
+    routing::{get, post},
+    Json, Router,
 };
 use base64::Engine;
 use image::{DynamicImage, ImageBuffer, Luma};
-use ndarray::Array2;
+use ndarray::{s, Array2};
 use rust_embed::RustEmbed;
+use serde::{Deserialize, Serialize};
 use shared::camera_interface::{CameraInterface, FrameMetadata};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify, RwLock};
 
 use crate::calibration_overlay::{analyze_calibration_pattern, render_annotated_image};
+use clap::Args;
 
 #[derive(RustEmbed)]
 #[folder = "templates/"]
 struct Templates;
 
+#[derive(Args, Debug, Clone)]
+pub struct CommonServerArgs {
+    #[arg(short = 'p', long, default_value = "3000")]
+    pub port: u16,
+
+    #[arg(short = 'b', long, default_value = "0.0.0.0")]
+    pub bind_address: String,
+
+    #[arg(short = 'e', long, default_value = "10")]
+    pub exposure_ms: u64,
+
+    #[arg(short = 'g', long, default_value = "1.0")]
+    pub gain: f64,
+}
+
 type TimestampedFrame = (Array2<u16>, FrameMetadata, std::time::Instant);
+
+#[derive(Debug, Clone)]
+pub struct ZoomRegion {
+    pub patch: Array2<u16>,
+    pub center: (usize, usize),
+    pub frame_number: u64,
+    pub timestamp: std::time::Instant,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ZoomCoords {
+    pub x: usize,
+    pub y: usize,
+}
 
 pub struct AppState<C: CameraInterface> {
     pub camera: Arc<Mutex<C>>,
@@ -30,6 +61,8 @@ pub struct AppState<C: CameraInterface> {
     pub latest_frame: Arc<RwLock<Option<TimestampedFrame>>>,
     pub latest_annotated: Arc<RwLock<Option<(DynamicImage, u64)>>>,
     pub annotated_notify: Arc<Notify>,
+    pub zoom_region: Arc<RwLock<Option<ZoomRegion>>>,
+    pub zoom_notify: Arc<Notify>,
     pub bit_depth: u8,
 }
 
@@ -65,6 +98,36 @@ impl Default for FrameStats {
             total_pipeline_ms: Vec::new(),
         }
     }
+}
+
+fn extract_patch(
+    frame: &Array2<u16>,
+    center_x: usize,
+    center_y: usize,
+    patch_size: usize,
+) -> Array2<u16> {
+    let half_size = patch_size / 2;
+    let frame_height = frame.nrows();
+    let frame_width = frame.ncols();
+
+    let x_start = center_x.saturating_sub(half_size);
+    let y_start = center_y.saturating_sub(half_size);
+    let x_end = (x_start + patch_size).min(frame_width);
+    let y_end = (y_start + patch_size).min(frame_height);
+
+    let actual_width = x_end - x_start;
+    let actual_height = y_end - y_start;
+
+    let mut patch = Array2::zeros((patch_size, patch_size));
+
+    if actual_width > 0 && actual_height > 0 {
+        let frame_slice = frame.slice(s![y_start..y_end, x_start..x_end]);
+        patch
+            .slice_mut(s![0..actual_height, 0..actual_width])
+            .assign(&frame_slice);
+    }
+
+    patch
 }
 
 async fn capture_frame_data<C: CameraInterface>(
@@ -290,7 +353,7 @@ async fn stats_endpoint<C: CameraInterface + 'static>(
 async fn camera_status_page<C: CameraInterface + 'static>(
     State(state): State<Arc<AppState<C>>>,
 ) -> Html<String> {
-    let template_content = Templates::get("camera_status.html")
+    let template_content = Templates::get("live_view.html")
         .map(|file| String::from_utf8_lossy(&file.data).to_string())
         .unwrap_or_else(|| "<html><body>Template not found</body></html>".to_string());
 
@@ -395,6 +458,114 @@ async fn annotated_raw_endpoint<C: CameraInterface + 'static>(
     }
 }
 
+async fn set_zoom_endpoint<C: CameraInterface + 'static>(
+    State(state): State<Arc<AppState<C>>>,
+    Json(coords): Json<ZoomCoords>,
+) -> Response {
+    let frame_data = {
+        let latest = state.latest_frame.read().await;
+        latest.clone()
+    };
+
+    match frame_data {
+        Some((frame, _metadata, _timestamp)) => {
+            let patch = extract_patch(&frame, coords.x, coords.y, 64);
+
+            let mut zoom = state.zoom_region.write().await;
+            *zoom = Some(ZoomRegion {
+                patch,
+                center: (coords.x, coords.y),
+                frame_number: _metadata.frame_number,
+                timestamp: std::time::Instant::now(),
+            });
+            drop(zoom);
+
+            state.zoom_notify.notify_waiters();
+
+            tracing::info!("Zoom region set at ({}, {})", coords.x, coords.y);
+
+            Response::builder()
+                .status(StatusCode::OK)
+                .body(Body::from("Zoom region set"))
+                .unwrap()
+        }
+        None => Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .body(Body::from("No frame available yet"))
+            .unwrap(),
+    }
+}
+
+async fn get_zoom_endpoint<C: CameraInterface + 'static>(
+    State(state): State<Arc<AppState<C>>>,
+) -> Response {
+    state.zoom_notify.notified().await;
+
+    let zoom_opt = {
+        let zoom = state.zoom_region.read().await;
+        zoom.clone()
+    };
+
+    match zoom_opt {
+        Some(zoom_region) => {
+            let patch = &zoom_region.patch;
+            let scale_factor = 4;
+            let scaled_size = 64 * scale_factor;
+
+            let max_val = *patch.iter().max().unwrap_or(&1) as f32;
+            let scale = if max_val > 0.0 { 255.0 / max_val } else { 1.0 };
+
+            let mut scaled_patch = Vec::with_capacity(scaled_size * scaled_size);
+            for y in 0..scaled_size {
+                let src_y = y / scale_factor;
+                for x in 0..scaled_size {
+                    let src_x = x / scale_factor;
+                    let val = patch[[src_y, src_x]];
+                    let scaled_val = ((val as f32) * scale) as u8;
+                    scaled_patch.push(scaled_val);
+                }
+            }
+
+            let img = match ImageBuffer::<Luma<u8>, Vec<u8>>::from_raw(
+                scaled_size as u32,
+                scaled_size as u32,
+                scaled_patch,
+            ) {
+                Some(img) => img,
+                None => {
+                    return Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::from("Failed to create image buffer"))
+                        .unwrap()
+                }
+            };
+
+            let mut jpeg_bytes = Vec::new();
+            if let Err(e) = img.write_to(
+                &mut std::io::Cursor::new(&mut jpeg_bytes),
+                image::ImageFormat::Jpeg,
+            ) {
+                return Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from(format!("Failed to encode JPEG: {e}")))
+                    .unwrap();
+            }
+
+            Response::builder()
+                .header(header::CONTENT_TYPE, "image/jpeg")
+                .header("X-Center-X", zoom_region.center.0.to_string())
+                .header("X-Center-Y", zoom_region.center.1.to_string())
+                .header("X-Frame-Number", zoom_region.frame_number.to_string())
+                .body(Body::from(jpeg_bytes))
+                .unwrap()
+        }
+        None => Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .body(Body::from("No zoom region set"))
+            .unwrap(),
+    }
+}
+
 async fn logging_middleware(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     req: Request,
@@ -426,8 +597,78 @@ pub fn create_router<C: CameraInterface + 'static>(state: Arc<AppState<C>>) -> R
         .route("/annotated", get(annotated_frame_endpoint::<C>))
         .route("/annotated_raw", get(annotated_raw_endpoint::<C>))
         .route("/stats", get(stats_endpoint::<C>))
+        .route(
+            "/zoom",
+            post(set_zoom_endpoint::<C>).get(get_zoom_endpoint::<C>),
+        )
         .with_state(state)
         .layer(middleware::from_fn(logging_middleware))
+}
+
+pub async fn run_server<C: CameraInterface + Send + 'static>(
+    mut camera: C,
+    args: CommonServerArgs,
+) -> anyhow::Result<()> {
+    use tracing::info;
+
+    let exposure = std::time::Duration::from_millis(args.exposure_ms);
+    camera
+        .set_exposure(exposure)
+        .map_err(|e| anyhow::anyhow!("Failed to set exposure: {e}"))?;
+    info!("Set camera exposure to {}ms", args.exposure_ms);
+
+    let bit_depth = camera.get_bit_depth();
+    info!("Camera bit depth: {}", bit_depth);
+
+    let state = Arc::new(AppState {
+        camera: Arc::new(Mutex::new(camera)),
+        stats: Arc::new(Mutex::new(FrameStats::default())),
+        latest_frame: Arc::new(RwLock::new(None)),
+        latest_annotated: Arc::new(RwLock::new(None)),
+        annotated_notify: Arc::new(Notify::new()),
+        zoom_region: Arc::new(RwLock::new(None)),
+        zoom_notify: Arc::new(Notify::new()),
+        bit_depth,
+    });
+
+    info!("Starting background capture loop...");
+    let capture_state = state.clone();
+    tokio::spawn(async move {
+        capture_loop(capture_state).await;
+    });
+
+    info!("Starting background analysis loop...");
+    let analysis_state = state.clone();
+    tokio::spawn(async move {
+        analysis_loop(analysis_state).await;
+    });
+
+    let app = create_router(state);
+
+    let addr: SocketAddr = format!("{}:{}", args.bind_address, args.port)
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Invalid bind address: {e}"))?;
+
+    info!("Starting server on http://{}", addr);
+    info!("Access camera status at http://{}", addr);
+    info!("JPEG endpoint: http://{}/jpeg", addr);
+    info!("Raw data endpoint: http://{}/raw", addr);
+    info!("Stats endpoint: http://{}/stats", addr);
+    info!("Annotated endpoint (JPEG): http://{}/annotated", addr);
+    info!(
+        "Annotated endpoint (uncompressed GRAY8): http://{}/annotated_raw",
+        addr
+    );
+
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("Server error: {e}"))?;
+
+    Ok(())
 }
 
 pub async fn capture_loop<C: CameraInterface + Send + 'static>(state: Arc<AppState<C>>) {
@@ -502,13 +743,14 @@ pub async fn analysis_loop<C: CameraInterface + Send + 'static>(state: Arc<AppSt
             let frame_age = start_total.duration_since(capture_timestamp);
             let bit_depth = state.bit_depth;
             let frame_num = metadata.frame_number;
+            let frame_for_analysis = frame.clone();
             let result = tokio::task::spawn_blocking(move || {
                 let start_analysis = std::time::Instant::now();
-                let analysis = analyze_calibration_pattern(&frame, bit_depth)?;
+                let analysis = analyze_calibration_pattern(&frame_for_analysis, bit_depth)?;
                 let analysis_time = start_analysis.elapsed();
 
                 let start_render = std::time::Instant::now();
-                let annotated_img = render_annotated_image(&frame, &analysis)?;
+                let annotated_img = render_annotated_image(&frame_for_analysis, &analysis)?;
                 let render_time = start_render.elapsed();
 
                 Ok::<_, anyhow::Error>((annotated_img, analysis_time, render_time))
@@ -548,6 +790,24 @@ pub async fn analysis_loop<C: CameraInterface + Send + 'static>(state: Arc<AppSt
                     drop(latest);
 
                     state.annotated_notify.notify_waiters();
+
+                    let zoom_center = {
+                        let zoom = state.zoom_region.read().await;
+                        zoom.as_ref().map(|z| z.center)
+                    };
+
+                    if let Some((cx, cy)) = zoom_center {
+                        let patch = extract_patch(&frame, cx, cy, 64);
+                        let mut zoom = state.zoom_region.write().await;
+                        *zoom = Some(ZoomRegion {
+                            patch,
+                            center: (cx, cy),
+                            frame_number: frame_num,
+                            timestamp: std::time::Instant::now(),
+                        });
+                        drop(zoom);
+                        state.zoom_notify.notify_waiters();
+                    }
 
                     tracing::debug!(
                         "Pipeline: frame={}, interval={:.1}ms, age={:.1}ms, analysis={:.1}ms, render={:.1}ms, total={:.1}ms",

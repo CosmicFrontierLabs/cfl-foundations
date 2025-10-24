@@ -158,7 +158,29 @@
             <div id="stats-frames">Frames: 0</div>
             <div id="stats-temperatures"></div>
         </div>
-        
+
+        <h2 style="margin-top: 30px;">Zoom Region</h2>
+        <div id="zoom-container">
+            <canvas id="zoom-canvas" width="256" height="256"
+                    style="width: 100%; border: 1px solid #00ff00; background: #111;
+                           image-rendering: pixelated; image-rendering: crisp-edges;"></canvas>
+            <div id="zoom-info" style="font-size: 0.7em; color: #00aa00; margin-top: 5px;">
+                Center: <span id="zoom-coords">--</span><br>
+                Frame: <span id="zoom-frame">--</span>
+            </div>
+            <div id="zoom-controls" style="margin-top: 10px; display: none;">
+                <button id="clear-zoom" style="background: #111; color: #00ff00;
+                                               border: 1px solid #00ff00; padding: 5px 10px;
+                                               cursor: pointer; font-family: 'Courier New', monospace;">Clear Zoom</button>
+                <label style="font-size: 0.8em; margin-left: 10px; cursor: pointer;">
+                    <input type="checkbox" id="zoom-auto-update" checked> Auto-update
+                </label>
+            </div>
+            <div id="zoom-placeholder" style="font-size: 0.8em; color: #666; margin-top: 10px;">
+                Click on image to zoom
+            </div>
+        </div>
+
         <h2 style="margin-top: 30px;">Histogram</h2>
         <div style="margin-bottom: 10px;">
             <label style="font-size: 0.8em; cursor: pointer;">
@@ -335,6 +357,107 @@
         // Add checkbox listener to immediately update when toggled
         document.getElementById('show-annotation').addEventListener('change', function() {
             updateImage();
+        });
+
+        // Zoom functionality
+        let zoomActive = false;
+        const cameraFrame = document.getElementById('camera-frame');
+        cameraFrame.style.cursor = 'crosshair';
+
+        cameraFrame.addEventListener('click', function(event) {
+            const rect = this.getBoundingClientRect();
+            const scaleX = this.naturalWidth / rect.width;
+            const scaleY = this.naturalHeight / rect.height;
+
+            const clickX = Math.round((event.clientX - rect.left) * scaleX);
+            const clickY = Math.round((event.clientY - rect.top) * scaleY);
+
+            console.log('Zoom click at:', clickX, clickY);
+
+            fetch('/zoom', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({x: clickX, y: clickY})
+            })
+            .then(response => {
+                if (response.ok) {
+                    document.getElementById('zoom-controls').style.display = 'block';
+                    document.getElementById('zoom-placeholder').style.display = 'none';
+                    document.getElementById('zoom-coords').textContent = '(' + clickX + ', ' + clickY + ')';
+                    if (!zoomActive) {
+                        zoomActive = true;
+                        updateZoomRegion();
+                    }
+                } else {
+                    console.error('Zoom request failed:', response.statusText);
+                }
+            })
+            .catch(err => console.error('Zoom request error:', err));
+        });
+
+        function updateZoomRegion() {
+            if (!zoomActive) return;
+
+            const autoUpdate = document.getElementById('zoom-auto-update').checked;
+            if (!autoUpdate) {
+                setTimeout(updateZoomRegion, 100);
+                return;
+            }
+
+            fetch('/zoom?t=' + Date.now())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Zoom fetch failed: ' + response.statusText);
+                    }
+
+                    const centerX = response.headers.get('X-Center-X');
+                    const centerY = response.headers.get('X-Center-Y');
+                    const frameNum = response.headers.get('X-Frame-Number');
+
+                    if (centerX && centerY) {
+                        document.getElementById('zoom-coords').textContent = '(' + centerX + ', ' + centerY + ')';
+                    }
+                    if (frameNum) {
+                        document.getElementById('zoom-frame').textContent = frameNum;
+                    }
+
+                    return response.blob();
+                })
+                .then(blob => {
+                    const canvas = document.getElementById('zoom-canvas');
+                    const ctx = canvas.getContext('2d');
+                    const img = new Image();
+
+                    img.onload = function() {
+                        ctx.imageSmoothingEnabled = false;
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        URL.revokeObjectURL(img.src);
+                    };
+
+                    img.src = URL.createObjectURL(blob);
+
+                    if (zoomActive) {
+                        updateZoomRegion();
+                    }
+                })
+                .catch(err => {
+                    console.error('Zoom update error:', err);
+                    if (zoomActive) {
+                        setTimeout(updateZoomRegion, 1000);
+                    }
+                });
+        }
+
+        document.getElementById('clear-zoom').addEventListener('click', function() {
+            zoomActive = false;
+            document.getElementById('zoom-controls').style.display = 'none';
+            document.getElementById('zoom-placeholder').style.display = 'block';
+
+            // Clear the canvas
+            const canvas = document.getElementById('zoom-canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#111';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
         });
 
         // Start updates

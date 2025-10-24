@@ -12,8 +12,12 @@ name = "calibrate"
 path = "src/bin/calibrate.rs"
 
 [[bin]]
-name = "camera_server"
-path = "src/bin/camera_server.rs"
+name = "cam_serve_mock"
+path = "src/bin/cam_serve_mock.rs"
+
+[[bin]]
+name = "cam_serve_poa"
+path = "src/bin/cam_serve_poa.rs"
 
 [[bin]]
 name = "playerone_info"
