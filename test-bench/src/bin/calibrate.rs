@@ -23,6 +23,8 @@ enum PatternType {
     Static,
     Pixel,
     April,
+    CirclingPixel,
+    Uniform,
 }
 
 #[derive(Parser, Debug)]
@@ -43,11 +45,11 @@ struct Args {
     )]
     pattern: PatternType,
 
-    #[arg(long, help = "Target width in pixels", default_value = "2560")]
-    width: u32,
+    #[arg(long, help = "Target width in pixels (defaults to display width)")]
+    width: Option<u32>,
 
-    #[arg(long, help = "Target height in pixels", default_value = "2560")]
-    height: u32,
+    #[arg(long, help = "Target height in pixels (defaults to display height)")]
+    height: Option<u32>,
 
     #[arg(
         long,
@@ -62,6 +64,23 @@ struct Args {
         default_value = "1"
     )]
     static_pixel_size: u32,
+
+    #[arg(
+        long,
+        help = "Number of orbiting pixels in circling pattern",
+        default_value = "1"
+    )]
+    orbit_count: u32,
+
+    #[arg(
+        long,
+        help = "Orbit radius as percentage of FOV (0-100)",
+        default_value = "50"
+    )]
+    orbit_radius_percent: u32,
+
+    #[arg(long, help = "Uniform brightness level (0-255)", default_value = "0")]
+    uniform_level: u8,
 
     #[arg(short, long, help = "Invert pattern colors (black <-> white)")]
     invert: bool,
@@ -125,11 +144,14 @@ fn main() -> Result<()> {
         .desktop_display_mode(display_index as i32)
         .sdl_context("Failed to get display mode")?;
 
+    let pattern_width = args.width.unwrap_or(mode.w as u32);
+    let pattern_height = args.height.unwrap_or(mode.h as u32);
+
     let (mut img, window_title) = match args.pattern {
         PatternType::Check => {
             println!("Generating checkerboard pattern");
             println!("  Checker size: {}px", args.checker_size);
-            println!("  Pattern size: {}x{}", args.width, args.height);
+            println!("  Pattern size: {pattern_width}x{pattern_height}");
             println!(
                 "  Display {}: {}x{} at ({}, {})",
                 display_index,
@@ -139,13 +161,13 @@ fn main() -> Result<()> {
                 bounds.y()
             );
             (
-                patterns::checkerboard::generate(args.width, args.height, args.checker_size),
+                patterns::checkerboard::generate(pattern_width, pattern_height, args.checker_size),
                 "Checkerboard Pattern",
             )
         }
         PatternType::Usaf => {
             println!("Rendering USAF-1951 test target from SVG");
-            println!("  Target size: {}x{}", args.width, args.height);
+            println!("  Target size: {pattern_width}x{pattern_height}");
             println!(
                 "  Display {}: {}x{} at ({}, {})",
                 display_index,
@@ -155,13 +177,13 @@ fn main() -> Result<()> {
                 bounds.y()
             );
             (
-                patterns::usaf::generate(args.width, args.height)?,
+                patterns::usaf::generate(pattern_width, pattern_height)?,
                 "USAF-1951 Test Target",
             )
         }
         PatternType::Static => {
             println!("Generating static pattern");
-            println!("  Pattern size: {}x{}", args.width, args.height);
+            println!("  Pattern size: {pattern_width}x{pattern_height}");
             println!("  Block size: {}px", args.static_pixel_size);
             println!(
                 "  Display {}: {}x{} at ({}, {})",
@@ -172,13 +194,17 @@ fn main() -> Result<()> {
                 bounds.y()
             );
             (
-                patterns::static_noise::generate(args.width, args.height, args.static_pixel_size),
+                patterns::static_noise::generate(
+                    pattern_width,
+                    pattern_height,
+                    args.static_pixel_size,
+                ),
                 "Digital Static",
             )
         }
         PatternType::Pixel => {
             println!("Generating center pixel pattern");
-            println!("  Pattern size: {}x{}", args.width, args.height);
+            println!("  Pattern size: {pattern_width}x{pattern_height}");
             println!(
                 "  Display {}: {}x{} at ({}, {})",
                 display_index,
@@ -188,13 +214,13 @@ fn main() -> Result<()> {
                 bounds.y()
             );
             (
-                patterns::pixel::generate(args.width, args.height),
+                patterns::pixel::generate(pattern_width, pattern_height),
                 "Center Pixel",
             )
         }
         PatternType::April => {
             println!("Generating AprilTag array pattern");
-            println!("  Pattern size: {}x{}", args.width, args.height);
+            println!("  Pattern size: {pattern_width}x{pattern_height}");
             println!(
                 "  Display {}: {}x{} at ({}, {})",
                 display_index,
@@ -204,8 +230,49 @@ fn main() -> Result<()> {
                 bounds.y()
             );
             (
-                patterns::apriltag::generate(args.width, args.height)?,
+                patterns::apriltag::generate(pattern_width, pattern_height)?,
                 "AprilTag Array",
+            )
+        }
+        PatternType::CirclingPixel => {
+            println!("Generating circling pixel pattern");
+            println!("  Pattern size: {pattern_width}x{pattern_height}");
+            println!("  Orbit count: {}", args.orbit_count);
+            println!("  Orbit radius: {}% FOV", args.orbit_radius_percent);
+            println!("  Rotation period: 60 seconds");
+            println!(
+                "  Display {}: {}x{} at ({}, {})",
+                display_index,
+                mode.w,
+                mode.h,
+                bounds.x(),
+                bounds.y()
+            );
+            (
+                patterns::circling_pixel::generate(
+                    pattern_width,
+                    pattern_height,
+                    args.orbit_count,
+                    args.orbit_radius_percent,
+                ),
+                "Circling Pixel",
+            )
+        }
+        PatternType::Uniform => {
+            println!("Generating uniform screen");
+            println!("  Pattern size: {pattern_width}x{pattern_height}");
+            println!("  Brightness level: {}", args.uniform_level);
+            println!(
+                "  Display {}: {}x{} at ({}, {})",
+                display_index,
+                mode.w,
+                mode.h,
+                bounds.x(),
+                bounds.y()
+            );
+            (
+                patterns::uniform::generate(pattern_width, pattern_height, args.uniform_level),
+                "Uniform Screen",
             )
         }
     };
@@ -241,24 +308,24 @@ fn main() -> Result<()> {
     let mut texture = texture_creator
         .create_texture_streaming(
             sdl2::pixels::PixelFormatEnum::RGB24,
-            args.width,
-            args.height,
+            pattern_width,
+            pattern_height,
         )
         .map_err(|e| anyhow::anyhow!("Failed to create texture: {e:?}"))?;
 
     texture
-        .update(None, img.as_raw(), (args.width * 3) as usize)
+        .update(None, img.as_raw(), (pattern_width * 3) as usize)
         .map_err(|e| anyhow::anyhow!("Failed to update texture: {e:?}"))?;
 
     let window_width = mode.w as u32;
     let window_height = mode.h as u32;
 
-    let scale_x = window_width as f32 / args.width as f32;
-    let scale_y = window_height as f32 / args.height as f32;
+    let scale_x = window_width as f32 / pattern_width as f32;
+    let scale_y = window_height as f32 / pattern_height as f32;
     let scale = scale_x.min(scale_y);
 
-    let scaled_width = (args.width as f32 * scale) as u32;
-    let scaled_height = (args.height as f32 * scale) as u32;
+    let scaled_width = (pattern_width as f32 * scale) as u32;
+    let scaled_height = (pattern_height as f32 * scale) as u32;
 
     let x = (window_width - scaled_width) / 2;
     let y = (window_height - scaled_height) / 2;
@@ -269,9 +336,12 @@ fn main() -> Result<()> {
         .event_pump()
         .map_err(|e| anyhow::anyhow!("Failed to get event pump: {e}"))?;
 
-    let is_animated = matches!(args.pattern, PatternType::Static);
+    let is_animated = matches!(
+        args.pattern,
+        PatternType::Static | PatternType::CirclingPixel
+    );
     let mut static_buffer = if is_animated {
-        Some(vec![0u8; (args.width * args.height * 3) as usize])
+        Some(vec![0u8; (pattern_width * pattern_height * 3) as usize])
     } else {
         None
     };
@@ -289,14 +359,28 @@ fn main() -> Result<()> {
         }
 
         if let Some(ref mut buffer) = static_buffer {
-            patterns::static_noise::generate_into_buffer(
-                buffer,
-                args.width,
-                args.height,
-                args.static_pixel_size,
-            );
+            match args.pattern {
+                PatternType::Static => {
+                    patterns::static_noise::generate_into_buffer(
+                        buffer,
+                        pattern_width,
+                        pattern_height,
+                        args.static_pixel_size,
+                    );
+                }
+                PatternType::CirclingPixel => {
+                    patterns::circling_pixel::generate_into_buffer(
+                        buffer,
+                        pattern_width,
+                        pattern_height,
+                        args.orbit_count,
+                        args.orbit_radius_percent,
+                    );
+                }
+                _ => {}
+            }
             texture
-                .update(None, buffer, (args.width * 3) as usize)
+                .update(None, buffer, (pattern_width * 3) as usize)
                 .map_err(|e| anyhow::anyhow!("Failed to update texture: {e}"))?;
         }
 
