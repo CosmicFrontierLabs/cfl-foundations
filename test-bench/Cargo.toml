@@ -23,6 +23,10 @@ path = "src/bin/cam_serve_poa.rs"
 name = "playerone_info"
 path = "src/bin/playerone_info.rs"
 
+[[bin]]
+name = "cam_track"
+path = "src/bin/cam_track.rs"
+
 [dependencies]
 anyhow = "1.0"
 apriltag = "0.4.0"
@@ -32,6 +36,7 @@ bytes = "1.5"
 clap = { version = "4.5", features = ["derive"] }
 image = "0.25"
 imageproc = "0.25"
+monocle = { version = "0.1.0", path = "../monocle" }
 ndarray = "0.16"
 playerone-sdk = "0.2.0"
 rand = "0.8"
