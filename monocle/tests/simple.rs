@@ -77,7 +77,7 @@ fn test_single_stationary_star() {
     println!("After calibration: {:?}", fgs.state());
 
     // We should be tracking now
-    // TODO: Fix star detection in calibration
+    // See TODO.md: Monocle (FGS/Tracking) - Fix star detection in calibration
     if !matches!(fgs.state(), FgsState::Tracking { .. }) {
         eprintln!("WARNING: Not tracking, state is {:?}", fgs.state());
         return; // Skip rest of test for now

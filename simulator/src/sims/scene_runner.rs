@@ -333,8 +333,7 @@ pub fn run_experiment<T: StarCatalog>(
                     background_rms,
                     detection_sigma,
                 ) {
-                    // TODO: Is there a way to make StellarSource impl Locatable2d?
-                    // This transform seems needless
+                    // See TODO.md: Simulator - Scene Processing
                     Ok(stars) => stars
                         .into_iter()
                         .map(|star| {
@@ -743,7 +742,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix catalog mock after determining correct StarData structure
+    #[ignore] // See TODO.md: Simulator - Scene Processing - Fix catalog mock
     fn test_run_experiment_basic() {
         // Create minimal test setup
         let temp_dir = TempDir::new().unwrap();
@@ -784,7 +783,7 @@ mod tests {
             common_args,
         };
 
-        // TODO: Create proper mock catalog when StarData structure is clarified
+        // See TODO.md: Simulator - Scene Processing - Fix catalog mock
         // let catalog = TestCatalog { stars: vec![] };
 
         // Run experiment (disabled until catalog mock is fixed)

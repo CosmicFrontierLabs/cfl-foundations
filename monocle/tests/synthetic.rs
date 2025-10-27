@@ -70,7 +70,7 @@ fn test_fgs_with_synthetic_frames() {
         .unwrap();
 
     // Should now be tracking
-    // TODO: Fix star detection in calibration
+    // See TODO.md: Monocle (FGS/Tracking) - Fix star detection in calibration
     if !matches!(fgs.state(), FgsState::Tracking { .. }) {
         eprintln!("WARNING: Not tracking, state is {:?}", fgs.state());
         return; // Skip rest of test for now
@@ -181,7 +181,7 @@ fn test_fgs_acquisition_to_tracking_transition() {
     // states[3] = after 3rd frame (should be Calibrating)
     assert!(matches!(states[3], FgsState::Calibrating));
     // states[4] = after calibration frame (should be Tracking)
-    // TODO: Fix star detection in calibration
+    // See TODO.md: Monocle (FGS/Tracking) - Fix star detection in calibration
     if !matches!(states[4], FgsState::Tracking { .. }) {
         eprintln!("WARNING: Not tracking, state is {:?}", states[4]);
         return; // Skip rest of test for now
@@ -258,7 +258,7 @@ fn test_fgs_with_moving_stars() {
     }
 
     // Verify we tracked through all frames
-    // TODO: Fix star detection in calibration
+    // See TODO.md: Monocle (FGS/Tracking) - Fix star detection in calibration
     if !matches!(fgs.state(), FgsState::Tracking { .. }) {
         eprintln!("WARNING: Not tracking, state is {:?}", fgs.state());
         return; // Skip rest of test for now
@@ -317,7 +317,7 @@ fn test_fgs_loses_tracking_with_large_motion() {
     )
     .unwrap();
 
-    // TODO: Fix star detection in calibration
+    // See TODO.md: Monocle (FGS/Tracking) - Fix star detection in calibration
     if !matches!(fgs.state(), FgsState::Tracking { .. }) {
         eprintln!("WARNING: Not tracking, state is {:?}", fgs.state());
         return; // Skip rest of test for now
@@ -333,7 +333,7 @@ fn test_fgs_loses_tracking_with_large_motion() {
 
     // Should have lost tracking or entered reacquisition
     println!("State after large motion: {:?}", fgs.state());
-    // TODO: Fix tracking loss detection - currently still tracks even with 50px motion
+    // See TODO.md: Monocle (FGS/Tracking) - Fix tracking loss detection
     if matches!(fgs.state(), FgsState::Tracking { .. }) {
         eprintln!(
             "WARNING: Still tracking after large motion - tracking loss detection needs work"

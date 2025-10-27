@@ -557,10 +557,7 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
 
     /// Attempt to reacquire lost guide stars
     fn attempt_reacquisition(&mut self, _frame: ArrayView2<u16>) -> Result<bool, String> {
-        // TODO: Implement reacquisition logic
-        // 1. Search in expanded ROIs
-        // 2. Try to match with known guide stars
-        // 3. Return true if enough stars recovered
+        // See TODO.md: Monocle (FGS/Tracking) - Implement reacquisition logic
         Ok(false)
     }
 }

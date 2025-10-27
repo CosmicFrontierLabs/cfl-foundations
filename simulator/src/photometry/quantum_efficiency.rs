@@ -96,7 +96,7 @@ pub struct QuantumEfficiency {
     efficiencies: Vec<f64>,
 }
 
-// TODO(meawoppl) - convert the internal storage to f64
+// See TODO.md: Simulator - Photometry
 
 impl QuantumEfficiency {
     /// Create quantum efficiency model for a rectangular passband (notch filter).

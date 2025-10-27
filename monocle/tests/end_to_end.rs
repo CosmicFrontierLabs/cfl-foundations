@@ -342,8 +342,7 @@ fn test_tracking_loss_and_recovery() {
         let result = fgs.process_frame(dark_image.view(), test_timestamp());
         assert!(result.is_ok());
 
-        // The current implementation doesn't actually transition to Reacquiring
-        // This is a TODO in the implementation
+        // See TODO.md: Monocle (FGS/Tracking) - Implement reacquisition logic
         println!("Frame {}: State = {:?}", attempt, fgs.state());
     }
 

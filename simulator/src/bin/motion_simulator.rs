@@ -173,7 +173,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // TODO: Implement actual motion simulation
+    // See TODO.md: Simulator - Motion Simulation
     println!("\n[STUB] Motion simulation not yet implemented");
     println!("This is a placeholder for future development");
 

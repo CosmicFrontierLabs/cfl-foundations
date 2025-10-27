@@ -466,8 +466,7 @@ impl PixelScaledAiryDisk {
     /// # Note
     /// This normalization accounts for the 2D integration and radius scaling.
     pub fn gaussian_approximation_normalized(&self, radius: f64) -> f64 {
-        // TODO(meawoppl) - cleanup the constants running around
-        // Get the unscaled gaussian value
+        // See TODO.md: Shared - Image Processing - Cleanup constants in Airy disk
         let gauss_value = self.disk.gaussian_approximation(radius / self.radius_scale);
 
         // The integral of the base gaussian exp(-3.9 * r²/r₀²) in 2D is π * r₀² / 3.9

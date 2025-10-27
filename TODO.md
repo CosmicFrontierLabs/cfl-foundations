@@ -19,6 +19,73 @@
   - Updated all crates to use ndarray 0.16
   - Updated starfield to 0.2.3 for ndarray 0.16 compatibility
 
+### Monocle (FGS/Tracking)
+- [ ] Implement reacquisition logic
+  - Location: `monocle/src/lib.rs` (attempt_reacquisition function)
+  - Current: Stub function with placeholder comments
+  - Needed: Search in expanded ROIs, match with known guide stars
+  - Why: Critical for robust star tracking when guide stars are temporarily lost
+
+- [ ] Fix star detection in calibration
+  - Location: Multiple test files failing to transition to Tracking state
+  - Files affected: `monocle/tests/simple.rs`, `monocle/tests/synthetic.rs`, `monocle/tests/end_to_end.rs`
+  - Current: Tests have warnings when not tracking after calibration
+  - Why: Calibration should reliably detect stars and transition to tracking
+
+- [ ] Fix tracking loss detection
+  - Location: `monocle/tests/synthetic.rs` (large motion test)
+  - Current: Still tracks even with 50px motion when it should lose lock
+  - Needed: Improve detection of when stars have moved too far to track
+  - Why: System should recognize when tracking is unreliable and trigger reacquisition
+
+### Simulator - Hardware
+- [ ] Confirm telescope light efficiency value
+  - Location: `simulator/src/hardware/telescope.rs:518`
+  - Current: Using 0.70 as placeholder
+  - Needed: Verify actual efficiency value for 470mm aperture, 3450mm focal length telescope
+  - Why: Accurate light transmission affects photometric calculations
+
+### Simulator - Photometry
+- [ ] Convert quantum efficiency internal storage to f64
+  - Location: `simulator/src/photometry/quantum_efficiency.rs`
+  - Current: Using lower precision storage
+  - Needed: Change internal representation to f64 for better precision
+  - Why: Photometric accuracy requires high precision in QE curves
+
+### Simulator - Noise Modeling
+- [ ] Add zodiacal background contribution to noise calculation
+  - Location: `simulator/src/bin/sensor_noise_renderer.rs:234`
+  - Current: Only includes read noise and dark current
+  - Needed: Add sky background (zodiacal light) to total expected noise
+  - Why: Realistic noise floor includes sky background contribution
+
+### Simulator - Motion Simulation
+- [ ] Implement motion simulator
+  - Location: `simulator/src/bin/motion_simulator.rs:176`
+  - Current: Stub with placeholder message
+  - Needed: Full implementation of spacecraft motion simulation
+  - Why: Required for testing tracking under realistic motion profiles
+
+### Simulator - Scene Processing
+- [ ] Make StellarSource implement Locatable2d trait
+  - Location: `simulator/src/sims/scene_runner.rs:336`
+  - Current: Requires unnecessary transform in star detection
+  - Needed: Add Locatable2d trait implementation to avoid conversion
+  - Why: Cleaner API and removes needless transformations
+
+- [ ] Fix catalog mock for testing
+  - Location: `simulator/src/sims/scene_runner.rs:746-787`
+  - Current: Test ignored due to unclear StarData structure
+  - Needed: Create proper mock catalog after clarifying StarData structure
+  - Why: Enables testing of experiment runner with known star catalogs
+
+### Shared - Image Processing
+- [ ] Cleanup constants in Airy disk gaussian approximation
+  - Location: `shared/src/image_proc/airy.rs:469`
+  - Current: Magic constants in gaussian normalization
+  - Needed: Extract and document normalization constants
+  - Why: Makes 2D integration and radius scaling explicit and maintainable
+
 ## Code Quality & Clarity Improvements
 
 ### Documentation Patterns
@@ -83,12 +150,9 @@
   - Why: Complete documentation aids maintenance
 
 ### TODO Comment Cleanup
-- [ ] **Consolidate scattered TODO comments into tracked issues**
+- [x] **Consolidate scattered TODO comments into tracked issues**
   - Pattern: Search for `TODO`, `FIXME`, `XXX`, `HACK` comments in code
-  - Examples:
-    - `simulator/src/hardware/telescope.rs:70` - "Confirm light efficiency value"
-    - `simulator/src/photometry/quantum_efficiency.rs:99` - "convert internal storage to f64"
-  - Action: Move to TODO.md or create GitHub issues, remove inline comments
+  - Action: Moved all inline TODOs to appropriate sections below
   - Why: TODOs should be tracked centrally for visibility and prioritization
 
 ### Magic Number Extraction
