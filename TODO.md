@@ -19,3 +19,130 @@
   - Updated all crates to use ndarray 0.16
   - Updated starfield to 0.2.3 for ndarray 0.16 compatibility
 
+## Code Quality & Clarity Improvements
+
+### Documentation Patterns
+- [ ] **Ensure all public functions have documentation**
+  - Pattern: Search for `pub fn` without preceding `///` doc comments
+  - Example: `shared/src/camera_interface/mod.rs:40-43` (Timestamp::to_duration)
+  - Action: Add doc comments explaining purpose, parameters, returns, and examples
+  - Why: All public API functions need documentation for clarity and discoverability
+
+- [ ] **Add documentation to public struct and enum fields**
+  - Pattern: Search for `pub struct` and `pub enum` with undocumented fields
+  - Example: `monocle/src/selection.rs:11-16` (StarDetectionStats fields)
+  - Action: Add `///` comments explaining each field's purpose
+  - Why: Field documentation improves IDE assistance and API clarity
+
+- [ ] **Document error enum variants**
+  - Pattern: Find error enums with undocumented variants
+  - Example: `simulator/src/hardware/read_noise.rs:14-20` (ReadNoiseError)
+  - Action: Add `///` comments explaining when each error occurs
+  - Why: Improves error handling and debugging documentation
+
+- [ ] **Clarify ambiguous parameter documentation**
+  - Pattern: Look for tuple/array parameters with unclear dimension ordering
+  - Example: `shared/src/image_proc/noise/generate.rs:65-76` ("(height, width)" vs "(rows, columns)")
+  - Action: Use explicit terminology like "(rows, columns)" consistently
+  - Why: Prevents bugs from reversed dimension parameters
+
+- [ ] **Document configuration parameter ranges and defaults**
+  - Pattern: Configuration structs with numeric fields lacking range guidance
+  - Example: `monocle/src/config.rs:9-20` (detection_threshold_sigma)
+  - Action: Add comments like `/// Detection threshold (typically 3.0-10.0 sigma)`
+  - Why: Helps users understand reasonable parameter ranges
+
+- [ ] **Expand type alias documentation with usage guidance**
+  - Pattern: Type aliases with minimal or unclear documentation
+  - Example: `shared/src/units.rs:19-23` (Wavelength type alias)
+  - Action: Explain semantic distinctions and provide usage examples
+  - Why: Clarifies when to use specialized type vs underlying type
+
+- [ ] **Add examples to trait implementations**
+  - Pattern: Trait implementations lacking usage examples
+  - Example: `shared/src/units.rs:32-44` (from_celsius missing example)
+  - Action: Add consistent `# Examples` sections to all trait methods
+  - Why: Extension traits need clear usage examples
+
+- [ ] **Document algorithm trade-offs in multi-algorithm modules**
+  - Pattern: Modules offering multiple algorithm choices without guidance
+  - Example: `shared/src/image_proc/detection/mod.rs`
+  - Action: Add module-level docs comparing algorithms and selection criteria
+  - Why: Guides users toward appropriate algorithm choice
+
+- [ ] **Use consistent documentation formatting**
+  - Pattern: Mixed documentation styles (inline comments vs `# Arguments` sections)
+  - Example: `monocle/src/filters.rs:47-49`
+  - Action: Standardize on proper `# Arguments`, `# Returns`, `# Examples` sections
+  - Why: Consistency aids documentation generation and readability
+
+- [ ] **Add return value documentation to helper functions**
+  - Pattern: Helper functions with parameter docs but missing `# Returns`
+  - Example: `simulator/src/hardware/dark_current.rs:32-40` (generate_temperature_points)
+  - Action: Add `# Returns` sections even for private helpers
+  - Why: Complete documentation aids maintenance
+
+### TODO Comment Cleanup
+- [ ] **Consolidate scattered TODO comments into tracked issues**
+  - Pattern: Search for `TODO`, `FIXME`, `XXX`, `HACK` comments in code
+  - Examples:
+    - `simulator/src/hardware/telescope.rs:70` - "Confirm light efficiency value"
+    - `simulator/src/photometry/quantum_efficiency.rs:99` - "convert internal storage to f64"
+  - Action: Move to TODO.md or create GitHub issues, remove inline comments
+  - Why: TODOs should be tracked centrally for visibility and prioritization
+
+### Magic Number Extraction
+- [ ] **Replace magic numbers with named constants**
+  - Pattern: Hardcoded numeric literals in formulas (excluding 0, 1, 2)
+  - Examples:
+    - `shared/src/image_proc/centroid.rs:52` - hardcoded `65535.0` (16-bit saturation)
+    - `shared/src/image_proc/detection/config.rs:66-77` - factors (1.2, 0.5, 0.8, 2.0)
+    - `monocle/src/filters.rs:147-148` - sigmoid parameters (0.1, 20.0)
+  - Action: Extract to named constants at module level (e.g., `const SATURATION_16BIT: f64 = 65535.0;`)
+  - Why: Makes tuning parameters explicit, discoverable, and easier to adjust
+
+### Naming Consistency
+- [ ] **Use type-specific names for similar functions operating on different types**
+  - Pattern: Similar functions with same name but different parameter types
+  - Example: `monocle/src/filters.rs:14-45, 103-133` (filter_by_saturation for u16 vs f64)
+  - Action: Add type suffix like `filter_by_saturation_u16` vs `filter_by_saturation_f64`
+  - Why: Prevents calling wrong function for wrong data type
+
+- [ ] **Standardize abbreviations vs full words**
+  - Pattern: Mixed use of "temp" vs "temperature", "calc" vs "calculate", etc.
+  - Action: Choose one convention and apply consistently
+  - Why: Improves code searchability and readability
+
+### Error Handling Improvements
+- [ ] **Replace .unwrap() with .expect() containing context**
+  - Pattern: Search for `.unwrap()` calls outside test code
+  - Example: `shared/src/image_proc/noise/generate.rs:74, 96, 128`
+  - Action: Replace with `.expect("Descriptive message explaining what can't fail")`
+  - Why: Better error messages aid debugging when invariants are violated
+
+- [ ] **Standardize error message formatting**
+  - Pattern: Inconsistent capitalization, punctuation, and phrasing in error messages
+  - Example: `simulator/src/shared_args.rs:192-208` (mixed "Invalid" vs "must be" phrasing)
+  - Action: Use consistent format like "must be in range [a, b]" or "Invalid {field}: {reason}"
+  - Why: Professional, consistent error messages improve user experience
+
+- [ ] **Implement error source chaining for complex errors**
+  - Pattern: Error types implementing Error trait without source() method
+  - Example: `shared/src/camera_interface/mod.rs:79` (CameraError)
+  - Action: Add source() method to preserve error chains
+  - Why: Improves error diagnostics and debugging of cascading failures
+
+### Code Comments & Clarity
+- [ ] **Document non-obvious safety techniques**
+  - Pattern: Use of saturating arithmetic, unchecked operations, or bounds assumptions
+  - Example: `simulator/src/shared_args.rs:353` (saturating_sub without explanation)
+  - Action: Add comments explaining why technique is safe/necessary
+  - Why: Explains non-obvious safety techniques for future maintainers
+
+### Testing
+- [ ] **Ensure all public functions have tests or are made private**
+  - Pattern: Search for `pub fn` in library code without corresponding `#[test]`
+  - Example: `shared/src/algo/icp.rs` (squared_distance, find_closest_points)
+  - Action: Either add unit tests or change visibility to `pub(crate)` or private
+  - Why: All public API functions should have test coverage
+
