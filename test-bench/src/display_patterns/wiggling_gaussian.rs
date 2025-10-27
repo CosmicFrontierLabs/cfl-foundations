@@ -7,6 +7,7 @@ pub fn generate_into_buffer(
     height: u32,
     sigma: f64,
     wiggle_radius_pixels: f64,
+    max_intensity: f64,
 ) {
     buffer.fill(0);
 
@@ -31,7 +32,7 @@ pub fn generate_into_buffer(
             let dist_sq = dx * dx + dy * dy;
 
             let intensity = (-(dist_sq / (2.0 * sigma * sigma))).exp();
-            let pixel_value = (intensity * 255.0).clamp(0.0, 255.0) as u8;
+            let pixel_value = (intensity * max_intensity).clamp(0.0, 255.0) as u8;
 
             let offset = ((y * width + x) * 3) as usize;
             buffer[offset] = pixel_value;
@@ -46,9 +47,17 @@ pub fn generate(
     height: u32,
     sigma: f64,
     wiggle_radius_pixels: f64,
+    max_intensity: f64,
 ) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
     let mut buffer = vec![0u8; (width * height * 3) as usize];
-    generate_into_buffer(&mut buffer, width, height, sigma, wiggle_radius_pixels);
+    generate_into_buffer(
+        &mut buffer,
+        width,
+        height,
+        sigma,
+        wiggle_radius_pixels,
+        max_intensity,
+    );
     ImageBuffer::from_raw(width, height, buffer).unwrap()
 }
 
@@ -58,7 +67,7 @@ mod tests {
 
     #[test]
     fn test_wiggling_gaussian_pattern_generation() {
-        let img = generate(640, 480, 20.0, 50.0);
+        let img = generate(640, 480, 20.0, 50.0, 255.0);
         assert_eq!(img.width(), 640);
         assert_eq!(img.height(), 480);
     }

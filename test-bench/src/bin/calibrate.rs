@@ -95,6 +95,13 @@ struct Args {
     #[arg(long, help = "Wiggle radius in pixels", default_value = "3")]
     wiggle_radius_pixels: f64,
 
+    #[arg(
+        long,
+        help = "Maximum intensity for wiggling gaussian (0-255)",
+        default_value = "255"
+    )]
+    gaussian_intensity: f64,
+
     #[arg(long, help = "Pixel grid spacing in pixels", default_value = "50")]
     grid_spacing: u32,
 
@@ -299,6 +306,7 @@ fn main() -> Result<()> {
             println!("  Pattern size: {pattern_width}x{pattern_height}");
             println!("  Gaussian sigma: {}", args.gaussian_sigma);
             println!("  Wiggle radius: {} pixels", args.wiggle_radius_pixels);
+            println!("  Maximum intensity: {}", args.gaussian_intensity);
             println!("  Rotation period: 10 seconds");
             println!(
                 "  Display {}: {}x{} at ({}, {})",
@@ -314,6 +322,7 @@ fn main() -> Result<()> {
                     pattern_height,
                     args.gaussian_sigma,
                     args.wiggle_radius_pixels,
+                    args.gaussian_intensity,
                 ),
                 "Wiggling Gaussian",
             )
@@ -465,6 +474,7 @@ fn main() -> Result<()> {
                         pattern_height,
                         args.gaussian_sigma,
                         args.wiggle_radius_pixels,
+                        args.gaussian_intensity,
                     );
                 }
                 _ => {}

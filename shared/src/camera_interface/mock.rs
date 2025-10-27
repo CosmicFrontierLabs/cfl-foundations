@@ -169,6 +169,10 @@ impl CameraInterface for MockCameraInterface {
         self.config.bit_depth = bit_depth;
         Ok(())
     }
+
+    fn get_serial(&self) -> String {
+        "MOCK-00000".to_string()
+    }
 }
 
 #[cfg(test)]

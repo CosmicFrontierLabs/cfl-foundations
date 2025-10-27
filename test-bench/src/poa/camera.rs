@@ -31,6 +31,7 @@ pub struct PlayerOneCamera {
     latest_frame: FrameBuffer,
     capture_thread: Option<std::thread::JoinHandle<()>>,
     name: String,
+    serial_number: String,
 }
 
 impl PlayerOneCamera {
@@ -50,6 +51,7 @@ impl PlayerOneCamera {
         let max_width = descriptor.properties().max_width as usize;
         let max_height = descriptor.properties().max_height as usize;
         let camera_name = descriptor.properties().camera_model_name.clone();
+        let serial_number = descriptor.properties().serial_number.clone();
 
         let mut camera = descriptor
             .open()
@@ -75,6 +77,7 @@ impl PlayerOneCamera {
             latest_frame: Arc::new(Mutex::new(None)),
             capture_thread: None,
             name: camera_name,
+            serial_number,
         })
     }
 
@@ -405,6 +408,10 @@ impl CameraInterface for PlayerOneCamera {
     fn set_bit_depth(&mut self, bit_depth: u8) -> CameraResult<()> {
         self.config.bit_depth = bit_depth;
         Ok(())
+    }
+
+    fn get_serial(&self) -> String {
+        self.serial_number.clone()
     }
 }
 

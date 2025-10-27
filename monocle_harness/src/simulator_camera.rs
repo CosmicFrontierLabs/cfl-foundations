@@ -382,6 +382,10 @@ impl CameraInterface for SimulatorCamera {
         self.config.bit_depth = bit_depth;
         Ok(())
     }
+
+    fn get_serial(&self) -> String {
+        "SIM-00000".to_string()
+    }
 }
 
 #[cfg(test)]

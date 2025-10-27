@@ -199,6 +199,15 @@ pub trait CameraInterface: Send + Sync {
     /// * `Ok(())` on success
     /// * `Err(CameraError)` if bit depth is unsupported
     fn set_bit_depth(&mut self, bit_depth: u8) -> CameraResult<()>;
+
+    /// Get camera serial number
+    ///
+    /// Returns a unique hardware identifier for this camera. This can be used
+    /// for per-camera calibration data like hot pixel maps.
+    ///
+    /// # Returns
+    /// A unique serial number string for this camera
+    fn get_serial(&self) -> String;
 }
 
 impl CameraInterface for Box<dyn CameraInterface> {
@@ -264,6 +273,10 @@ impl CameraInterface for Box<dyn CameraInterface> {
 
     fn set_bit_depth(&mut self, bit_depth: u8) -> CameraResult<()> {
         (**self).set_bit_depth(bit_depth)
+    }
+
+    fn get_serial(&self) -> String {
+        (**self).get_serial()
     }
 }
 

@@ -13,6 +13,7 @@ use monocle::{
     FineGuidanceSystem,
 };
 use shared::camera_interface::CameraInterface;
+use std::time::{Duration, Instant};
 use test_bench::poa::camera::PlayerOneCamera;
 use tracing::{info, warn};
 
@@ -37,6 +38,21 @@ struct Args {
 
     #[arg(long, default_value = "10.0")]
     snr_min: f64,
+
+    #[arg(
+        short = 'e',
+        long,
+        default_value = "25",
+        help = "Camera exposure time in milliseconds"
+    )]
+    exposure_ms: u64,
+
+    #[arg(
+        short = 't',
+        long,
+        help = "Maximum runtime in seconds (runs indefinitely if not specified)"
+    )]
+    max_runtime_secs: Option<u64>,
 }
 
 fn main() -> Result<()> {
@@ -45,8 +61,14 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     info!("Initializing PlayerOne camera with ID {}", args.camera_id);
-    let camera = PlayerOneCamera::new(args.camera_id)
+    let mut camera = PlayerOneCamera::new(args.camera_id)
         .map_err(|e| anyhow::anyhow!("Failed to initialize POA camera: {e}"))?;
+
+    let exposure = Duration::from_millis(args.exposure_ms);
+    info!("Setting camera exposure to {}ms", args.exposure_ms);
+    camera
+        .set_exposure(exposure)
+        .map_err(|e| anyhow::anyhow!("Failed to set camera exposure: {e}"))?;
 
     let config = FgsConfig {
         acquisition_frames: args.acquisition_frames,
@@ -75,13 +97,13 @@ fn main() -> Result<()> {
             num_guide_stars,
         } => {
             info!(
-                "🎯 Tracking started - track_id: {}, position: ({:.2}, {:.2}), guides: {}",
+                "🎯 TRACKING LOCKED - track_id: {}, pixel location: (x={:.2}, y={:.2}), guide stars: {}",
                 track_id, initial_position.x, initial_position.y, num_guide_stars
             );
         }
         FgsCallbackEvent::TrackingUpdate { track_id, position } => {
             info!(
-                "📍 Tracking update - track_id: {}, position: ({:.4}, {:.4}), timestamp: {}",
+                "📍 Tracking update - track_id: {}, pixel location: (x={:.4}, y={:.4}), timestamp: {}",
                 track_id, position.x, position.y, position.timestamp
             );
         }
@@ -91,7 +113,7 @@ fn main() -> Result<()> {
             reason,
         } => {
             warn!(
-                "⚠️  Tracking lost - track_id: {}, last_position: ({:.2}, {:.2}), reason: {:?}",
+                "⚠️  TRACKING LOST - track_id: {}, last pixel location: (x={:.2}, y={:.2}), reason: {:?}",
                 track_id, last_position.x, last_position.y, reason
             );
         }
@@ -112,8 +134,23 @@ fn main() -> Result<()> {
     fgs.process_event(FgsEvent::StartFgs)
         .map_err(|e| anyhow::anyhow!("Failed to start FGS: {e}"))?;
 
-    info!("Entering tracking loop - press Ctrl+C to exit");
+    let start_time = Instant::now();
+    if let Some(max_secs) = args.max_runtime_secs {
+        info!(
+            "Entering tracking loop - will exit after {} seconds",
+            max_secs
+        );
+    } else {
+        info!("Entering tracking loop - press Ctrl+C to exit");
+    }
+
     loop {
+        if let Some(max_secs) = args.max_runtime_secs {
+            if start_time.elapsed().as_secs() >= max_secs {
+                info!("Max runtime of {} seconds reached, exiting", max_secs);
+                break;
+            }
+        }
         match fgs.process_next_frame() {
             Ok(_update) => {
                 let state = fgs.state();
@@ -145,4 +182,6 @@ fn main() -> Result<()> {
             }
         }
     }
+
+    Ok(())
 }
