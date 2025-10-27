@@ -217,7 +217,7 @@ fi
 if [ "$RUN_AFTER_BUILD" = true ]; then
     print_info "Running command on Orin: $RUN_COMMAND"
     echo ""
-    ssh "$REMOTE_HOST" "bash -l -c 'cd ~/$REMOTE_BUILD_DIR/$PROJECT_NAME && LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:$(pwd)/third_party/playerone-sdk/lib/arm64 $RUN_COMMAND'"
+    ssh "$REMOTE_HOST" "bash -l -c 'cd ~/$REMOTE_BUILD_DIR/$PROJECT_NAME && $RUN_COMMAND'"
     echo ""
 fi
 

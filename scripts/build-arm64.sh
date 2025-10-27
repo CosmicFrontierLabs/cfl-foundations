@@ -35,9 +35,8 @@ if [ -n "$BINARY_NAME" ]; then
     BUILD_CMD="$BUILD_CMD --bin $BINARY_NAME"
 fi
 
-# Execute build with ARM64 linker and third-party library paths
+# Execute build with ARM64 linker
 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
-RUSTFLAGS="-L ${PROJECT_ROOT}/third_party/playerone-sdk/lib/arm64" \
     $BUILD_CMD
 
 echo "✓ ARM64 build complete!"
