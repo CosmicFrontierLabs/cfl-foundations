@@ -82,6 +82,14 @@
   - Needed: Create proper mock catalog after clarifying StarData structure
   - Why: Enables testing of experiment runner with known star catalogs
 
+### Shared - Camera Interface
+- [ ] Use camera constants to compute saturation values more accurately
+  - Location: `shared/src/camera_interface/mod.rs:131` (CameraConfig::get_saturation)
+  - Current: Simple placeholder using only bit depth (2^bit_depth - 1)
+  - Needed: Account for max well depth and conversion gain (DN per electron) like SensorConfig::saturating_reading()
+  - Why: Real sensors may saturate below ADC maximum due to well capacity limits
+  - Note: Requires storing additional sensor parameters in CameraInterface implementations
+
 ### Shared - Image Processing
 - [ ] Cleanup constants in Airy disk gaussian approximation
   - Location: `shared/src/image_proc/airy.rs:469`
