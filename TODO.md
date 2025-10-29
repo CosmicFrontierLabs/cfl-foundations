@@ -22,6 +22,16 @@
   - Updated all crates to use ndarray 0.16
   - Updated starfield to 0.2.3 for ndarray 0.16 compatibility
 
+### CI/CD
+- [ ] Add ARM64 build verification to CI pipeline
+  - Current: ARM64 cross-compile job removed due to OpenSSL dependency issues
+  - Options:
+    1. Set up dedicated ARM64 self-hosted runner (preferred - native builds, no cross-compile complexity)
+    2. Fix cross-compilation with proper multi-arch OpenSSL setup
+    3. Use Docker-based cross-compilation with QEMU
+  - Why: Need to verify ARM64 builds (flight_monitor, cam_serve_poa) work on Jetson Orin hardware
+  - Location: .github/workflows/ci.yml
+
 ### Monocle (FGS/Tracking)
 - [ ] Implement reacquisition logic
   - Location: `monocle/src/lib.rs` (attempt_reacquisition function)
