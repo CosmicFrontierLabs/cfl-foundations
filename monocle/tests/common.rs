@@ -14,16 +14,6 @@ pub struct StarParams {
 }
 
 impl StarParams {
-    /// Create a star with default FWHM
-    pub fn new(x: f64, y: f64, peak_flux: f64) -> Self {
-        Self {
-            x,
-            y,
-            peak_flux,
-            fwhm: 4.0, // Default ~4 pixel FWHM
-        }
-    }
-
     /// Create a star with specific FWHM
     pub fn with_fwhm(x: f64, y: f64, peak_flux: f64, fwhm: f64) -> Self {
         Self {
@@ -122,40 +112,4 @@ pub fn create_synthetic_star_image(
 
     // Convert to u16
     image.mapv(|v| v.round().min(65535.0) as u16)
-}
-
-/// Create a simple test frame with minimal noise
-pub fn create_simple_test_frame() -> Array2<u16> {
-    let config = SyntheticImageConfig {
-        width: 256,
-        height: 256,
-        read_noise_std: 2.0,
-        include_photon_noise: false,
-        seed: 12345,
-    };
-
-    let stars = vec![
-        StarParams::new(128.0, 128.0, 5000.0), // Bright star in center
-    ];
-
-    create_synthetic_star_image(&config, &stars)
-}
-
-/// Create a frame with multiple guide stars
-pub fn create_multi_star_frame() -> Array2<u16> {
-    let config = SyntheticImageConfig {
-        width: 512,
-        height: 512,
-        read_noise_std: 5.0,
-        include_photon_noise: true,
-        seed: 54321,
-    };
-
-    let stars = vec![
-        StarParams::new(100.0, 100.0, 10000.0), // Bright star
-        StarParams::new(400.0, 100.0, 8000.0),  // Medium star
-        StarParams::new(250.0, 400.0, 6000.0),  // Dimmer star
-    ];
-
-    create_synthetic_star_image(&config, &stars)
 }
