@@ -4,13 +4,23 @@ use ndarray::Array2;
 use std::collections::HashMap;
 use std::time::Duration;
 
+type FrameGenerator =
+    Box<dyn FnMut(u64, Duration, Option<AABB>, &CameraConfig) -> Array2<u16> + Send + Sync>;
+
+enum FrameSource {
+    Pregenerated {
+        frames: Vec<Array2<u16>>,
+        index: usize,
+    },
+    Generated(FrameGenerator),
+}
+
 pub struct MockCameraInterface {
     config: CameraConfig,
     roi: Option<AABB>,
     frame_count: u64,
     saturation: f64,
-    frames: Vec<Array2<u16>>,
-    frame_index: usize,
+    source: FrameSource,
     is_capturing: bool,
     elapsed_time: Duration,
     gain: f64,
@@ -23,8 +33,7 @@ impl MockCameraInterface {
             roi: None,
             frame_count: 0,
             saturation: 65535.0,
-            frames,
-            frame_index: 0,
+            source: FrameSource::Pregenerated { frames, index: 0 },
             is_capturing: false,
             elapsed_time: Duration::ZERO,
             gain: 0.0,
@@ -40,37 +49,63 @@ impl MockCameraInterface {
         Self::new_repeating(config, frame_data)
     }
 
+    pub fn with_generator<F>(config: CameraConfig, generator: F) -> Self
+    where
+        F: FnMut(u64, Duration, Option<AABB>, &CameraConfig) -> Array2<u16> + Send + Sync + 'static,
+    {
+        Self {
+            config,
+            roi: None,
+            frame_count: 0,
+            saturation: 65535.0,
+            source: FrameSource::Generated(Box::new(generator)),
+            is_capturing: false,
+            elapsed_time: Duration::ZERO,
+            gain: 0.0,
+        }
+    }
+
     pub fn with_saturation(mut self, saturation: f64) -> Self {
         self.saturation = saturation;
         self
     }
 
     pub fn reset(&mut self) {
-        self.frame_index = 0;
+        if let FrameSource::Pregenerated { index, .. } = &mut self.source {
+            *index = 0;
+        }
         self.frame_count = 0;
         self.elapsed_time = Duration::ZERO;
     }
 
     fn generate_frame(&mut self) -> CameraResult<Array2<u16>> {
-        let frame_idx = if self.frames.len() == 1 {
-            0
-        } else {
-            if self.frame_index >= self.frames.len() {
-                return Err(crate::camera_interface::CameraError::CaptureError(
-                    "No more frames".to_string(),
-                ));
+        let full_frame = match &mut self.source {
+            FrameSource::Pregenerated { frames, index } => {
+                let frame_idx = if frames.len() == 1 {
+                    0
+                } else {
+                    if *index >= frames.len() {
+                        return Err(crate::camera_interface::CameraError::CaptureError(
+                            "No more frames".to_string(),
+                        ));
+                    }
+                    let current = *index;
+                    *index += 1;
+                    current
+                };
+                frames[frame_idx].clone()
             }
-            let current = self.frame_index;
-            self.frame_index += 1;
-            current
+            FrameSource::Generated(generator) => {
+                let next_frame_number = self.frame_count + 1;
+                let next_timestamp = self.elapsed_time + self.config.exposure;
+                generator(next_frame_number, next_timestamp, self.roi, &self.config)
+            }
         };
 
-        let frame = &self.frames[frame_idx];
-
         let output_frame = if let Some(roi) = &self.roi {
-            roi.extract_from_frame(&frame.view())
+            roi.extract_from_frame(&full_frame.view())
         } else {
-            frame.clone()
+            full_frame
         };
 
         Ok(output_frame)
