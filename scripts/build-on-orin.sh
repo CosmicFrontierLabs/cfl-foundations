@@ -19,6 +19,7 @@ TAILSCALE_DEVICE_NAME=""
 REMOTE_BUILD_DIR="rust-builds"
 PACKAGE_NAME=""
 BINARY_NAME=""
+FEATURES=""
 RUN_AFTER_BUILD=false
 RUN_COMMAND=""
 
@@ -61,6 +62,7 @@ usage() {
     echo ""
     echo "Options:"
     echo "  --binary BIN         Specific binary to build (e.g., camera_server)"
+    echo "  --features FEAT      Cargo features to enable (auto-detected: orin=playerone)"
     echo "  --run CMD            Command to run after successful build"
     echo "  -h, --help           Show this help"
     echo ""
@@ -68,7 +70,7 @@ usage() {
     echo "  ORIN_HOST            Override Orin host (default: meawoppl@orin-nano.tail944341.ts.net)"
     echo ""
     echo "Examples:"
-    echo "  $0 --package test-bench --orin --binary camera_server"
+    echo "  $0 --package test-bench --orin --binary cam_track"
     echo "  $0 --package test-bench --neut --binary cam_serve_nsv --run './target/release/cam_serve_nsv'"
     exit 0
 }
@@ -95,6 +97,10 @@ while [[ $# -gt 0 ]]; do
             BINARY_NAME="$2"
             shift 2
             ;;
+        --features)
+            FEATURES="$2"
+            shift 2
+            ;;
         --run)
             RUN_AFTER_BUILD=true
             RUN_COMMAND="$2"
@@ -118,6 +124,14 @@ fi
 if [ -z "$DEVICE_TYPE" ]; then
     print_error "Device type is required. Use --orin or --neut"
     usage
+fi
+
+# Auto-enable features based on device type if not explicitly set
+if [ -z "$FEATURES" ]; then
+    if [ "$DEVICE_TYPE" = "orin" ]; then
+        FEATURES="playerone"
+        print_info "Auto-enabling 'playerone' feature for Orin device"
+    fi
 fi
 
 # Get project root
@@ -269,15 +283,11 @@ echo ""
 
 BUILD_CMD="cd ~/$REMOTE_BUILD_DIR/$PROJECT_NAME && source ~/.cargo/env && cargo build --release --package $PACKAGE_NAME"
 
-# Add feature flags based on device type
-if [ "$DEVICE_TYPE" = "orin" ]; then
-    BUILD_CMD="$BUILD_CMD --features playerone"
-elif [ "$DEVICE_TYPE" = "neut" ]; then
-    BUILD_CMD="$BUILD_CMD --features nsv455"
-fi
-
 if [ -n "$BINARY_NAME" ]; then
     BUILD_CMD="$BUILD_CMD --bin $BINARY_NAME"
+fi
+if [ -n "$FEATURES" ]; then
+    BUILD_CMD="$BUILD_CMD --features $FEATURES"
 fi
 
 ssh "$REMOTE_HOST" "bash -l -c '$BUILD_CMD'"
