@@ -204,20 +204,31 @@ pub fn detect_and_select_guides(
         })
         .ok()?;
 
+        // Edge filter guarantees minimum_edge_distance > roi_size/2,
+        // so ROI will never extend beyond image boundaries
+        let roi_half = config.roi_size / 2;
+        let min_row = (star.y.round() as usize).saturating_sub(roi_half);
+        let min_col = (star.x.round() as usize).saturating_sub(roi_half);
+        let max_row = min_row + config.roi_size - 1;
+        let max_col = min_col + config.roi_size - 1;
+
+        let (image_height, image_width) = averaged_frame.dim();
+        debug_assert!(
+            max_row < image_height,
+            "ROI extends beyond image height: {max_row} >= {image_height}"
+        );
+        debug_assert!(
+            max_col < image_width,
+            "ROI extends beyond image width: {max_col} >= {image_width}"
+        );
+
         Some(GuideStar {
             id: 0,
             x: star.x,
             y: star.y,
             flux: star.flux,
             snr,
-            roi: AABB::from_coords(
-                (star.y as i32 - config.roi_size as i32 / 2).max(0) as usize,
-                (star.x as i32 - config.roi_size as i32 / 2).max(0) as usize,
-                ((star.y as i32 + config.roi_size as i32 / 2)
-                    .min(averaged_frame.shape()[0] as i32 - 1)) as usize,
-                ((star.x as i32 + config.roi_size as i32 / 2)
-                    .min(averaged_frame.shape()[1] as i32 - 1)) as usize,
-            ),
+            roi: AABB::from_coords(min_row, min_col, max_row, max_col),
             diameter: star.diameter,
         })
     });

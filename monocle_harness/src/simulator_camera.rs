@@ -198,6 +198,10 @@ impl SimulatorCamera {
 }
 
 impl CameraInterface for SimulatorCamera {
+    fn check_roi_size(&self, _width: usize, _height: usize) -> CameraResult<()> {
+        Ok(())
+    }
+
     /// Set a region of interest for frame capture.
     /// Returns error if ROI extends beyond sensor dimensions.
     fn set_roi(&mut self, roi: AABB) -> CameraResult<()> {

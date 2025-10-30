@@ -40,3 +40,49 @@ pub struct FgsConfig {
     /// FWHM measure in pixels
     pub fwhm: f64,
 }
+
+impl FgsConfig {
+    /// Validate configuration parameters
+    ///
+    /// Checks that configuration values are internally consistent, particularly
+    /// that minimum_edge_distance is large enough to accommodate the roi_size.
+    /// If a camera is provided, also validates ROI size against camera-specific
+    /// hardware constraints.
+    ///
+    /// # Arguments
+    /// * `camera` - Optional camera reference to check hardware-specific ROI constraints
+    ///
+    /// # Returns
+    /// * `Ok(())` if configuration is valid
+    /// * `Err(String)` with details if configuration is invalid
+    pub fn validate(
+        &self,
+        camera: Option<&dyn shared::camera_interface::CameraInterface>,
+    ) -> Result<(), String> {
+        let roi_half = self.roi_size as f64 / 2.0;
+
+        if self.filters.minimum_edge_distance <= roi_half {
+            return Err(format!(
+                "minimum_edge_distance ({:.1}) must be greater than roi_size/2 ({:.1}) to ensure ROI never extends beyond image boundaries",
+                self.filters.minimum_edge_distance,
+                roi_half
+            ));
+        }
+
+        if self.roi_size == 0 {
+            return Err("roi_size must be greater than 0".to_string());
+        }
+
+        if self.acquisition_frames == 0 {
+            return Err("acquisition_frames must be greater than 0".to_string());
+        }
+
+        // Validate against camera-specific ROI constraints if camera provided
+        if let Some(cam) = camera {
+            cam.check_roi_size(self.roi_size, self.roi_size)
+                .map_err(|e| format!("ROI size validation failed: {e}"))?;
+        }
+
+        Ok(())
+    }
+}

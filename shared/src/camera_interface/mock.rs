@@ -128,6 +128,10 @@ impl MockCameraInterface {
 }
 
 impl CameraInterface for MockCameraInterface {
+    fn check_roi_size(&self, _width: usize, _height: usize) -> CameraResult<()> {
+        Ok(())
+    }
+
     fn set_roi(&mut self, roi: AABB) -> CameraResult<()> {
         roi.validate_for_sensor(self.config.width, self.config.height)?;
         self.roi = Some(roi);

@@ -216,6 +216,20 @@ impl PlayerOneCamera {
 }
 
 impl CameraInterface for PlayerOneCamera {
+    fn check_roi_size(&self, width: usize, height: usize) -> CameraResult<()> {
+        if width % 4 != 0 {
+            return Err(CameraError::InvalidROI(
+                "ROI width must be divisible by 4".to_string(),
+            ));
+        }
+        if height % 2 != 0 {
+            return Err(CameraError::InvalidROI(
+                "ROI height must be divisible by 2".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     fn set_roi(&mut self, roi: AABB) -> CameraResult<()> {
         let roi_width = (roi.max_col - roi.min_col + 1) as u32;
         let roi_height = (roi.max_row - roi.min_row + 1) as u32;

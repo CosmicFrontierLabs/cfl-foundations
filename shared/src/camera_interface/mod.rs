@@ -244,6 +244,21 @@ pub trait CameraInterface: Send + Sync {
     /// * `Ok(())` on success
     /// * `Err(CameraError)` if gain value is unsupported or out of range
     fn set_gain(&mut self, gain: f64) -> CameraResult<()>;
+
+    /// Check if a given ROI size is valid for this camera
+    ///
+    /// Some cameras have hardware constraints on ROI dimensions (e.g., must be
+    /// divisible by 4, minimum size requirements). This method allows validation
+    /// before attempting to set an ROI.
+    ///
+    /// # Arguments
+    /// * `width` - Desired ROI width in pixels
+    /// * `height` - Desired ROI height in pixels
+    ///
+    /// # Returns
+    /// * `Ok(())` if the ROI size is valid
+    /// * `Err(CameraError)` with details if the ROI size is invalid
+    fn check_roi_size(&self, width: usize, height: usize) -> CameraResult<()>;
 }
 
 impl CameraInterface for Box<dyn CameraInterface> {
@@ -321,6 +336,10 @@ impl CameraInterface for Box<dyn CameraInterface> {
 
     fn set_gain(&mut self, gain: f64) -> CameraResult<()> {
         (**self).set_gain(gain)
+    }
+
+    fn check_roi_size(&self, width: usize, height: usize) -> CameraResult<()> {
+        (**self).check_roi_size(width, height)
     }
 }
 

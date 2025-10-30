@@ -155,6 +155,10 @@ impl NSV455Camera {
 }
 
 impl CameraInterface for NSV455Camera {
+    fn check_roi_size(&self, _width: usize, _height: usize) -> CameraResult<()> {
+        Ok(())
+    }
+
     fn set_roi(&mut self, roi: AABB) -> CameraResult<()> {
         if roi.max_col >= self.config.width || roi.max_row >= self.config.height {
             return Err(CameraError::InvalidROI(

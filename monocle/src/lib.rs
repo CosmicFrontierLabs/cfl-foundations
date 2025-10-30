@@ -194,8 +194,11 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
 
             // Set camera ROI to track the guide star
             log::info!(
-                "Setting camera ROI to {:?} for star at ({}, {})",
-                guide_star.roi,
+                "Setting camera ROI: x1={}, x2={}, y1={}, y2={} for star at ({:.2}, {:.2})",
+                guide_star.roi.min_col,
+                guide_star.roi.max_col,
+                guide_star.roi.min_row,
+                guide_star.roi.max_row,
                 guide_star.x,
                 guide_star.y
             );
