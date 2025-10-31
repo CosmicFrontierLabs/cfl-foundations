@@ -38,6 +38,14 @@
   - Location: .github/workflows/ci.yml
 
 ### Monocle (FGS/Tracking)
+- [ ] Refactor star selection into filter bank architecture with debug mode
+  - Location: `monocle/src/selection.rs:61-67` (detect_and_select_guides function)
+  - Current: Star filtering is done sequentially with separate filter stages
+  - Needed: Decouple into composable filter modules with debug mode that generates pass/fail matrix
+  - Why: Would enable visualization of which stars pass/fail each filter stage (heatmap/table format)
+  - Benefit: Makes debugging guide star selection much easier and more transparent
+  - Consider: Output annotated FITS files or debug PNGs showing filter results
+
 - [ ] Implement reacquisition logic
   - Location: `monocle/src/lib.rs` (attempt_reacquisition function)
   - Current: Stub function with placeholder comments
@@ -57,6 +65,14 @@
   - Why: System should recognize when tracking is unreliable and trigger reacquisition
 
 ### Simulator - Hardware
+- [ ] Homogenize Zeus 455M Pro gain settings with NSV455 camera configuration
+  - Location: `simulator/src/hardware/sensor.rs:667-677` (IMX455 sensor config)
+  - Current: Using gain setting of "60" in "High gain mode" based on QHY spreadsheet
+  - Needed: Verify gain parameters match Player One Zeus 455M Pro manual specifications
+  - Reference: <https://player-one-astronomy.com/download/Product%20specification%20manual/Zeus%20455M%20PRO%20camera%20Manual.pdf>
+  - Why: Both cameras use IMX455 sensor but may have different gain mappings/settings
+  - Benefit: Ensures consistent behavior between simulated and real hardware configurations
+
 - [ ] Confirm telescope light efficiency value
   - Location: `simulator/src/hardware/telescope.rs:518`
   - Current: Using 0.70 as placeholder
