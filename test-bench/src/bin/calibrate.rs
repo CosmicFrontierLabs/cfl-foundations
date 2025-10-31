@@ -490,8 +490,6 @@ fn main() -> Result<()> {
             .copy(&texture, None, Some(dst_rect))
             .map_err(|e| anyhow::anyhow!("Failed to copy texture: {e}"))?;
         canvas.present();
-
-        std::thread::sleep(std::time::Duration::from_millis(16));
     }
 
     Ok(())

@@ -1,6 +1,8 @@
 use image::{ImageBuffer, Rgb};
 use std::time::SystemTime;
 
+const SIGMA_CUTOFF: f64 = 6.0;
+
 pub fn generate_into_buffer(
     buffer: &mut [u8],
     width: u32,
@@ -25,8 +27,14 @@ pub fn generate_into_buffer(
     let gaussian_x = center_x + wiggle_radius_pixels * angle.cos();
     let gaussian_y = center_y + wiggle_radius_pixels * angle.sin();
 
-    for y in 0..height {
-        for x in 0..width {
+    let cutoff_radius = sigma * SIGMA_CUTOFF;
+    let x_min = (gaussian_x - cutoff_radius).max(0.0) as u32;
+    let x_max = (gaussian_x + cutoff_radius).min(width as f64) as u32;
+    let y_min = (gaussian_y - cutoff_radius).max(0.0) as u32;
+    let y_max = (gaussian_y + cutoff_radius).min(height as f64) as u32;
+
+    for y in y_min..y_max {
+        for x in x_min..x_max {
             let dx = x as f64 - gaussian_x;
             let dy = y as f64 - gaussian_y;
             let dist_sq = dx * dx + dy * dy;
