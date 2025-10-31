@@ -161,7 +161,16 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
         _timestamp: Timestamp,
     ) -> Result<FgsState, String> {
         let frames = frames_collected + 1;
+        let (height, width) = frame.dim();
         self.accumulate_frame(frame)?;
+
+        log::info!(
+            "Acquired calibration frame {}/{} (dimensions: {}x{})",
+            frames,
+            self.config.acquisition_frames,
+            width,
+            height
+        );
 
         if frames >= self.config.acquisition_frames {
             log::info!("Acquisition complete, entering Calibrating state");
