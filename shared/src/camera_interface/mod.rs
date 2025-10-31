@@ -4,6 +4,7 @@
 //! either the simulator (for testing) or actual hardware (for production).
 
 pub mod mock;
+pub mod ring_buffer;
 
 use crate::image_proc::detection::AABB;
 use ndarray::{Array2, ArrayView2};
