@@ -436,6 +436,9 @@ fn main() -> Result<()> {
         None
     };
 
+    // TODO: Clean up and clock rendering rate to SDL advertised display refresh rate
+    // Currently runs unconstrained which can cause excessive CPU usage and inconsistent timing.
+    // Should use mode.refresh_rate to set target frame time and add frame pacing logic.
     'running: loop {
         for event in event_pump.poll_iter() {
             match event {
