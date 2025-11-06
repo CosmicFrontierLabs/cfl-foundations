@@ -1,5 +1,5 @@
 use ndarray::Array2;
-use playerone_sdk::{Camera, CameraDescription, ImageFormat, ROI};
+use playerone_sdk::{Camera, CameraDescription, ImageFormat};
 use shared::camera_interface::{
     CameraConfig, CameraError, CameraInterface, CameraResult, FrameMetadata, Timestamp,
 };
@@ -9,16 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-fn aabb_to_roi(aabb: &AABB) -> ROI {
-    let width = (aabb.max_col - aabb.min_col + 1) as u32;
-    let height = (aabb.max_row - aabb.min_row + 1) as u32;
-    ROI {
-        start_x: aabb.min_col as u32,
-        start_y: aabb.min_row as u32,
-        width,
-        height,
-    }
-}
+use super::roi::{aabb_to_roi, roi_to_aabb};
 
 pub struct PlayerOneCamera {
     camera: Arc<Mutex<Camera>>,
@@ -115,11 +106,7 @@ impl CameraInterface for PlayerOneCamera {
             .map_err(|_| CameraError::HardwareError("Camera mutex poisoned".to_string()))?;
 
         let current_hw_roi = camera.roi();
-        if current_hw_roi.start_x != poa_roi.start_x
-            || current_hw_roi.start_y != poa_roi.start_y
-            || current_hw_roi.width != poa_roi.width
-            || current_hw_roi.height != poa_roi.height
-        {
+        if !super::roi::roi_eq(&current_hw_roi, &poa_roi) {
             let roi_set_start = std::time::Instant::now();
             camera
                 .set_roi(&poa_roi)
@@ -188,12 +175,7 @@ impl CameraInterface for PlayerOneCamera {
         {
             None
         } else {
-            Some(AABB {
-                min_col: hw_roi.start_x as usize,
-                min_row: hw_roi.start_y as usize,
-                max_col: (hw_roi.start_x + hw_roi.width - 1) as usize,
-                max_row: (hw_roi.start_y + hw_roi.height - 1) as usize,
-            })
+            Some(roi_to_aabb(&hw_roi))
         }
     }
 
@@ -240,12 +222,7 @@ impl CameraInterface for PlayerOneCamera {
                 {
                     None
                 } else {
-                    Some(AABB {
-                        min_col: hw_roi.start_x as usize,
-                        min_row: hw_roi.start_y as usize,
-                        max_col: (hw_roi.start_x + hw_roi.width - 1) as usize,
-                        max_row: (hw_roi.start_y + hw_roi.height - 1) as usize,
-                    })
+                    Some(roi_to_aabb(&hw_roi))
                 };
 
                 let now = SystemTime::now()
