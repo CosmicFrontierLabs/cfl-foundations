@@ -250,6 +250,7 @@ print_success "Build directory ready"
 # Step 5: Sync source code to Orin
 print_info "Syncing source code to Orin..."
 rsync -avz --delete \
+    --include 'test-bench/display_assets/***' \
     --exclude 'target/' \
     --exclude 'debug/' \
     --exclude '.git/' \
