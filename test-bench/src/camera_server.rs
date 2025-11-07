@@ -719,7 +719,7 @@ pub async fn run_server<C: CameraInterface + Send + 'static>(
         annotated_notify: Arc::new(Notify::new()),
         zoom_region: Arc::new(RwLock::new(None)),
         zoom_notify: Arc::new(Notify::new()),
-        bit_depth,
+        bit_depth: bit_depth.as_u8(),
     });
 
     info!("Starting background capture loop...");

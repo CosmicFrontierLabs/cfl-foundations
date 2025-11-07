@@ -2,8 +2,8 @@ use crate::camera::neutralino_imx455::{calculate_stride, read_sensor_temperature
 use crate::v4l2_capture::{CameraConfig as V4L2Config, V4L2Capture};
 use ndarray::Array2;
 use shared::camera_interface::{
-    CameraConfig, CameraError, CameraInterface, CameraResult, FrameMetadata, SensorGeometry,
-    Timestamp,
+    CameraConfig, CameraError, CameraInterface, CameraResult, FrameMetadata, SensorBitDepth,
+    SensorGeometry, Timestamp,
 };
 use shared::image_proc::detection::aabb::AABB;
 use std::collections::HashMap;
@@ -44,7 +44,7 @@ impl NSV455Camera {
             width: Self::SENSOR_WIDTH as usize,
             height: Self::SENSOR_HEIGHT as usize,
             exposure: Duration::from_millis(100),
-            bit_depth: 16,
+            bit_depth: SensorBitDepth::Bits16,
         };
 
         Ok(Self {
@@ -219,11 +219,11 @@ impl CameraInterface for NSV455Camera {
         "NSV455"
     }
 
-    fn get_bit_depth(&self) -> u8 {
+    fn get_bit_depth(&self) -> SensorBitDepth {
         self.config.bit_depth
     }
 
-    fn set_bit_depth(&mut self, bit_depth: u8) -> CameraResult<()> {
+    fn set_bit_depth(&mut self, bit_depth: SensorBitDepth) -> CameraResult<()> {
         self.config.bit_depth = bit_depth;
         Ok(())
     }

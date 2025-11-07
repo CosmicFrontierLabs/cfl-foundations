@@ -10,7 +10,7 @@ use ndarray::Array2;
 use shared::cached_star_catalog::CachedStarCatalog;
 use shared::camera_interface::{
     AABBExt, CameraConfig, CameraError, CameraInterface, CameraResult, FrameMetadata,
-    SensorGeometry, Timestamp,
+    SensorBitDepth, SensorGeometry, Timestamp,
 };
 use shared::image_proc::detection::AABB;
 use shared::units::TemperatureExt;
@@ -67,7 +67,8 @@ impl SimulatorCamera {
             width,
             height,
             exposure: Duration::from_millis(100),
-            bit_depth: sensor.bit_depth,
+            bit_depth: SensorBitDepth::from_u8(sensor.bit_depth)
+                .expect("Unsupported bit depth from simulator sensor config"),
         };
 
         // Calculate FOV for cache size
@@ -330,11 +331,11 @@ impl CameraInterface for SimulatorCamera {
         "SimulatorCamera"
     }
 
-    fn get_bit_depth(&self) -> u8 {
+    fn get_bit_depth(&self) -> SensorBitDepth {
         self.config.bit_depth
     }
 
-    fn set_bit_depth(&mut self, bit_depth: u8) -> CameraResult<()> {
+    fn set_bit_depth(&mut self, bit_depth: SensorBitDepth) -> CameraResult<()> {
         self.config.bit_depth = bit_depth;
         Ok(())
     }

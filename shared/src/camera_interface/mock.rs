@@ -1,4 +1,7 @@
-use super::{AABBExt, CameraInterface, CameraResult, FrameMetadata, SensorGeometry, Timestamp};
+use super::{
+    AABBExt, CameraInterface, CameraResult, FrameMetadata, SensorBitDepth, SensorGeometry,
+    Timestamp,
+};
 use crate::image_proc::detection::AABB;
 use ndarray::Array2;
 use std::collections::HashMap;
@@ -13,7 +16,7 @@ pub struct FrameGenerationParams {
     pub width: usize,
     pub height: usize,
     pub exposure: Duration,
-    pub bit_depth: u8,
+    pub bit_depth: SensorBitDepth,
 }
 
 type FrameGenerator = Box<dyn FnMut(&FrameGenerationParams) -> Array2<u16> + Send + Sync>;
@@ -30,7 +33,7 @@ pub struct MockCameraInterface {
     width: usize,
     height: usize,
     exposure: Duration,
-    bit_depth: u8,
+    bit_depth: SensorBitDepth,
     roi: Option<AABB>,
     frame_count: u64,
     saturation: f64,
@@ -40,7 +43,11 @@ pub struct MockCameraInterface {
 }
 
 impl MockCameraInterface {
-    pub fn new(dimensions: (usize, usize), bit_depth: u8, frames: Vec<Array2<u16>>) -> Self {
+    pub fn new(
+        dimensions: (usize, usize),
+        bit_depth: SensorBitDepth,
+        frames: Vec<Array2<u16>>,
+    ) -> Self {
         Self {
             width: dimensions.0,
             height: dimensions.1,
@@ -55,16 +62,24 @@ impl MockCameraInterface {
         }
     }
 
-    pub fn new_repeating(dimensions: (usize, usize), bit_depth: u8, frame: Array2<u16>) -> Self {
+    pub fn new_repeating(
+        dimensions: (usize, usize),
+        bit_depth: SensorBitDepth,
+        frame: Array2<u16>,
+    ) -> Self {
         Self::new(dimensions, bit_depth, vec![frame])
     }
 
-    pub fn new_zeros(dimensions: (usize, usize), bit_depth: u8) -> Self {
+    pub fn new_zeros(dimensions: (usize, usize), bit_depth: SensorBitDepth) -> Self {
         let frame_data = Array2::zeros((dimensions.1, dimensions.0));
         Self::new_repeating(dimensions, bit_depth, frame_data)
     }
 
-    pub fn with_generator<F>(dimensions: (usize, usize), bit_depth: u8, generator: F) -> Self
+    pub fn with_generator<F>(
+        dimensions: (usize, usize),
+        bit_depth: SensorBitDepth,
+        generator: F,
+    ) -> Self
     where
         F: FnMut(&FrameGenerationParams) -> Array2<u16> + Send + Sync + 'static,
     {
@@ -200,11 +215,11 @@ impl CameraInterface for MockCameraInterface {
         "MockCamera"
     }
 
-    fn get_bit_depth(&self) -> u8 {
+    fn get_bit_depth(&self) -> SensorBitDepth {
         self.bit_depth
     }
 
-    fn set_bit_depth(&mut self, bit_depth: u8) -> CameraResult<()> {
+    fn set_bit_depth(&mut self, bit_depth: SensorBitDepth) -> CameraResult<()> {
         self.bit_depth = bit_depth;
         Ok(())
     }
@@ -246,7 +261,7 @@ mod tests {
     use std::time::Duration;
 
     fn create_test_camera() -> MockCameraInterface {
-        MockCameraInterface::new_zeros((640, 480), 16)
+        MockCameraInterface::new_zeros((640, 480), SensorBitDepth::Bits16)
     }
 
     #[test]
@@ -344,7 +359,8 @@ mod tests {
         let camera = create_test_camera();
         assert_eq!(camera.saturation_value(), 65535.0);
 
-        let custom_camera = MockCameraInterface::new_zeros((640, 480), 16).with_saturation(16383.0);
+        let custom_camera = MockCameraInterface::new_zeros((640, 480), SensorBitDepth::Bits16)
+            .with_saturation(16383.0);
         assert_eq!(custom_camera.saturation_value(), 16383.0);
     }
 
@@ -363,7 +379,11 @@ mod tests {
         let mut frame3 = Array2::zeros((10, 10));
         frame3[[7, 7]] = 300;
 
-        let mut camera = MockCameraInterface::new((10, 10), 16, vec![frame1, frame2, frame3]);
+        let mut camera = MockCameraInterface::new(
+            (10, 10),
+            SensorBitDepth::Bits16,
+            vec![frame1, frame2, frame3],
+        );
 
         let (f1, _) = camera.capture_frame().unwrap();
         assert_eq!(f1[[5, 5]], 100);
@@ -382,7 +402,8 @@ mod tests {
         let mut frame = Array2::zeros((10, 10));
         frame[[5, 5]] = 42;
 
-        let mut camera = MockCameraInterface::new_repeating((10, 10), 16, frame);
+        let mut camera =
+            MockCameraInterface::new_repeating((10, 10), SensorBitDepth::Bits16, frame);
 
         for _ in 0..10 {
             let (f, _) = camera.capture_frame().unwrap();
@@ -392,7 +413,7 @@ mod tests {
 
     #[test]
     fn test_elapsed_time_tracking() {
-        let mut camera = MockCameraInterface::new_zeros((10, 10), 16);
+        let mut camera = MockCameraInterface::new_zeros((10, 10), SensorBitDepth::Bits16);
         camera.set_exposure(Duration::from_millis(100)).unwrap();
 
         let (_, meta1) = camera.capture_frame().unwrap();
@@ -410,7 +431,8 @@ mod tests {
         let frame1 = Array2::ones((10, 10));
         let frame2 = Array2::ones((10, 10)) * 2;
 
-        let mut camera = MockCameraInterface::new((10, 10), 16, vec![frame1, frame2]);
+        let mut camera =
+            MockCameraInterface::new((10, 10), SensorBitDepth::Bits16, vec![frame1, frame2]);
         camera.set_exposure(Duration::from_millis(50)).unwrap();
 
         camera.capture_frame().unwrap();
@@ -435,13 +457,13 @@ mod tests {
     #[test]
     fn test_bit_depth() {
         let mut camera = create_test_camera();
-        assert_eq!(camera.get_bit_depth(), 16);
+        assert_eq!(camera.get_bit_depth(), SensorBitDepth::Bits16);
 
-        camera.set_bit_depth(12).unwrap();
-        assert_eq!(camera.get_bit_depth(), 12);
+        camera.set_bit_depth(SensorBitDepth::Bits12).unwrap();
+        assert_eq!(camera.get_bit_depth(), SensorBitDepth::Bits12);
 
-        camera.set_bit_depth(14).unwrap();
-        assert_eq!(camera.get_bit_depth(), 14);
+        camera.set_bit_depth(SensorBitDepth::Bits10).unwrap();
+        assert_eq!(camera.get_bit_depth(), SensorBitDepth::Bits10);
     }
 
     #[test]

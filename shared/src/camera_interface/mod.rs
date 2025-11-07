@@ -116,6 +116,61 @@ pub struct SensorGeometry {
     pub pixel_size_microns: f64,
 }
 
+/// Sensor ADC bit depth
+///
+/// Represents the analog-to-digital converter bit depth for camera sensors.
+/// Common values are 8, 10, 12, and 16 bits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SensorBitDepth {
+    /// 8-bit ADC (0-255 range)
+    Bits8,
+    /// 10-bit ADC (0-1023 range)
+    Bits10,
+    /// 12-bit ADC (0-4095 range)
+    Bits12,
+    /// 16-bit ADC (0-65535 range)
+    Bits16,
+}
+
+impl SensorBitDepth {
+    /// Get the numeric bit depth value
+    pub fn as_u8(&self) -> u8 {
+        match self {
+            SensorBitDepth::Bits8 => 8,
+            SensorBitDepth::Bits10 => 10,
+            SensorBitDepth::Bits12 => 12,
+            SensorBitDepth::Bits16 => 16,
+        }
+    }
+
+    /// Get the maximum value for this bit depth
+    pub fn max_value(&self) -> u16 {
+        match self {
+            SensorBitDepth::Bits8 => 255,
+            SensorBitDepth::Bits10 => 1023,
+            SensorBitDepth::Bits12 => 4095,
+            SensorBitDepth::Bits16 => 65535,
+        }
+    }
+
+    /// Create from a u8 value
+    pub fn from_u8(bits: u8) -> Option<Self> {
+        match bits {
+            8 => Some(SensorBitDepth::Bits8),
+            10 => Some(SensorBitDepth::Bits10),
+            12 => Some(SensorBitDepth::Bits12),
+            16 => Some(SensorBitDepth::Bits16),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for SensorBitDepth {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}-bit", self.as_u8())
+    }
+}
+
 /// Configuration for camera initialization
 #[derive(Debug, Clone)]
 pub struct CameraConfig {
@@ -125,8 +180,8 @@ pub struct CameraConfig {
     pub height: usize,
     /// Exposure duration
     pub exposure: Duration,
-    /// ADC bit depth (8, 12, 14, 16 bits typical)
-    pub bit_depth: u8,
+    /// ADC bit depth
+    pub bit_depth: SensorBitDepth,
 }
 
 impl CameraConfig {
@@ -145,7 +200,7 @@ impl CameraConfig {
     /// # Returns
     /// Maximum digital number value for the given bit depth
     pub fn get_saturation(&self) -> f64 {
-        (2_u32.pow(self.bit_depth as u32) - 1) as f64
+        self.bit_depth.max_value() as f64
     }
 }
 
@@ -222,18 +277,17 @@ pub trait CameraInterface: Send + Sync {
     /// Get ADC bit depth
     ///
     /// Returns the bit depth of the analog-to-digital converter (ADC)
-    /// Typical values are 8, 12, 14, or 16 bits
-    fn get_bit_depth(&self) -> u8;
+    fn get_bit_depth(&self) -> SensorBitDepth;
 
     /// Set ADC bit depth
     ///
     /// # Arguments
-    /// * `bit_depth` - New bit depth value (typically 8, 12, 14, or 16)
+    /// * `bit_depth` - Sensor bit depth
     ///
     /// # Returns
     /// * `Ok(())` on success
     /// * `Err(CameraError)` if bit depth is unsupported
-    fn set_bit_depth(&mut self, bit_depth: u8) -> CameraResult<()>;
+    fn set_bit_depth(&mut self, bit_depth: SensorBitDepth) -> CameraResult<()>;
 
     /// Get camera serial number
     ///
@@ -339,11 +393,11 @@ impl CameraInterface for Box<dyn CameraInterface> {
         (**self).name()
     }
 
-    fn get_bit_depth(&self) -> u8 {
+    fn get_bit_depth(&self) -> SensorBitDepth {
         (**self).get_bit_depth()
     }
 
-    fn set_bit_depth(&mut self, bit_depth: u8) -> CameraResult<()> {
+    fn set_bit_depth(&mut self, bit_depth: SensorBitDepth) -> CameraResult<()> {
         (**self).set_bit_depth(bit_depth)
     }
 
@@ -534,34 +588,34 @@ mod tests {
             width: 640,
             height: 480,
             exposure: Duration::from_millis(100),
-            bit_depth: 8,
+            bit_depth: SensorBitDepth::Bits8,
         };
         assert_eq!(config_8bit.get_saturation(), 255.0);
+
+        // Test 10-bit depth
+        let config_10bit = CameraConfig {
+            width: 640,
+            height: 480,
+            exposure: Duration::from_millis(100),
+            bit_depth: SensorBitDepth::Bits10,
+        };
+        assert_eq!(config_10bit.get_saturation(), 1023.0);
 
         // Test 12-bit depth
         let config_12bit = CameraConfig {
             width: 640,
             height: 480,
             exposure: Duration::from_millis(100),
-            bit_depth: 12,
+            bit_depth: SensorBitDepth::Bits12,
         };
         assert_eq!(config_12bit.get_saturation(), 4095.0);
-
-        // Test 14-bit depth
-        let config_14bit = CameraConfig {
-            width: 640,
-            height: 480,
-            exposure: Duration::from_millis(100),
-            bit_depth: 14,
-        };
-        assert_eq!(config_14bit.get_saturation(), 16383.0);
 
         // Test 16-bit depth
         let config_16bit = CameraConfig {
             width: 640,
             height: 480,
             exposure: Duration::from_millis(100),
-            bit_depth: 16,
+            bit_depth: SensorBitDepth::Bits16,
         };
         assert_eq!(config_16bit.get_saturation(), 65535.0);
     }

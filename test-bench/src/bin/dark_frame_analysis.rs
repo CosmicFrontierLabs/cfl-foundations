@@ -11,7 +11,7 @@ use ndarray::Array2;
 use rand::{Rng, SeedableRng};
 use shared::{
     bad_pixel_map::BadPixelMap,
-    camera_interface::{mock::MockCameraInterface, CameraInterface},
+    camera_interface::{mock::MockCameraInterface, CameraInterface, SensorBitDepth},
     config_storage::ConfigStorage,
     dark_frame::DarkFrameAnalysis,
 };
@@ -134,7 +134,7 @@ fn create_mock_camera(exposure_ms: Option<f64>) -> MockCameraInterface {
 
     let width = 1280;
     let height = 960;
-    let bit_depth = 12;
+    let bit_depth = SensorBitDepth::Bits12;
 
     let bias = 100.0;
     let read_noise = 5.0;

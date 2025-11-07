@@ -2,8 +2,8 @@ use bytemuck;
 use ndarray::Array2;
 use playerone_sdk::{Camera, CameraDescription, ImageFormat};
 use shared::camera_interface::{
-    CameraConfig, CameraError, CameraInterface, CameraResult, FrameMetadata, SensorGeometry,
-    Timestamp,
+    CameraConfig, CameraError, CameraInterface, CameraResult, FrameMetadata, SensorBitDepth,
+    SensorGeometry, Timestamp,
 };
 use shared::image_proc::detection::aabb::AABB;
 use std::collections::HashMap;
@@ -76,7 +76,7 @@ impl PlayerOneCamera {
             width: max_width,
             height: max_height,
             exposure: Duration::from_millis(100),
-            bit_depth: 16,
+            bit_depth: SensorBitDepth::Bits16,
         };
 
         Ok(Self {
@@ -280,11 +280,11 @@ impl CameraInterface for PlayerOneCamera {
         &self.name
     }
 
-    fn get_bit_depth(&self) -> u8 {
+    fn get_bit_depth(&self) -> SensorBitDepth {
         self.config.bit_depth
     }
 
-    fn set_bit_depth(&mut self, bit_depth: u8) -> CameraResult<()> {
+    fn set_bit_depth(&mut self, bit_depth: SensorBitDepth) -> CameraResult<()> {
         self.config.bit_depth = bit_depth;
         Ok(())
     }
