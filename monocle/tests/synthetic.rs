@@ -10,7 +10,6 @@ use monocle::{
     state::{FgsEvent, FgsState},
     FineGuidanceSystem,
 };
-use ndarray::Array2;
 use test_helpers::test_timestamp;
 
 #[test]
@@ -37,8 +36,7 @@ fn test_fgs_with_synthetic_frames() {
         fwhm: 3.0,
     };
 
-    let camera = test_helpers::create_mock_camera(Array2::<u16>::zeros((300, 300)));
-    let mut fgs = FineGuidanceSystem::new(camera, config);
+    let mut fgs = FineGuidanceSystem::new(config);
 
     // Define synthetic stars - make them brighter
     let base_stars = vec![
@@ -118,8 +116,7 @@ fn test_fgs_acquisition_to_tracking_transition() {
         fwhm: 3.0,
     };
 
-    let camera = test_helpers::create_mock_camera(Array2::<u16>::zeros((300, 300)));
-    let mut fgs = FineGuidanceSystem::new(camera, config);
+    let mut fgs = FineGuidanceSystem::new(config);
 
     // Track state transitions
     let mut states = Vec::new();
@@ -213,8 +210,7 @@ fn test_fgs_with_moving_stars() {
         fwhm: 3.0,
     };
 
-    let camera = test_helpers::create_mock_camera(Array2::<u16>::zeros((300, 300)));
-    let mut fgs = FineGuidanceSystem::new(camera, config);
+    let mut fgs = FineGuidanceSystem::new(config);
 
     // Single very bright star for simplicity
     let base_star = vec![StarParams::with_fwhm(64.0, 64.0, 60000.0, 3.0)];
@@ -292,8 +288,7 @@ fn test_fgs_loses_tracking_with_large_motion() {
         fwhm: 3.0,
     };
 
-    let camera = test_helpers::create_mock_camera(Array2::<u16>::zeros((300, 300)));
-    let mut fgs = FineGuidanceSystem::new(camera, config);
+    let mut fgs = FineGuidanceSystem::new(config);
 
     let base_star = vec![StarParams::with_fwhm(64.0, 64.0, 60000.0, 3.0)];
 

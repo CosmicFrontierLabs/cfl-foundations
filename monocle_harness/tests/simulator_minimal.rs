@@ -46,13 +46,14 @@ fn test_basic_setup() {
         fwhm: 3.0,
     };
 
-    let camera = create_jbt_hwk_camera();
-    let mut fgs = FineGuidanceSystem::new(camera, fgs_config);
+    let _camera = create_jbt_hwk_camera();
+    let mut fgs = FineGuidanceSystem::new(fgs_config);
 
     // Verify FGS starts in idle state
     assert!(matches!(fgs.state(), FgsState::Idle));
 
     // Test state transitions
-    assert!(fgs.process_event(FgsEvent::StartFgs).is_ok());
+    let result = fgs.process_event(FgsEvent::StartFgs);
+    assert!(result.is_ok());
     assert!(matches!(fgs.state(), FgsState::Acquiring { .. }));
 }

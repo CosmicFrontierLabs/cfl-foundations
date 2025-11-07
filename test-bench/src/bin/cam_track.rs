@@ -148,7 +148,7 @@ fn main() -> Result<()> {
     };
 
     info!("Creating Fine Guidance System");
-    let mut fgs = FineGuidanceSystem::new(camera, config);
+    let mut fgs = FineGuidanceSystem::new(config);
 
     let csv_writer_clone = csv_writer.clone();
     let _callback_id = fgs.register_callback(move |event| match event {
@@ -208,8 +208,10 @@ fn main() -> Result<()> {
     });
 
     info!("Starting FGS acquisition");
-    fgs.process_event(FgsEvent::StartFgs)
+    let (_update, settings) = fgs
+        .process_event(FgsEvent::StartFgs)
         .map_err(|e| anyhow::anyhow!("Failed to start FGS: {e}"))?;
+    monocle::apply_camera_settings(&mut camera, settings);
 
     let start_time = Instant::now();
     if let Some(max_secs) = args.max_runtime_secs {
@@ -231,61 +233,71 @@ fn main() -> Result<()> {
                 break;
             }
         }
-        match fgs.process_next_frame() {
-            Ok(_update) => {
-                let state = fgs.state();
-                match state {
-                    monocle::FgsState::Acquiring { frames_collected } => {
-                        if frames_collected % 5 == 0 {
-                            info!("Acquiring... collected {} frames", frames_collected);
-                        }
-                    }
-                    monocle::FgsState::Calibrating => {
-                        info!("Calibrating guide stars...");
-                    }
-                    monocle::FgsState::Tracking { frames_processed } => {
-                        if frames_processed % 100 == 0 && *frames_processed > 0 {
-                            info!("Tracking... processed {} frames", frames_processed);
-                        }
-                    }
-                    monocle::FgsState::Reacquiring { attempts } => {
-                        warn!("Reacquiring lock... attempt {}", attempts);
-                    }
-                    monocle::FgsState::Idle => {
-                        info!("System idle");
-                    }
-                }
-
-                if args.save_fits
-                    && !fits_saved
-                    && matches!(prev_state, monocle::FgsState::Calibrating)
-                    && !matches!(state, monocle::FgsState::Calibrating)
-                {
-                    if let Some(averaged_frame) = fgs.get_averaged_frame() {
-                        info!("Saving averaged acquisition frames to FITS file...");
-                        let mut data = HashMap::new();
-                        data.insert(
-                            "AVERAGED".to_string(),
-                            FitsDataType::Float64(averaged_frame),
-                        );
-
-                        let fits_path = "cam_track_averaged_frame.fits";
-                        match write_typed_fits(&data, fits_path) {
-                            Ok(_) => {
-                                info!("Averaged frame saved to: {}", fits_path);
-                                fits_saved = true;
-                            }
-                            Err(e) => {
-                                warn!("Failed to save FITS file: {}", e);
+        let frame_result = camera
+            .capture_frame()
+            .map_err(|e| anyhow::anyhow!("Camera capture failed: {e}"));
+        match frame_result {
+            Ok((frame, metadata)) => match fgs.process_frame(frame.view(), metadata.timestamp) {
+                Ok((_update, settings)) => {
+                    monocle::apply_camera_settings(&mut camera, settings);
+                    let state = fgs.state();
+                    match state {
+                        monocle::FgsState::Acquiring { frames_collected } => {
+                            if frames_collected % 5 == 0 {
+                                info!("Acquiring... collected {} frames", frames_collected);
                             }
                         }
+                        monocle::FgsState::Calibrating => {
+                            info!("Calibrating guide stars...");
+                        }
+                        monocle::FgsState::Tracking { frames_processed } => {
+                            if frames_processed % 100 == 0 && *frames_processed > 0 {
+                                info!("Tracking... processed {} frames", frames_processed);
+                            }
+                        }
+                        monocle::FgsState::Reacquiring { attempts } => {
+                            warn!("Reacquiring lock... attempt {}", attempts);
+                        }
+                        monocle::FgsState::Idle => {
+                            info!("System idle");
+                        }
                     }
-                }
 
-                prev_state = state.clone();
-            }
+                    if args.save_fits
+                        && !fits_saved
+                        && matches!(prev_state, monocle::FgsState::Calibrating)
+                        && !matches!(state, monocle::FgsState::Calibrating)
+                    {
+                        if let Some(averaged_frame) = fgs.get_averaged_frame() {
+                            info!("Saving averaged acquisition frames to FITS file...");
+                            let mut data = HashMap::new();
+                            data.insert(
+                                "AVERAGED".to_string(),
+                                FitsDataType::Float64(averaged_frame),
+                            );
+
+                            let fits_path = "cam_track_averaged_frame.fits";
+                            match write_typed_fits(&data, fits_path) {
+                                Ok(_) => {
+                                    info!("Averaged frame saved to: {}", fits_path);
+                                    fits_saved = true;
+                                }
+                                Err(e) => {
+                                    warn!("Failed to save FITS file: {}", e);
+                                }
+                            }
+                        }
+                    }
+
+                    prev_state = state.clone();
+                }
+                Err(e) => {
+                    warn!("Frame processing error: {}", e);
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            },
             Err(e) => {
-                warn!("Frame processing error: {}", e);
+                warn!("Camera capture error: {}", e);
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }

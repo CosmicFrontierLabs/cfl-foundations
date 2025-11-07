@@ -9,7 +9,6 @@ use monocle::{
     state::{FgsEvent, FgsState},
     FineGuidanceSystem,
 };
-use ndarray::Array2;
 use test_helpers::test_timestamp;
 
 #[test]
@@ -37,8 +36,7 @@ fn test_single_stationary_star() {
         fwhm: 3.0,
     };
 
-    let camera = test_helpers::create_mock_camera(Array2::<u16>::zeros((256, 256)));
-    let mut fgs = FineGuidanceSystem::new(camera, config);
+    let mut fgs = FineGuidanceSystem::new(config);
 
     // Create a frame with a single star using the shared renderer
     let image_config = SyntheticImageConfig {
@@ -132,9 +130,7 @@ fn test_guidance_update_timestamp_correlation() {
     let star = StarParams::with_fwhm(128.0, 128.0, 5000.0, 4.0);
     let frame = create_synthetic_star_image(&image_config, &[star]);
 
-    // Create camera with test frames
-    let camera = test_helpers::create_mock_camera(frame.clone());
-    let mut fgs = FineGuidanceSystem::new(camera, config);
+    let mut fgs = FineGuidanceSystem::new(config);
 
     // Start FGS
     let _ = fgs.process_event(FgsEvent::StartFgs);
@@ -154,7 +150,7 @@ fn test_guidance_update_timestamp_correlation() {
     let result = fgs.process_frame(frame.view(), ts3);
     assert!(result.is_ok());
 
-    if let Ok(Some(update)) = result {
+    if let Ok((Some(update), _)) = result {
         // Verify the guidance update has the timestamp we passed in
         assert_eq!(
             update.timestamp, ts3,
@@ -172,7 +168,7 @@ fn test_guidance_update_timestamp_correlation() {
         let result = fgs.process_frame(frame.view(), ts);
         assert!(result.is_ok());
 
-        if let Ok(Some(update)) = result {
+        if let Ok((Some(update), _)) = result {
             assert_eq!(
                 update.timestamp, ts,
                 "Frame {} guidance update timestamp should match input",

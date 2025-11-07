@@ -45,9 +45,7 @@ fn test_full_tracking_lifecycle() {
         fwhm: 3.0,
     };
 
-    // Create mock camera with empty frames - we'll provide frames directly to process_frame
-    let camera = test_helpers::create_mock_camera(Array2::<u16>::zeros((512, 512)));
-    let mut fgs = FineGuidanceSystem::new(camera, config);
+    let mut fgs = FineGuidanceSystem::new(config);
 
     // Track events
     let events_received = Arc::new(Mutex::new(Vec::<FgsCallbackEvent>::new()));
@@ -155,8 +153,8 @@ fn test_full_tracking_lifecycle() {
             assert!(matches!(fgs.state(), FgsState::Tracking { .. }));
 
             // Should get guidance updates
-            let update = result.unwrap();
-            if let Some(update) = update {
+            let (update_opt, _) = result.unwrap();
+            if let Some(update) = update_opt {
                 println!(
                     "Frame {}: Guidance update - x: {:.2}, y: {:.2}",
                     frame_num, update.x, update.y
@@ -285,9 +283,7 @@ fn test_tracking_loss_and_recovery() {
         fwhm: 3.0,
     };
 
-    // Create mock camera with empty frames - we'll provide frames directly to process_frame
-    let camera = test_helpers::create_mock_camera(Array2::<u16>::zeros((512, 512)));
-    let mut fgs = FineGuidanceSystem::new(camera, config);
+    let mut fgs = FineGuidanceSystem::new(config);
 
     // Track lost events
     let lost_count = Arc::new(AtomicUsize::new(0));
@@ -381,9 +377,7 @@ fn test_image_sequence_processing() {
         fwhm: 3.0,
     };
 
-    // Create mock camera with empty frames - we'll provide frames directly to process_frame
-    let camera = test_helpers::create_mock_camera(Array2::<u16>::zeros((512, 512)));
-    let mut fgs = FineGuidanceSystem::new(camera, config);
+    let mut fgs = FineGuidanceSystem::new(config);
 
     // Create a sequence of images with gradually moving stars
     let mut image_sequence = Vec::new();
@@ -430,7 +424,7 @@ fn test_image_sequence_processing() {
             }
             FgsState::Tracking { frames_processed } => {
                 println!("Frame {}: Tracking (processed: {})", idx, frames_processed);
-                if let Ok(Some(update)) = result {
+                if let Ok((Some(update), _)) = result {
                     println!("  -> Update: x={:.2}, y={:.2}", update.x, update.y);
                 }
             }

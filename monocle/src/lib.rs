@@ -23,6 +23,46 @@ pub use crate::callback::FgsCallbackEvent;
 pub use crate::config::FgsConfig;
 pub use crate::state::{FgsEvent, FgsState};
 
+/// Camera settings update requested by FGS
+///
+/// The FGS decides what camera settings need to change but does not apply them directly.
+/// The caller is responsible for applying these updates to the camera for subsequent frames.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CameraSettingsUpdate {
+    /// Set camera ROI to specified bounds
+    SetROI(AABB),
+    /// Clear camera ROI and return to full-frame readout
+    ClearROI,
+}
+
+/// Apply camera settings updates to a camera
+///
+/// Helper function to apply a list of camera settings updates returned by the FGS.
+/// Logs warnings if any setting fails to apply but continues with remaining settings.
+///
+/// # Arguments
+/// * `camera` - The camera to apply settings to
+/// * `updates` - List of settings updates to apply
+pub fn apply_camera_settings<C: CameraInterface>(
+    camera: &mut C,
+    updates: Vec<CameraSettingsUpdate>,
+) {
+    for setting in updates {
+        match setting {
+            CameraSettingsUpdate::SetROI(roi) => {
+                if let Err(e) = camera.set_roi(roi) {
+                    log::warn!("Failed to set camera ROI: {e}");
+                }
+            }
+            CameraSettingsUpdate::ClearROI => {
+                if let Err(e) = camera.clear_roi() {
+                    log::warn!("Failed to clear camera ROI: {e}");
+                }
+            }
+        }
+    }
+}
+
 /// A selected guide star
 #[derive(Debug, Clone)]
 pub struct GuideStar {
@@ -64,9 +104,7 @@ pub struct GuidanceUpdate {
 }
 
 /// Main Fine Guidance System state machine
-pub struct FineGuidanceSystem<C: CameraInterface> {
-    /// Camera interface for capturing frames
-    camera: C,
+pub struct FineGuidanceSystem {
     /// Current state
     state: FgsState,
     /// System configuration
@@ -89,11 +127,10 @@ pub struct FineGuidanceSystem<C: CameraInterface> {
     current_track_id: u32,
 }
 
-impl<C: CameraInterface> FineGuidanceSystem<C> {
-    /// Create a new Fine Guidance System with a camera
-    pub fn new(camera: C, config: FgsConfig) -> Self {
+impl FineGuidanceSystem {
+    /// Create a new Fine Guidance System
+    pub fn new(config: FgsConfig) -> Self {
         Self {
-            camera,
             state: FgsState::Idle,
             config,
             guide_star: None,
@@ -142,15 +179,18 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
     }
 
     /// Handle transition from Idle to Acquiring
-    fn handle_idle_start(&mut self) -> FgsState {
+    fn handle_idle_start(&mut self) -> (FgsState, Vec<CameraSettingsUpdate>) {
         log::info!("Starting FGS, entering Acquiring state");
         self.accumulated_frame = None;
         self.frames_accumulated = 0;
         self.guide_star = None;
         self.detected_stars.clear();
-        FgsState::Acquiring {
-            frames_collected: 0,
-        }
+        (
+            FgsState::Acquiring {
+                frames_collected: 0,
+            },
+            vec![],
+        )
     }
 
     /// Handle frame processing during Acquiring state
@@ -159,7 +199,7 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
         frames_collected: usize,
         frame: ArrayView2<u16>,
         _timestamp: Timestamp,
-    ) -> Result<FgsState, String> {
+    ) -> Result<(FgsState, Vec<CameraSettingsUpdate>), String> {
         let frames = frames_collected + 1;
         let (height, width) = frame.dim();
         self.accumulate_frame(frame)?;
@@ -174,20 +214,23 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
 
         if frames >= self.config.acquisition_frames {
             log::info!("Acquisition complete, entering Calibrating state");
-            Ok(FgsState::Calibrating)
+            Ok((FgsState::Calibrating, vec![]))
         } else {
-            Ok(FgsState::Acquiring {
-                frames_collected: frames,
-            })
+            Ok((
+                FgsState::Acquiring {
+                    frames_collected: frames,
+                },
+                vec![],
+            ))
         }
     }
 
     /// Handle abort during Acquiring state
-    fn handle_acquiring_abort(&mut self) -> FgsState {
+    fn handle_acquiring_abort(&mut self) -> (FgsState, Vec<CameraSettingsUpdate>) {
         log::info!("Aborting acquisition, returning to Idle");
         self.accumulated_frame = None;
         self.frames_accumulated = 0;
-        FgsState::Idle
+        (FgsState::Idle, vec![])
     }
 
     /// Handle frame processing during Calibrating state
@@ -195,15 +238,15 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
         &mut self,
         frame: ArrayView2<u16>,
         timestamp: Timestamp,
-    ) -> Result<FgsState, String> {
+    ) -> Result<(FgsState, Vec<CameraSettingsUpdate>), String> {
         self.detect_and_select_guides(frame)?;
 
         if let Some(guide_star) = &self.guide_star {
             log::info!("Calibration complete with guide star, entering Tracking");
 
-            // Set camera ROI to track the guide star
+            // Request camera ROI to be set for tracking the guide star
             log::info!(
-                "Setting camera ROI: x1={}, x2={}, y1={}, y2={} for star at ({:.2}, {:.2})",
+                "Requesting camera ROI: x1={}, x2={}, y1={}, y2={} for star at ({:.2}, {:.2})",
                 guide_star.roi.min_col,
                 guide_star.roi.max_col,
                 guide_star.roi.min_row,
@@ -211,10 +254,6 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
                 guide_star.x,
                 guide_star.y
             );
-            if let Err(e) = self.camera.set_roi(guide_star.roi) {
-                log::warn!("Failed to set camera ROI: {e}");
-                // Continue anyway - camera may not support ROI
-            }
 
             // Increment track ID for new tracking session
             self.current_track_id += 1;
@@ -222,12 +261,15 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
             // Emit tracking started event
             self.emit_tracking_started_event(timestamp);
 
-            Ok(FgsState::Tracking {
-                frames_processed: 0,
-            })
+            Ok((
+                FgsState::Tracking {
+                    frames_processed: 0,
+                },
+                vec![CameraSettingsUpdate::SetROI(guide_star.roi)],
+            ))
         } else {
             log::warn!("No suitable guide stars found, returning to Idle");
-            Ok(FgsState::Idle)
+            Ok((FgsState::Idle, vec![]))
         }
     }
 
@@ -237,7 +279,7 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
         frames_processed: usize,
         frame: ArrayView2<u16>,
         timestamp: Timestamp,
-    ) -> Result<FgsState, String> {
+    ) -> Result<(FgsState, Vec<CameraSettingsUpdate>), String> {
         let update_opt = self.track(frame, timestamp)?;
 
         // Only process if we got a valid update
@@ -247,27 +289,31 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
                 self.emit_tracking_update_event(&update);
 
                 self.last_update = Some(update.clone());
-                Ok(FgsState::Tracking {
-                    frames_processed: frames_processed + 1,
-                })
+                Ok((
+                    FgsState::Tracking {
+                        frames_processed: frames_processed + 1,
+                    },
+                    vec![],
+                ))
             } else {
                 log::warn!("Lost all guide stars, entering Reacquiring");
-
-                // Clear camera ROI when losing tracking
-                if let Err(e) = self.camera.clear_roi() {
-                    log::warn!("Failed to clear camera ROI: {e}");
-                }
 
                 // Emit tracking lost event
                 self.emit_tracking_lost_event(TrackingLostReason::SignalTooWeak, timestamp);
 
-                Ok(FgsState::Reacquiring { attempts: 0 })
+                Ok((
+                    FgsState::Reacquiring { attempts: 0 },
+                    vec![CameraSettingsUpdate::ClearROI],
+                ))
             }
         } else {
             // No update due to frame mismatch, stay in tracking
-            Ok(FgsState::Tracking {
-                frames_processed: frames_processed + 1,
-            })
+            Ok((
+                FgsState::Tracking {
+                    frames_processed: frames_processed + 1,
+                },
+                vec![],
+            ))
         }
     }
 
@@ -277,21 +323,27 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
         attempts: usize,
         frame: ArrayView2<u16>,
         _timestamp: Timestamp,
-    ) -> Result<FgsState, String> {
+    ) -> Result<(FgsState, Vec<CameraSettingsUpdate>), String> {
         let recovered = self.attempt_reacquisition(frame)?;
 
         if recovered {
             log::info!("Lock recovered, returning to Tracking");
-            Ok(FgsState::Tracking {
-                frames_processed: 0,
-            })
+            Ok((
+                FgsState::Tracking {
+                    frames_processed: 0,
+                },
+                vec![],
+            ))
         } else if attempts + 1 >= self.config.max_reacquisition_attempts {
             log::warn!("Reacquisition timeout, returning to Calibrating");
-            Ok(FgsState::Calibrating)
+            Ok((FgsState::Calibrating, vec![]))
         } else {
-            Ok(FgsState::Reacquiring {
-                attempts: attempts + 1,
-            })
+            Ok((
+                FgsState::Reacquiring {
+                    attempts: attempts + 1,
+                },
+                vec![],
+            ))
         }
     }
 
@@ -339,10 +391,17 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
     }
 
     /// Process an event and potentially transition states
-    pub fn process_event(&mut self, event: FgsEvent<'_>) -> Result<Option<GuidanceUpdate>, String> {
+    ///
+    /// Returns a tuple containing:
+    /// - Optional guidance update (only when processing frames in Tracking state)
+    /// - Vector of camera settings updates that the caller must apply
+    pub fn process_event(
+        &mut self,
+        event: FgsEvent<'_>,
+    ) -> Result<(Option<GuidanceUpdate>, Vec<CameraSettingsUpdate>), String> {
         use FgsState::*;
 
-        let new_state = match (&self.state, event) {
+        let (new_state, camera_updates) = match (&self.state, event) {
             // From Idle
             (Idle, FgsEvent::StartFgs) => self.handle_idle_start(),
 
@@ -363,11 +422,7 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
             }
             (Tracking { .. }, FgsEvent::StopFgs) => {
                 log::info!("Stopping FGS, returning to Idle");
-                // Clear camera ROI when stopping
-                if let Err(e) = self.camera.clear_roi() {
-                    log::warn!("Failed to clear camera ROI: {e}");
-                }
-                Idle
+                (Idle, vec![CameraSettingsUpdate::ClearROI])
             }
 
             // From Reacquiring
@@ -376,40 +431,31 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
             }
             (Reacquiring { .. }, FgsEvent::Abort) => {
                 log::info!("Aborting reacquisition, returning to Idle");
-                // Clear camera ROI when aborting
-                if let Err(e) = self.camera.clear_roi() {
-                    log::warn!("Failed to clear camera ROI: {e}");
-                }
-                Idle
+                (Idle, vec![CameraSettingsUpdate::ClearROI])
             }
 
             // Invalid transitions
             _ => {
                 log::warn!("Invalid state transition");
-                self.state.clone()
+                (self.state.clone(), vec![])
             }
         };
 
         self.state = new_state;
-        Ok(self.last_update.clone())
+        Ok((self.last_update.clone(), camera_updates))
     }
 
     /// Process a single image frame
+    ///
+    /// Returns a tuple containing:
+    /// - Optional guidance update (only when processing frames in Tracking state)
+    /// - Vector of camera settings updates that the caller must apply
     pub fn process_frame(
         &mut self,
         frame: ArrayView2<u16>,
         timestamp: Timestamp,
-    ) -> Result<Option<GuidanceUpdate>, String> {
+    ) -> Result<(Option<GuidanceUpdate>, Vec<CameraSettingsUpdate>), String> {
         self.process_event(FgsEvent::ProcessFrame(frame, timestamp))
-    }
-
-    /// Capture and process the next frame from the camera
-    pub fn process_next_frame(&mut self) -> Result<Option<GuidanceUpdate>, String> {
-        let (frame, metadata) = self
-            .camera
-            .capture_frame()
-            .map_err(|e| format!("Camera capture failed: {e}"))?;
-        self.process_frame(frame.view(), metadata.timestamp)
     }
 
     /// Get the current state
@@ -578,23 +624,10 @@ impl<C: CameraInterface> FineGuidanceSystem<C> {
 mod tests {
     use super::*;
     use ndarray::Array2;
-    use shared::camera_interface::mock::MockCameraInterface;
-    use shared::camera_interface::SensorBitDepth;
-    use shared::image_size::PixelShape;
     use std::time::Duration;
 
     fn test_timestamp() -> Timestamp {
         Timestamp::from_duration(Duration::from_millis(100))
-    }
-
-    fn create_test_camera(width: usize, height: usize) -> MockCameraInterface {
-        let mut camera = MockCameraInterface::new_repeating(
-            PixelShape::with_width_height(width, height),
-            SensorBitDepth::Bits16,
-            Array2::<u16>::zeros((height, width)),
-        );
-        camera.set_exposure(Duration::from_millis(10)).unwrap();
-        camera
     }
 
     fn test_config() -> FgsConfig {
@@ -620,8 +653,7 @@ mod tests {
 
     #[test]
     fn test_state_transitions() {
-        let camera = create_test_camera(100, 100);
-        let mut fgs = FineGuidanceSystem::new(camera, test_config());
+        let mut fgs = FineGuidanceSystem::new(test_config());
 
         // Should start in Idle
         assert_eq!(fgs.state(), &FgsState::Idle);
@@ -633,20 +665,19 @@ mod tests {
 
     #[test]
     fn test_process_frame() {
-        let camera = create_test_camera(100, 100);
-        let mut fgs = FineGuidanceSystem::new(camera, test_config());
+        let mut fgs = FineGuidanceSystem::new(test_config());
         let dummy_frame = Array2::<u16>::zeros((100, 100));
 
         // Should do nothing in Idle state
         let result = fgs.process_frame(dummy_frame.view(), test_timestamp());
         assert!(result.is_ok());
-        assert!(result.unwrap().is_none());
+        let (update, _) = result.unwrap();
+        assert!(update.is_none());
     }
 
     #[test]
     fn test_frame_accumulation() {
-        let camera = create_test_camera(10, 10);
-        let mut fgs = FineGuidanceSystem::new(camera, test_config());
+        let mut fgs = FineGuidanceSystem::new(test_config());
 
         // Start FGS
         let _ = fgs.process_event(FgsEvent::StartFgs);
@@ -691,8 +722,7 @@ mod tests {
 
     #[test]
     fn test_frame_accumulation_abort() {
-        let camera = create_test_camera(10, 10);
-        let mut fgs = FineGuidanceSystem::new(camera, test_config());
+        let mut fgs = FineGuidanceSystem::new(test_config());
 
         // Start FGS and accumulate some frames
         let _ = fgs.process_event(FgsEvent::StartFgs);
@@ -712,8 +742,7 @@ mod tests {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
 
-        let camera = create_test_camera(100, 100);
-        let fgs = FineGuidanceSystem::new(camera, test_config());
+        let fgs = FineGuidanceSystem::new(test_config());
         let counter = Arc::new(AtomicUsize::new(0));
         let counter_clone = counter.clone();
 
@@ -756,8 +785,7 @@ mod tests {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
 
-        let camera = create_test_camera(100, 100);
-        let fgs = FineGuidanceSystem::new(camera, test_config());
+        let fgs = FineGuidanceSystem::new(test_config());
 
         let counter1 = Arc::new(AtomicUsize::new(0));
         let counter2 = Arc::new(AtomicUsize::new(0));

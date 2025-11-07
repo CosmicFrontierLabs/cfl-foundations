@@ -10,8 +10,6 @@ use monocle::{
     state::{FgsEvent, FgsState},
     FineGuidanceSystem,
 };
-use ndarray::Array2;
-use shared::camera_interface::CameraInterface;
 use std::sync::{Arc, Mutex};
 use test_helpers::test_timestamp;
 
@@ -19,16 +17,14 @@ use test_helpers::test_timestamp;
 fn test_star_detection_on_correct_cycle() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let camera = test_helpers::create_mock_camera(Array2::<u16>::zeros((512, 512)));
-
-    let mut config = FgsConfig {
+    let config = FgsConfig {
         acquisition_frames: 2,
         filters: monocle::config::GuideStarFilters {
             detection_threshold_sigma: 5.0,
             snr_min: 3.0,
             diameter_range: (2.0, 20.0),
             aspect_ratio_max: 2.5,
-            saturation_value: 4000.0,
+            saturation_value: 65535.0 * 0.95,
             saturation_search_radius: 3.0,
             minimum_edge_distance: 10.0,
             bad_pixel_map: shared::bad_pixel_map::BadPixelMap::empty(),
@@ -39,9 +35,8 @@ fn test_star_detection_on_correct_cycle() {
         centroid_radius_multiplier: 3.0,
         fwhm: 3.0,
     };
-    config.filters.saturation_value = camera.saturation_value() * 0.95;
 
-    let mut fgs = FineGuidanceSystem::new(camera, config);
+    let mut fgs = FineGuidanceSystem::new(config);
 
     // Track when we enter each state
     let states = Arc::new(Mutex::new(Vec::new()));
@@ -66,7 +61,7 @@ fn test_star_detection_on_correct_cycle() {
     let frame = create_synthetic_star_image(&config, &stars);
 
     // Start FGS - should enter Acquiring
-    fgs.process_event(FgsEvent::StartFgs).unwrap();
+    let _ = fgs.process_event(FgsEvent::StartFgs).unwrap();
     assert!(matches!(
         fgs.state(),
         FgsState::Acquiring {
@@ -75,7 +70,7 @@ fn test_star_detection_on_correct_cycle() {
     ));
 
     // First acquisition frame
-    fgs.process_frame(frame.view(), test_timestamp()).unwrap();
+    let _ = fgs.process_frame(frame.view(), test_timestamp()).unwrap();
     assert!(matches!(
         fgs.state(),
         FgsState::Acquiring {
@@ -84,11 +79,11 @@ fn test_star_detection_on_correct_cycle() {
     ));
 
     // Second acquisition frame - should transition to Calibrating
-    fgs.process_frame(frame.view(), test_timestamp()).unwrap();
+    let _ = fgs.process_frame(frame.view(), test_timestamp()).unwrap();
     assert!(matches!(fgs.state(), FgsState::Calibrating));
 
     // Calibration frame - should detect star and enter Tracking
-    fgs.process_frame(frame.view(), test_timestamp()).unwrap();
+    let _ = fgs.process_frame(frame.view(), test_timestamp()).unwrap();
     assert!(
         matches!(fgs.state(), FgsState::Tracking { .. }),
         "Should be tracking after calibration but state is {:?}",
@@ -105,16 +100,14 @@ fn test_star_detection_on_correct_cycle() {
 fn test_position_accuracy() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let camera = test_helpers::create_mock_camera(Array2::<u16>::zeros((512, 512)));
-
-    let mut config = FgsConfig {
+    let config = FgsConfig {
         acquisition_frames: 1,
         filters: monocle::config::GuideStarFilters {
             detection_threshold_sigma: 5.0,
             snr_min: 3.0,
             diameter_range: (2.0, 20.0),
             aspect_ratio_max: 2.5,
-            saturation_value: 4000.0,
+            saturation_value: 65535.0 * 0.95,
             saturation_search_radius: 3.0,
             minimum_edge_distance: 10.0,
             bad_pixel_map: shared::bad_pixel_map::BadPixelMap::empty(),
@@ -125,9 +118,8 @@ fn test_position_accuracy() {
         centroid_radius_multiplier: 5.0,
         fwhm: 3.0,
     };
-    config.filters.saturation_value = camera.saturation_value() * 0.95;
 
-    let mut fgs = FineGuidanceSystem::new(camera, config);
+    let mut fgs = FineGuidanceSystem::new(config);
 
     // Track reported positions
     let positions = Arc::new(Mutex::new(Vec::new()));
@@ -165,15 +157,15 @@ fn test_position_accuracy() {
     let star_x = stars[0].x;
     let star_y = stars[0].y;
 
-    fgs.process_event(FgsEvent::StartFgs).unwrap();
-    fgs.process_frame(frame.view(), test_timestamp()).unwrap(); // Acquisition
-    fgs.process_frame(frame.view(), test_timestamp()).unwrap(); // Calibration
+    let _ = fgs.process_event(FgsEvent::StartFgs).unwrap();
+    let _ = fgs.process_frame(frame.view(), test_timestamp()).unwrap(); // Acquisition
+    let _ = fgs.process_frame(frame.view(), test_timestamp()).unwrap(); // Calibration
 
     // Should be tracking now
     assert!(matches!(fgs.state(), FgsState::Tracking { .. }));
 
     // Process a tracking frame with same position
-    fgs.process_frame(frame.view(), test_timestamp()).unwrap();
+    let _ = fgs.process_frame(frame.view(), test_timestamp()).unwrap();
 
     // Check positions are accurate
     let reported_positions = positions.lock().unwrap();
@@ -209,16 +201,14 @@ fn test_position_accuracy() {
 fn test_moving_star_tracking() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let camera = test_helpers::create_mock_camera(Array2::<u16>::zeros((512, 512)));
-
-    let mut config = FgsConfig {
+    let config = FgsConfig {
         acquisition_frames: 1,
         filters: monocle::config::GuideStarFilters {
             detection_threshold_sigma: 5.0,
             snr_min: 3.0,
             diameter_range: (2.0, 20.0),
             aspect_ratio_max: 2.5,
-            saturation_value: 4000.0,
+            saturation_value: 65535.0 * 0.95,
             saturation_search_radius: 3.0,
             minimum_edge_distance: 10.0,
             bad_pixel_map: shared::bad_pixel_map::BadPixelMap::empty(),
@@ -229,9 +219,8 @@ fn test_moving_star_tracking() {
         centroid_radius_multiplier: 3.0,
         fwhm: 3.0,
     };
-    config.filters.saturation_value = camera.saturation_value() * 0.95;
 
-    let mut fgs = FineGuidanceSystem::new(camera, config);
+    let mut fgs = FineGuidanceSystem::new(config);
 
     let positions = Arc::new(Mutex::new(Vec::new()));
     let mismatch_count = Arc::new(Mutex::new(0usize));
@@ -261,9 +250,9 @@ fn test_moving_star_tracking() {
 
     // Initialize to tracking
     let frame = create_synthetic_star_image(&config, &stars);
-    fgs.process_event(FgsEvent::StartFgs).unwrap();
-    fgs.process_frame(frame.view(), test_timestamp()).unwrap();
-    fgs.process_frame(frame.view(), test_timestamp()).unwrap();
+    let _ = fgs.process_event(FgsEvent::StartFgs).unwrap();
+    let _ = fgs.process_frame(frame.view(), test_timestamp()).unwrap();
+    let _ = fgs.process_frame(frame.view(), test_timestamp()).unwrap();
 
     assert!(matches!(fgs.state(), FgsState::Tracking { .. }));
 
@@ -282,7 +271,7 @@ fn test_moving_star_tracking() {
             4.0,
         )];
         let frame = create_synthetic_star_image(&config, &stars);
-        fgs.process_frame(frame.view(), test_timestamp()).unwrap();
+        let _ = fgs.process_frame(frame.view(), test_timestamp()).unwrap();
 
         // Should still be tracking
         assert!(

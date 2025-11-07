@@ -311,20 +311,25 @@ fn run_single_experiment(
     };
 
     // Create FGS
-    let mut fgs = FineGuidanceSystem::new(camera, fgs_config);
+    let mut fgs = FineGuidanceSystem::new(fgs_config);
 
     // Start FGS
-    fgs.process_event(FgsEvent::StartFgs)
+    let (_update, _settings) = fgs
+        .process_event(FgsEvent::StartFgs)
         .expect("Failed to start FGS");
 
     // Acquisition phase
     for _ in 0..fgs_params.acquisition_frames {
-        fgs.process_next_frame()
+        let (frame, metadata) = camera.capture_frame().expect("Failed to capture frame");
+        let (_update, _settings) = fgs
+            .process_frame(frame.view(), metadata.timestamp)
             .expect("Failed to process acquisition frame");
     }
 
     // Calibration frame
-    fgs.process_next_frame()
+    let (frame, metadata) = camera.capture_frame().expect("Failed to capture frame");
+    let (_update, _settings) = fgs
+        .process_frame(frame.view(), metadata.timestamp)
         .expect("Failed to process calibration frame");
 
     // Check if we achieved lock and get guide star magnitude
@@ -385,7 +390,8 @@ fn run_single_experiment(
     };
 
     for _ in 0..tracked_points {
-        if let Ok(Some(update)) = fgs.process_next_frame() {
+        let (frame, metadata) = camera.capture_frame().expect("Failed to capture frame");
+        if let Ok((Some(update), _settings)) = fgs.process_frame(frame.view(), metadata.timestamp) {
             let point = TrackingPoint {
                 time_s: update.timestamp.to_duration().as_secs_f64(),
                 x_actual: actual_x,

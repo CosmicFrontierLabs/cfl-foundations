@@ -139,7 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Update config with camera's saturation value (95% of max to be conservative)
     config.filters.saturation_value = camera.saturation_value() * 0.95;
 
-    let mut fgs = FineGuidanceSystem::new(camera, config);
+    let mut fgs = FineGuidanceSystem::new(config);
 
     // Determine output filename
     let output_filename = args
@@ -207,12 +207,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Start FGS
     println!("\nStarting FGS...");
-    fgs.process_event(FgsEvent::StartFgs)?;
+    let (_update, settings) = fgs.process_event(FgsEvent::StartFgs)?;
+    monocle::apply_camera_settings(&mut camera, settings);
 
     // Acquisition phase
     println!("Acquisition phase ({} frames)...", args.acquisition_frames);
     for i in 0..args.acquisition_frames {
-        fgs.process_next_frame()?;
+        let (frame, metadata) = camera
+            .capture_frame()
+            .map_err(|e| format!("Camera capture failed: {e}"))?;
+        let (_update, settings) = fgs.process_frame(frame.view(), metadata.timestamp)?;
+        monocle::apply_camera_settings(&mut camera, settings);
         if args.verbose {
             println!("  Frame {}/{} captured", i + 1, args.acquisition_frames);
         }
@@ -220,7 +225,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Calibration frame
     println!("Calibration phase...");
-    fgs.process_next_frame()?;
+    let (frame, metadata) = camera
+        .capture_frame()
+        .map_err(|e| format!("Camera capture failed: {e}"))?;
+    let (_update, settings) = fgs.process_frame(frame.view(), metadata.timestamp)?;
+    monocle::apply_camera_settings(&mut camera, settings);
 
     // Check if we're tracking
     if !matches!(fgs.state(), FgsState::Tracking { .. }) {
@@ -242,13 +251,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Track start time for converting Instant to Duration
 
     for frame_num in 0..num_frames {
-        // Process next frame (FGS owns camera now)
-        let update = fgs
-            .process_next_frame()
-            .unwrap_or_else(|e| panic!("Frame {frame_num}: Failed to process frame: {e}"))
-            .unwrap_or_else(|| {
-                panic!("Frame {frame_num}: Should have guidance update during tracking")
-            });
+        // Process next frame
+        let (frame, metadata) = camera
+            .capture_frame()
+            .map_err(|e| format!("Camera capture failed: {e}"))
+            .unwrap_or_else(|e| panic!("Frame {frame_num}: {e}"));
+        let (update_opt, settings) = fgs
+            .process_frame(frame.view(), metadata.timestamp)
+            .unwrap_or_else(|e| panic!("Frame {frame_num}: Failed to process frame: {e}"));
+        monocle::apply_camera_settings(&mut camera, settings);
+        let update = update_opt.unwrap_or_else(|| {
+            panic!("Frame {frame_num}: Should have guidance update during tracking")
+        });
 
         let current_time = update.timestamp.to_duration();
 
@@ -308,7 +322,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Residuals plot saved to plots/{residuals_filename}");
 
     // Stop FGS
-    fgs.process_event(FgsEvent::StopFgs)?;
+    let (_update, settings) = fgs.process_event(FgsEvent::StopFgs)?;
+    monocle::apply_camera_settings(&mut camera, settings);
     println!("FGS stopped successfully");
 
     Ok(())
