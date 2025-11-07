@@ -15,7 +15,7 @@ use ndarray::Array2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::image_size::ImageSize;
+use crate::image_size::PixelShape;
 
 /// Analysis results for a single pixel showing statistical deviation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,7 +50,7 @@ struct PixelInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DarkFrameReport {
     pub num_frames: usize,
-    pub sensor_size: ImageSize,
+    pub sensor_size: PixelShape,
 
     pub global_mean: f64,
     pub global_std_of_means: f64,
@@ -186,7 +186,7 @@ impl DarkFrameReport {
 /// Stores all dark frames in memory and computes per-pixel temporal statistics
 /// when requested.
 pub struct DarkFrameAnalysis {
-    size: ImageSize,
+    size: PixelShape,
     frames: Vec<Array2<u16>>,
     temperature_readings: HashMap<String, Vec<f64>>,
 }
@@ -195,7 +195,7 @@ impl DarkFrameAnalysis {
     /// Create a new analysis for a sensor of the given dimensions.
     pub fn new(width: usize, height: usize) -> Self {
         Self {
-            size: ImageSize::from_width_height(width, height),
+            size: PixelShape::with_width_height(width, height),
             frames: Vec::new(),
             temperature_readings: HashMap::new(),
         }

@@ -2,7 +2,7 @@ use ndarray::Array2;
 use shared::camera_interface::{
     mock::MockCameraInterface, CameraInterface, SensorBitDepth, Timestamp,
 };
-use shared::image_size::ImageSize;
+use shared::image_size::PixelShape;
 use std::time::Duration;
 
 /// Helper function to create a test timestamp
@@ -14,7 +14,7 @@ pub fn test_timestamp() -> Timestamp {
 pub fn create_mock_camera(frame: Array2<u16>) -> MockCameraInterface {
     let (height, width) = frame.dim();
     let mut camera = MockCameraInterface::new_repeating(
-        ImageSize::from_width_height(width, height),
+        PixelShape::with_width_height(width, height),
         SensorBitDepth::Bits16,
         frame,
     );

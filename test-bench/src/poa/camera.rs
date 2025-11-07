@@ -6,7 +6,7 @@ use shared::camera_interface::{
     SensorGeometry, Timestamp,
 };
 use shared::image_proc::detection::aabb::AABB;
-use shared::image_size::ImageSize;
+use shared::image_size::PixelShape;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -66,7 +66,7 @@ impl PlayerOneCamera {
             .map_err(|e| CameraError::ConfigError(format!("Failed to set RAW16 format: {e}")))?;
 
         let config = CameraConfig {
-            size: ImageSize::from_width_height(max_width, max_height),
+            size: PixelShape::with_width_height(max_width, max_height),
             exposure: Duration::from_millis(100),
             bit_depth: SensorBitDepth::Bits16,
         };
@@ -82,7 +82,7 @@ impl PlayerOneCamera {
 }
 
 impl CameraInterface for PlayerOneCamera {
-    fn check_roi_size(&self, size: ImageSize) -> CameraResult<()> {
+    fn check_roi_size(&self, size: PixelShape) -> CameraResult<()> {
         if size.width % 4 != 0 {
             return Err(CameraError::InvalidROI(
                 "ROI width must be divisible by 4".to_string(),

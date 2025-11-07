@@ -6,7 +6,7 @@ use shared::camera_interface::{
     SensorGeometry, Timestamp,
 };
 use shared::image_proc::detection::aabb::AABB;
-use shared::image_size::ImageSize;
+use shared::image_size::PixelShape;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -59,7 +59,7 @@ impl NSV455Camera {
 }
 
 impl CameraInterface for NSV455Camera {
-    fn check_roi_size(&self, _size: ImageSize) -> CameraResult<()> {
+    fn check_roi_size(&self, _size: PixelShape) -> CameraResult<()> {
         Ok(())
     }
 

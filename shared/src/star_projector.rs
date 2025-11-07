@@ -10,7 +10,7 @@ use nalgebra::{Matrix3, Vector3};
 use starfield::framelib::inertial::InertialFrame;
 use starfield::Equatorial;
 
-use crate::image_size::ImageSize;
+use crate::image_size::PixelShape;
 
 /// High-precision celestial coordinate to pixel projection engine.
 ///
@@ -62,7 +62,7 @@ pub struct StarProjector {
     /// Detector dimensions in pixels.
     ///
     /// Used for pixel coordinate bounds checking and center offset calculation.
-    sensor_size: ImageSize,
+    sensor_size: PixelShape,
 
     /// 3D rotation matrix for celestial to camera coordinate transformation.
     ///
@@ -104,7 +104,7 @@ impl StarProjector {
         sensor_width: usize,
         sensor_height: usize,
     ) -> Self {
-        let sensor_size = ImageSize::from_width_height(sensor_width, sensor_height);
+        let sensor_size = PixelShape::with_width_height(sensor_width, sensor_height);
         // Calculate rotation matrix to transform from celestial to camera coordinates
         // Camera Z-axis points to center_ra/center_dec
         // Camera Y-axis points towards celestial north

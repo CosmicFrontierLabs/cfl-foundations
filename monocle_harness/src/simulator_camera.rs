@@ -13,7 +13,7 @@ use shared::camera_interface::{
     SensorBitDepth, SensorGeometry, Timestamp,
 };
 use shared::image_proc::detection::AABB;
-use shared::image_size::ImageSize;
+use shared::image_size::PixelShape;
 use shared::units::TemperatureExt;
 use simulator::hardware::{SatelliteConfig, TelescopeConfig};
 use simulator::image_proc::render::StarInFrame;
@@ -188,7 +188,7 @@ impl SimulatorCamera {
 }
 
 impl CameraInterface for SimulatorCamera {
-    fn check_roi_size(&self, _size: ImageSize) -> CameraResult<()> {
+    fn check_roi_size(&self, _size: PixelShape) -> CameraResult<()> {
         Ok(())
     }
 

@@ -79,7 +79,7 @@ impl FgsConfig {
 
         // Validate against camera-specific ROI constraints if camera provided
         if let Some(cam) = camera {
-            cam.check_roi_size(shared::image_size::ImageSize::from_width_height(
+            cam.check_roi_size(shared::image_size::PixelShape::with_width_height(
                 self.roi_size,
                 self.roi_size,
             ))

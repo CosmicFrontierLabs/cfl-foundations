@@ -7,7 +7,7 @@ pub mod mock;
 pub mod ring_buffer;
 
 use crate::image_proc::detection::AABB;
-use crate::image_size::ImageSize;
+use crate::image_size::PixelShape;
 use ndarray::{Array2, ArrayView2};
 use starfield::Equatorial;
 use std::collections::HashMap;
@@ -110,7 +110,7 @@ pub struct FrameMetadata {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SensorGeometry {
     /// Sensor dimensions in pixels
-    pub size: ImageSize,
+    pub size: PixelShape,
     /// Physical pixel size in microns (µm)
     pub pixel_size_microns: f64,
 }
@@ -119,13 +119,13 @@ impl SensorGeometry {
     /// Create a new SensorGeometry
     pub fn new(width: usize, height: usize, pixel_size_microns: f64) -> Self {
         Self {
-            size: ImageSize::from_width_height(width, height),
+            size: PixelShape::with_width_height(width, height),
             pixel_size_microns,
         }
     }
 
-    /// Get sensor dimensions as ImageSize
-    pub fn image_size(&self) -> ImageSize {
+    /// Get sensor dimensions as PixelShape
+    pub fn image_size(&self) -> PixelShape {
         self.size
     }
 
@@ -199,7 +199,7 @@ impl fmt::Display for SensorBitDepth {
 #[derive(Debug, Clone)]
 pub struct CameraConfig {
     /// Sensor dimensions
-    pub size: ImageSize,
+    pub size: PixelShape,
     /// Exposure duration
     pub exposure: Duration,
     /// ADC bit depth
@@ -210,7 +210,7 @@ impl CameraConfig {
     /// Create a new CameraConfig
     pub fn new(width: usize, height: usize, exposure: Duration, bit_depth: SensorBitDepth) -> Self {
         Self {
-            size: ImageSize::from_width_height(width, height),
+            size: PixelShape::with_width_height(width, height),
             exposure,
             bit_depth,
         }
@@ -358,7 +358,7 @@ pub trait CameraInterface: Send + Sync {
     /// # Returns
     /// * `Ok(())` if the ROI size is valid
     /// * `Err(CameraError)` with details if the ROI size is invalid
-    fn check_roi_size(&self, size: ImageSize) -> CameraResult<()>;
+    fn check_roi_size(&self, size: PixelShape) -> CameraResult<()>;
 
     /// Stream frames continuously with a callback
     ///
@@ -444,7 +444,7 @@ impl CameraInterface for Box<dyn CameraInterface> {
         (**self).set_gain(gain)
     }
 
-    fn check_roi_size(&self, size: ImageSize) -> CameraResult<()> {
+    fn check_roi_size(&self, size: PixelShape) -> CameraResult<()> {
         (**self).check_roi_size(size)
     }
 
@@ -459,14 +459,14 @@ impl CameraInterface for Box<dyn CameraInterface> {
 /// Helper functions for working with ROIs
 pub trait AABBExt {
     /// Validate that ROI fits within sensor dimensions
-    fn validate_for_sensor(&self, size: ImageSize) -> CameraResult<()>;
+    fn validate_for_sensor(&self, size: PixelShape) -> CameraResult<()>;
 
     /// Extract ROI from full frame
     fn extract_from_frame(&self, frame: &ArrayView2<u16>) -> Array2<u16>;
 }
 
 impl AABBExt for AABB {
-    fn validate_for_sensor(&self, size: ImageSize) -> CameraResult<()> {
+    fn validate_for_sensor(&self, size: PixelShape) -> CameraResult<()> {
         if self.min_col >= size.width || self.min_row >= size.height {
             return Err(CameraError::InvalidROI(format!(
                 "ROI starts beyond sensor bounds ({size})"
@@ -568,7 +568,7 @@ mod tests {
             max_row: 100,
         };
         assert!(roi
-            .validate_for_sensor(ImageSize::from_width_height(200, 200))
+            .validate_for_sensor(PixelShape::with_width_height(200, 200))
             .is_ok());
 
         // ROI extends beyond sensor
@@ -579,7 +579,7 @@ mod tests {
             max_row: 100,
         };
         assert!(roi
-            .validate_for_sensor(ImageSize::from_width_height(200, 200))
+            .validate_for_sensor(PixelShape::with_width_height(200, 200))
             .is_err());
 
         // ROI starts beyond sensor
@@ -590,7 +590,7 @@ mod tests {
             max_row: 100,
         };
         assert!(roi
-            .validate_for_sensor(ImageSize::from_width_height(200, 200))
+            .validate_for_sensor(PixelShape::with_width_height(200, 200))
             .is_err());
     }
 

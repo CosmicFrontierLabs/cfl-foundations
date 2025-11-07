@@ -9,16 +9,16 @@ use std::fmt;
 /// Represents the width and height of an image sensor or frame.
 /// Provides convenience methods for creating arrays and calculations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ImageSize {
+pub struct PixelShape {
     /// Image width in pixels
     pub width: usize,
     /// Image height in pixels
     pub height: usize,
 }
 
-impl ImageSize {
-    /// Create a new ImageSize
-    pub fn from_width_height(width: usize, height: usize) -> Self {
+impl PixelShape {
+    /// Create a new PixelShape
+    pub fn with_width_height(width: usize, height: usize) -> Self {
         Self { width, height }
     }
 
@@ -59,19 +59,19 @@ impl ImageSize {
     }
 }
 
-impl From<(usize, usize)> for ImageSize {
+impl From<(usize, usize)> for PixelShape {
     fn from(dimensions: (usize, usize)) -> Self {
         Self::from_tuple(dimensions)
     }
 }
 
-impl From<ImageSize> for (usize, usize) {
-    fn from(size: ImageSize) -> Self {
+impl From<PixelShape> for (usize, usize) {
+    fn from(size: PixelShape) -> Self {
         size.to_tuple()
     }
 }
 
-impl fmt::Display for ImageSize {
+impl fmt::Display for PixelShape {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}x{}", self.width, self.height)
     }

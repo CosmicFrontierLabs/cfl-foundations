@@ -45,14 +45,14 @@ use std::fmt;
 use crate::hardware::dark_current::DarkCurrentEstimator;
 use crate::hardware::read_noise::ReadNoiseEstimator;
 use crate::photometry::quantum_efficiency::QuantumEfficiency;
-use shared::image_size::ImageSize;
+use shared::image_size::PixelShape;
 use shared::units::{Area, AreaExt, Length, LengthExt, Temperature, TemperatureExt};
 
 /// Sensor dimensions in pixels and physical size
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SensorGeometry {
     /// Image dimensions in pixels
-    size: ImageSize,
+    size: PixelShape,
     /// Physical pixel size (square pixels assumed)
     pixel_size: Length,
 }
@@ -61,13 +61,13 @@ impl SensorGeometry {
     /// Create new sensor dimensions
     pub fn of_width_height(width: usize, height: usize, pixel_size: Length) -> Self {
         Self {
-            size: ImageSize::from_width_height(width, height),
+            size: PixelShape::with_width_height(width, height),
             pixel_size,
         }
     }
 
-    /// Get sensor dimensions as ImageSize
-    pub fn image_size(&self) -> ImageSize {
+    /// Get sensor dimensions as PixelShape
+    pub fn image_size(&self) -> PixelShape {
         self.size
     }
 

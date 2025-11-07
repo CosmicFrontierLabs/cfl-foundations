@@ -14,6 +14,7 @@ use shared::{
     camera_interface::{mock::MockCameraInterface, CameraInterface, SensorBitDepth},
     config_storage::ConfigStorage,
     dark_frame::DarkFrameAnalysis,
+    image_size::PixelShape,
 };
 use simulator::io::fits::{write_typed_fits, FitsDataType};
 use std::{
@@ -155,7 +156,7 @@ fn create_mock_camera(exposure_ms: Option<f64>) -> MockCameraInterface {
         .collect();
 
     let mut camera = MockCameraInterface::with_generator(
-        ImageSize::new(width, height),
+        PixelShape::with_width_height(width, height),
         bit_depth,
         move |params| {
             let noise = simple_normal_array(

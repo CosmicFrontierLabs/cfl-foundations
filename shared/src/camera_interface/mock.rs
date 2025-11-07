@@ -3,7 +3,7 @@ use super::{
     Timestamp,
 };
 use crate::image_proc::detection::AABB;
-use crate::image_size::ImageSize;
+use crate::image_size::PixelShape;
 use ndarray::Array2;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -14,7 +14,7 @@ pub struct FrameGenerationParams {
     pub frame_number: u64,
     pub timestamp: Duration,
     pub roi: Option<AABB>,
-    pub size: ImageSize,
+    pub size: PixelShape,
     pub exposure: Duration,
     pub bit_depth: SensorBitDepth,
 }
@@ -30,7 +30,7 @@ enum FrameSource {
 }
 
 pub struct MockCameraInterface {
-    size: ImageSize,
+    size: PixelShape,
     exposure: Duration,
     bit_depth: SensorBitDepth,
     roi: Option<AABB>,
@@ -42,7 +42,7 @@ pub struct MockCameraInterface {
 }
 
 impl MockCameraInterface {
-    pub fn new(size: ImageSize, bit_depth: SensorBitDepth, frames: Vec<Array2<u16>>) -> Self {
+    pub fn new(size: PixelShape, bit_depth: SensorBitDepth, frames: Vec<Array2<u16>>) -> Self {
         Self {
             size,
             exposure: Duration::from_millis(100),
@@ -56,16 +56,16 @@ impl MockCameraInterface {
         }
     }
 
-    pub fn new_repeating(size: ImageSize, bit_depth: SensorBitDepth, frame: Array2<u16>) -> Self {
+    pub fn new_repeating(size: PixelShape, bit_depth: SensorBitDepth, frame: Array2<u16>) -> Self {
         Self::new(size, bit_depth, vec![frame])
     }
 
-    pub fn new_zeros(size: ImageSize, bit_depth: SensorBitDepth) -> Self {
+    pub fn new_zeros(size: PixelShape, bit_depth: SensorBitDepth) -> Self {
         let frame_data = size.empty_array_u16();
         Self::new_repeating(size, bit_depth, frame_data)
     }
 
-    pub fn with_generator<F>(size: ImageSize, bit_depth: SensorBitDepth, generator: F) -> Self
+    pub fn with_generator<F>(size: PixelShape, bit_depth: SensorBitDepth, generator: F) -> Self
     where
         F: FnMut(&FrameGenerationParams) -> Array2<u16> + Send + Sync + 'static,
     {
@@ -151,7 +151,7 @@ impl MockCameraInterface {
 }
 
 impl CameraInterface for MockCameraInterface {
-    fn check_roi_size(&self, _size: ImageSize) -> CameraResult<()> {
+    fn check_roi_size(&self, _size: PixelShape) -> CameraResult<()> {
         Ok(())
     }
 
@@ -242,7 +242,7 @@ mod tests {
 
     fn create_test_camera() -> MockCameraInterface {
         MockCameraInterface::new_zeros(
-            ImageSize::from_width_height(640, 480),
+            PixelShape::with_width_height(640, 480),
             SensorBitDepth::Bits16,
         )
     }
@@ -343,7 +343,7 @@ mod tests {
         assert_eq!(camera.saturation_value(), 65535.0);
 
         let custom_camera = MockCameraInterface::new_zeros(
-            ImageSize::from_width_height(640, 480),
+            PixelShape::with_width_height(640, 480),
             SensorBitDepth::Bits16,
         )
         .with_saturation(16383.0);
@@ -366,7 +366,7 @@ mod tests {
         frame3[[7, 7]] = 300;
 
         let mut camera = MockCameraInterface::new(
-            ImageSize::from_width_height(10, 10),
+            PixelShape::with_width_height(10, 10),
             SensorBitDepth::Bits16,
             vec![frame1, frame2, frame3],
         );
@@ -389,7 +389,7 @@ mod tests {
         frame[[5, 5]] = 42;
 
         let mut camera = MockCameraInterface::new_repeating(
-            ImageSize::from_width_height(10, 10),
+            PixelShape::with_width_height(10, 10),
             SensorBitDepth::Bits16,
             frame,
         );
@@ -403,7 +403,7 @@ mod tests {
     #[test]
     fn test_elapsed_time_tracking() {
         let mut camera = MockCameraInterface::new_zeros(
-            ImageSize::from_width_height(10, 10),
+            PixelShape::with_width_height(10, 10),
             SensorBitDepth::Bits16,
         );
         camera.set_exposure(Duration::from_millis(100)).unwrap();
@@ -424,7 +424,7 @@ mod tests {
         let frame2 = Array2::ones((10, 10)) * 2;
 
         let mut camera = MockCameraInterface::new(
-            ImageSize::from_width_height(10, 10),
+            PixelShape::with_width_height(10, 10),
             SensorBitDepth::Bits16,
             vec![frame1, frame2],
         );
