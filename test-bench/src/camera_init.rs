@@ -6,6 +6,7 @@
 use anyhow::Context;
 use clap::{Parser, ValueEnum};
 use shared::camera_interface::{CameraInterface, SensorBitDepth};
+use shared::image_size::ImageSize;
 
 #[derive(Debug, Clone, ValueEnum)]
 pub enum CameraType {
@@ -98,8 +99,11 @@ fn create_mock_camera(
         .context("Failed to generate AprilTag pattern")?;
     let inverted_frame = apriltag_frame.mapv(|v| 65535 - v);
 
-    let mut camera =
-        MockCameraInterface::new_repeating((width, height), SensorBitDepth::Bits16, inverted_frame);
+    let mut camera = MockCameraInterface::new_repeating(
+        ImageSize::from_width_height(width, height),
+        SensorBitDepth::Bits16,
+        inverted_frame,
+    );
     camera
         .set_exposure(std::time::Duration::from_millis(100))
         .unwrap();

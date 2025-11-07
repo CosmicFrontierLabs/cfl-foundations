@@ -70,8 +70,8 @@ impl ReadNoiseEstimator {
 
     /// Create a new HWK4123 read noise estimator with factory calibration data
     /// Data is from here:
-    /// - https://drive.google.com/file/d/1hhnfMxPQs3cXautEpjHpIDGkb_bArWdE
-    /// - https://docs.google.com/spreadsheets/d/16WdFvMo3rj3Z9252pq32agsLV-wm7YNacvqfkEgSOAI
+    /// - <https://drive.google.com/file/d/1hhnfMxPQs3cXautEpjHpIDGkb_bArWdE>
+    /// - <https://docs.google.com/spreadsheets/d/16WdFvMo3rj3Z9252pq32agsLV-wm7YNacvqfkEgSOAI>
     pub fn hwk4123() -> Self {
         let frame_rates = vec![5.0, 15.0, 30.0, 60.0, 120.0, 1000.0];
         let temperatures = vec![-20.0, 20.0];

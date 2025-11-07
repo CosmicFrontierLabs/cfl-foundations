@@ -215,8 +215,8 @@ async fn jpeg_frame_endpoint<C: CameraInterface + 'static>(
 
     let camera = state.camera.lock().await;
     let geometry = camera.geometry();
-    let width = geometry.width as u32;
-    let height = geometry.height as u32;
+    let width = geometry.width() as u32;
+    let height = geometry.height() as u32;
     drop(camera);
 
     let img = match ImageBuffer::<Luma<u8>, Vec<u8>>::from_raw(width, height, pixels_8bit) {
@@ -269,8 +269,8 @@ async fn raw_frame_endpoint<C: CameraInterface + 'static>(
 
     let camera = state.camera.lock().await;
     let geometry = camera.geometry();
-    let width = geometry.width;
-    let height = geometry.height;
+    let width = geometry.width();
+    let height = geometry.height();
     drop(camera);
 
     let encoded = base64::engine::general_purpose::STANDARD.encode(&pixels_8bit);
@@ -362,8 +362,8 @@ async fn camera_status_page<C: CameraInterface + 'static>(
 
     let camera = state.camera.lock().await;
     let geometry = camera.geometry();
-    let width = geometry.width;
-    let height = geometry.height;
+    let width = geometry.width();
+    let height = geometry.height();
     let camera_name = camera.name().to_string();
     drop(camera);
 
@@ -837,8 +837,8 @@ pub async fn analysis_loop<C: CameraInterface + Send + 'static>(state: Arc<AppSt
 
             let camera = state.camera.lock().await;
             let geometry = camera.geometry();
-            let width = geometry.width as u32;
-            let height = geometry.height as u32;
+            let width = geometry.width() as u32;
+            let height = geometry.height() as u32;
             drop(camera);
 
             let frame_for_analysis = frame.clone();

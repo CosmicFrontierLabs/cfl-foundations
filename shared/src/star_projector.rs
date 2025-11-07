@@ -10,6 +10,8 @@ use nalgebra::{Matrix3, Vector3};
 use starfield::framelib::inertial::InertialFrame;
 use starfield::Equatorial;
 
+use crate::image_size::ImageSize;
+
 /// High-precision celestial coordinate to pixel projection engine.
 ///
 /// Implements mathematically rigorous transformation from celestial sphere
@@ -57,17 +59,10 @@ pub struct StarProjector {
     /// telescope focal length and detector pixel physical size.
     radians_per_pixel: f64,
 
-    /// Detector width in pixels along the X-axis.
+    /// Detector dimensions in pixels.
     ///
     /// Used for pixel coordinate bounds checking and center offset calculation.
-    /// Pixel coordinates range from [0, sensor_width) in the X direction.
-    sensor_width: usize,
-
-    /// Detector height in pixels along the Y-axis.
-    ///
-    /// Used for pixel coordinate bounds checking and center offset calculation.
-    /// Pixel coordinates range from [0, sensor_height) in the Y direction.
-    sensor_height: usize,
+    sensor_size: ImageSize,
 
     /// 3D rotation matrix for celestial to camera coordinate transformation.
     ///
@@ -109,6 +104,7 @@ impl StarProjector {
         sensor_width: usize,
         sensor_height: usize,
     ) -> Self {
+        let sensor_size = ImageSize::from_width_height(sensor_width, sensor_height);
         // Calculate rotation matrix to transform from celestial to camera coordinates
         // Camera Z-axis points to center_ra/center_dec
         // Camera Y-axis points towards celestial north
@@ -136,8 +132,7 @@ impl StarProjector {
         Self {
             center: *center,
             radians_per_pixel,
-            sensor_width,
-            sensor_height,
+            sensor_size,
             rotation_matrix,
         }
     }
@@ -183,8 +178,8 @@ impl StarProjector {
         let y_proj = camera_coords.y / camera_coords.z;
 
         // Convert to pixel coordinates
-        let pixel_x = (self.sensor_width as f64 / 2.0) + (x_proj / self.radians_per_pixel);
-        let pixel_y = (self.sensor_height as f64 / 2.0) - (y_proj / self.radians_per_pixel);
+        let pixel_x = (self.sensor_size.width as f64 / 2.0) + (x_proj / self.radians_per_pixel);
+        let pixel_y = (self.sensor_size.height as f64 / 2.0) - (y_proj / self.radians_per_pixel);
 
         Some((pixel_x, pixel_y))
     }
@@ -222,9 +217,9 @@ impl StarProjector {
 
         // Check if within sensor bounds
         if pixel_x >= 0.0
-            && pixel_x < self.sensor_width as f64
+            && pixel_x < self.sensor_size.width as f64
             && pixel_y >= 0.0
-            && pixel_y < self.sensor_height as f64
+            && pixel_y < self.sensor_size.height as f64
         {
             Some((pixel_x, pixel_y))
         } else {

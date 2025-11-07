@@ -6,6 +6,7 @@ use shared::camera_interface::{
     SensorGeometry, Timestamp,
 };
 use shared::image_proc::detection::aabb::AABB;
+use shared::image_size::ImageSize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -40,12 +41,12 @@ impl NSV455Camera {
             black_level: 4095,
         };
 
-        let config = CameraConfig {
-            width: Self::SENSOR_WIDTH as usize,
-            height: Self::SENSOR_HEIGHT as usize,
-            exposure: Duration::from_millis(100),
-            bit_depth: SensorBitDepth::Bits16,
-        };
+        let config = CameraConfig::new(
+            Self::SENSOR_WIDTH as usize,
+            Self::SENSOR_HEIGHT as usize,
+            Duration::from_millis(100),
+            SensorBitDepth::Bits16,
+        );
 
         Ok(Self {
             device_path,
@@ -58,12 +59,12 @@ impl NSV455Camera {
 }
 
 impl CameraInterface for NSV455Camera {
-    fn check_roi_size(&self, _width: usize, _height: usize) -> CameraResult<()> {
+    fn check_roi_size(&self, _size: ImageSize) -> CameraResult<()> {
         Ok(())
     }
 
     fn set_roi(&mut self, roi: AABB) -> CameraResult<()> {
-        if roi.max_col >= self.config.width || roi.max_row >= self.config.height {
+        if roi.max_col >= self.config.size.width || roi.max_row >= self.config.size.height {
             return Err(CameraError::InvalidROI(
                 "ROI extends beyond sensor bounds".to_string(),
             ));
@@ -80,8 +81,8 @@ impl CameraInterface for NSV455Camera {
     }
 
     fn clear_roi(&mut self) -> CameraResult<()> {
-        self.v4l2_config.width = self.config.width as u32;
-        self.v4l2_config.height = self.config.height as u32;
+        self.v4l2_config.width = self.config.size.width as u32;
+        self.v4l2_config.height = self.config.size.height as u32;
         self.roi = None;
         Ok(())
     }
@@ -97,11 +98,11 @@ impl CameraInterface for NSV455Camera {
     }
 
     fn geometry(&self) -> SensorGeometry {
-        SensorGeometry {
-            width: self.config.width,
-            height: self.config.height,
-            pixel_size_microns: Self::PIXEL_SIZE_MICRONS,
-        }
+        SensorGeometry::new(
+            self.config.size.width,
+            self.config.size.height,
+            Self::PIXEL_SIZE_MICRONS,
+        )
     }
 
     fn is_ready(&self) -> bool {

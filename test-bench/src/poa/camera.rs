@@ -6,6 +6,7 @@ use shared::camera_interface::{
     SensorGeometry, Timestamp,
 };
 use shared::image_proc::detection::aabb::AABB;
+use shared::image_size::ImageSize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -19,21 +20,13 @@ fn get_sensor_geometry_for_camera(
     height: usize,
 ) -> SensorGeometry {
     if camera_name.to_lowercase().contains("zeus") {
-        SensorGeometry {
-            width: 9568,
-            height: 6380,
-            pixel_size_microns: 3.76,
-        }
+        SensorGeometry::new(9568, 6380, 3.76)
     } else {
         tracing::warn!(
             "Unknown PlayerOne camera '{}' - using detected dimensions with NaN pixel size",
             camera_name
         );
-        SensorGeometry {
-            width,
-            height,
-            pixel_size_microns: f64::NAN,
-        }
+        SensorGeometry::new(width, height, f64::NAN)
     }
 }
 
@@ -73,8 +66,7 @@ impl PlayerOneCamera {
             .map_err(|e| CameraError::ConfigError(format!("Failed to set RAW16 format: {e}")))?;
 
         let config = CameraConfig {
-            width: max_width,
-            height: max_height,
+            size: ImageSize::from_width_height(max_width, max_height),
             exposure: Duration::from_millis(100),
             bit_depth: SensorBitDepth::Bits16,
         };
@@ -90,13 +82,13 @@ impl PlayerOneCamera {
 }
 
 impl CameraInterface for PlayerOneCamera {
-    fn check_roi_size(&self, width: usize, height: usize) -> CameraResult<()> {
-        if width % 4 != 0 {
+    fn check_roi_size(&self, size: ImageSize) -> CameraResult<()> {
+        if size.width % 4 != 0 {
             return Err(CameraError::InvalidROI(
                 "ROI width must be divisible by 4".to_string(),
             ));
         }
-        if height % 2 != 0 {
+        if size.height % 2 != 0 {
             return Err(CameraError::InvalidROI(
                 "ROI height must be divisible by 2".to_string(),
             ));
@@ -119,7 +111,7 @@ impl CameraInterface for PlayerOneCamera {
             ));
         }
 
-        if roi.max_col >= self.config.width || roi.max_row >= self.config.height {
+        if roi.max_col >= self.config.size.width || roi.max_row >= self.config.size.height {
             return Err(CameraError::InvalidROI(
                 "ROI extends beyond sensor bounds".to_string(),
             ));
@@ -151,7 +143,10 @@ impl CameraInterface for PlayerOneCamera {
             .lock()
             .map_err(|_| CameraError::HardwareError("Camera mutex poisoned".to_string()))?;
         camera
-            .set_image_size(self.config.width as u32, self.config.height as u32)
+            .set_image_size(
+                self.config.size.width as u32,
+                self.config.size.height as u32,
+            )
             .map_err(|e| CameraError::ConfigError(format!("Failed to clear ROI: {e}")))?;
         Ok(())
     }
@@ -183,7 +178,7 @@ impl CameraInterface for PlayerOneCamera {
     }
 
     fn geometry(&self) -> SensorGeometry {
-        get_sensor_geometry_for_camera(&self.name, self.config.width, self.config.height)
+        get_sensor_geometry_for_camera(&self.name, self.config.size.width, self.config.size.height)
     }
 
     fn is_ready(&self) -> bool {
@@ -194,8 +189,8 @@ impl CameraInterface for PlayerOneCamera {
         let camera = self.camera.lock().ok()?;
         let hw_roi = camera.roi();
 
-        if hw_roi.width == self.config.width as u32
-            && hw_roi.height == self.config.height as u32
+        if hw_roi.width == self.config.size.width as u32
+            && hw_roi.height == self.config.size.height as u32
             && hw_roi.start_x == 0
             && hw_roi.start_y == 0
         {
@@ -238,8 +233,8 @@ impl CameraInterface for PlayerOneCamera {
 
                 let temperature = cam.temperature().unwrap_or(f64::NAN);
 
-                let roi_aabb = if hw_roi.width == config.width as u32
-                    && hw_roi.height == config.height as u32
+                let roi_aabb = if hw_roi.width == config.size.width as u32
+                    && hw_roi.height == config.size.height as u32
                     && hw_roi.start_x == 0
                     && hw_roi.start_y == 0
                 {

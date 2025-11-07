@@ -13,6 +13,7 @@ use shared::camera_interface::{
     SensorBitDepth, SensorGeometry, Timestamp,
 };
 use shared::image_proc::detection::AABB;
+use shared::image_size::ImageSize;
 use shared::units::TemperatureExt;
 use simulator::hardware::{SatelliteConfig, TelescopeConfig};
 use simulator::image_proc::render::StarInFrame;
@@ -63,13 +64,13 @@ impl SimulatorCamera {
         let sensor = &satellite.sensor;
         let (width, height) = sensor.dimensions.get_pixel_width_height();
 
-        let config = CameraConfig {
+        let config = CameraConfig::new(
             width,
             height,
-            exposure: Duration::from_millis(100),
-            bit_depth: SensorBitDepth::from_u8(sensor.bit_depth)
+            Duration::from_millis(100),
+            SensorBitDepth::from_u8(sensor.bit_depth)
                 .expect("Unsupported bit depth from simulator sensor config"),
-        };
+        );
 
         // Calculate FOV for cache size
         let fov_diameter = field_diameter(&satellite.telescope, &satellite.sensor);
@@ -187,14 +188,14 @@ impl SimulatorCamera {
 }
 
 impl CameraInterface for SimulatorCamera {
-    fn check_roi_size(&self, _width: usize, _height: usize) -> CameraResult<()> {
+    fn check_roi_size(&self, _size: ImageSize) -> CameraResult<()> {
         Ok(())
     }
 
     /// Set a region of interest for frame capture.
     /// Returns error if ROI extends beyond sensor dimensions.
     fn set_roi(&mut self, roi: AABB) -> CameraResult<()> {
-        roi.validate_for_sensor(self.config.width, self.config.height)?;
+        roi.validate_for_sensor(self.config.size)?;
         self.roi = Some(roi);
         Ok(())
     }
@@ -224,11 +225,11 @@ impl CameraInterface for SimulatorCamera {
 
     /// Get sensor geometry from satellite configuration
     fn geometry(&self) -> SensorGeometry {
-        SensorGeometry {
-            width: self.config.width,
-            height: self.config.height,
-            pixel_size_microns: self.satellite.sensor.pixel_size().as_micrometers(),
-        }
+        SensorGeometry::new(
+            self.config.size.width,
+            self.config.size.height,
+            self.satellite.sensor.pixel_size().as_micrometers(),
+        )
     }
 
     /// Check if camera is ready. Always returns true for simulator.
@@ -373,8 +374,8 @@ mod tests {
 
         // Verify sensor dimensions are 512x512 (JBT/HWK test config)
         let geometry = camera.geometry();
-        assert_eq!(geometry.width, 512);
-        assert_eq!(geometry.height, 512);
+        assert_eq!(geometry.width(), 512);
+        assert_eq!(geometry.height(), 512);
     }
 
     #[test]
@@ -411,7 +412,7 @@ mod tests {
             min_row: 0,
             min_col: 0,
             max_row: 100,
-            max_col: geometry.width + 100,
+            max_col: geometry.width() + 100,
         };
         assert!(camera.set_roi(roi).is_err());
     }

@@ -154,8 +154,10 @@ fn create_mock_camera(exposure_ms: Option<f64>) -> MockCameraInterface {
         .map(|_| (rng.gen_range(0..width), rng.gen_range(0..height)))
         .collect();
 
-    let mut camera =
-        MockCameraInterface::with_generator((width, height), bit_depth, move |params| {
+    let mut camera = MockCameraInterface::with_generator(
+        ImageSize::new(width, height),
+        bit_depth,
+        move |params| {
             let noise = simple_normal_array(
                 (params.height, params.width),
                 0.0,
@@ -177,8 +179,9 @@ fn create_mock_camera(exposure_ms: Option<f64>) -> MockCameraInterface {
             }
 
             frame_u16
-        })
-        .with_saturation(4095.0);
+        },
+    )
+    .with_saturation(4095.0);
 
     if let Some(ms) = exposure_ms {
         let exposure = Duration::from_micros((ms * 1000.0) as u64);

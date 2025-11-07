@@ -45,15 +45,14 @@ use std::fmt;
 use crate::hardware::dark_current::DarkCurrentEstimator;
 use crate::hardware::read_noise::ReadNoiseEstimator;
 use crate::photometry::quantum_efficiency::QuantumEfficiency;
+use shared::image_size::ImageSize;
 use shared::units::{Area, AreaExt, Length, LengthExt, Temperature, TemperatureExt};
 
 /// Sensor dimensions in pixels and physical size
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SensorGeometry {
-    /// Width in pixels
-    width: usize,
-    /// Height in pixels  
-    height: usize,
+    /// Image dimensions in pixels
+    size: ImageSize,
     /// Physical pixel size (square pixels assumed)
     pixel_size: Length,
 }
@@ -62,23 +61,27 @@ impl SensorGeometry {
     /// Create new sensor dimensions
     pub fn of_width_height(width: usize, height: usize, pixel_size: Length) -> Self {
         Self {
-            width,
-            height,
+            size: ImageSize::from_width_height(width, height),
             pixel_size,
         }
     }
 
+    /// Get sensor dimensions as ImageSize
+    pub fn image_size(&self) -> ImageSize {
+        self.size
+    }
+
     /// Get width and height in pixels as tuple
     pub fn get_pixel_width_height(&self) -> (usize, usize) {
-        (self.width, self.height)
+        (self.size.width, self.size.height)
     }
 
     /// Get width and height in physical units
     pub fn get_width_height(&self) -> (Length, Length) {
         let width_length =
-            Length::from_micrometers(self.width as f64 * self.pixel_size.as_micrometers());
+            Length::from_micrometers(self.size.width as f64 * self.pixel_size.as_micrometers());
         let height_length =
-            Length::from_micrometers(self.height as f64 * self.pixel_size.as_micrometers());
+            Length::from_micrometers(self.size.height as f64 * self.pixel_size.as_micrometers());
         (width_length, height_length)
     }
 
@@ -89,12 +92,12 @@ impl SensorGeometry {
 
     /// Get total number of pixels
     pub fn pixel_count(&self) -> usize {
-        self.width * self.height
+        self.size.pixel_count()
     }
 
     /// Get aspect ratio (width/height)
     pub fn aspect_ratio(&self) -> f64 {
-        self.width as f64 / self.height as f64
+        self.size.width as f64 / self.size.height as f64
     }
 
     /// Get total area of the sensor
@@ -109,8 +112,8 @@ impl fmt::Display for SensorGeometry {
         write!(
             f,
             "{}×{} pixels ({:.1}μm pitch)",
-            self.width,
-            self.height,
+            self.size.width,
+            self.size.height,
             self.pixel_size.as_micrometers()
         )
     }

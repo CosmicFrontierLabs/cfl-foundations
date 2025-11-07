@@ -12,6 +12,7 @@ pub mod camera_interface;
 pub mod config_storage;
 pub mod dark_frame;
 pub mod image_proc;
+pub mod image_size;
 pub mod range_arg;
 pub mod star_projector;
 pub mod test_util;

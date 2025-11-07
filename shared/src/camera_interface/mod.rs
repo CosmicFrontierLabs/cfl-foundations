@@ -7,6 +7,7 @@ pub mod mock;
 pub mod ring_buffer;
 
 use crate::image_proc::detection::AABB;
+use crate::image_size::ImageSize;
 use ndarray::{Array2, ArrayView2};
 use starfield::Equatorial;
 use std::collections::HashMap;
@@ -108,12 +109,35 @@ pub struct FrameMetadata {
 /// runtime settings.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SensorGeometry {
-    /// Sensor width in pixels
-    pub width: usize,
-    /// Sensor height in pixels
-    pub height: usize,
+    /// Sensor dimensions in pixels
+    pub size: ImageSize,
     /// Physical pixel size in microns (µm)
     pub pixel_size_microns: f64,
+}
+
+impl SensorGeometry {
+    /// Create a new SensorGeometry
+    pub fn new(width: usize, height: usize, pixel_size_microns: f64) -> Self {
+        Self {
+            size: ImageSize::from_width_height(width, height),
+            pixel_size_microns,
+        }
+    }
+
+    /// Get sensor dimensions as ImageSize
+    pub fn image_size(&self) -> ImageSize {
+        self.size
+    }
+
+    /// Get sensor width in pixels
+    pub fn width(&self) -> usize {
+        self.size.width
+    }
+
+    /// Get sensor height in pixels
+    pub fn height(&self) -> usize {
+        self.size.height
+    }
 }
 
 /// Sensor ADC bit depth
@@ -174,10 +198,8 @@ impl fmt::Display for SensorBitDepth {
 /// Configuration for camera initialization
 #[derive(Debug, Clone)]
 pub struct CameraConfig {
-    /// Sensor width in pixels
-    pub width: usize,
-    /// Sensor height in pixels
-    pub height: usize,
+    /// Sensor dimensions
+    pub size: ImageSize,
     /// Exposure duration
     pub exposure: Duration,
     /// ADC bit depth
@@ -185,6 +207,15 @@ pub struct CameraConfig {
 }
 
 impl CameraConfig {
+    /// Create a new CameraConfig
+    pub fn new(width: usize, height: usize, exposure: Duration, bit_depth: SensorBitDepth) -> Self {
+        Self {
+            size: ImageSize::from_width_height(width, height),
+            exposure,
+            bit_depth,
+        }
+    }
+
     /// Get saturation value in DN (Digital Numbers) based on bit depth
     ///
     /// Returns a simple estimate of sensor saturation based on ADC bit depth.
@@ -327,7 +358,7 @@ pub trait CameraInterface: Send + Sync {
     /// # Returns
     /// * `Ok(())` if the ROI size is valid
     /// * `Err(CameraError)` with details if the ROI size is invalid
-    fn check_roi_size(&self, width: usize, height: usize) -> CameraResult<()>;
+    fn check_roi_size(&self, size: ImageSize) -> CameraResult<()>;
 
     /// Stream frames continuously with a callback
     ///
@@ -413,8 +444,8 @@ impl CameraInterface for Box<dyn CameraInterface> {
         (**self).set_gain(gain)
     }
 
-    fn check_roi_size(&self, width: usize, height: usize) -> CameraResult<()> {
-        (**self).check_roi_size(width, height)
+    fn check_roi_size(&self, size: ImageSize) -> CameraResult<()> {
+        (**self).check_roi_size(size)
     }
 
     fn stream(
@@ -428,23 +459,23 @@ impl CameraInterface for Box<dyn CameraInterface> {
 /// Helper functions for working with ROIs
 pub trait AABBExt {
     /// Validate that ROI fits within sensor dimensions
-    fn validate_for_sensor(&self, width: usize, height: usize) -> CameraResult<()>;
+    fn validate_for_sensor(&self, size: ImageSize) -> CameraResult<()>;
 
     /// Extract ROI from full frame
     fn extract_from_frame(&self, frame: &ArrayView2<u16>) -> Array2<u16>;
 }
 
 impl AABBExt for AABB {
-    fn validate_for_sensor(&self, width: usize, height: usize) -> CameraResult<()> {
-        if self.min_col >= width || self.min_row >= height {
+    fn validate_for_sensor(&self, size: ImageSize) -> CameraResult<()> {
+        if self.min_col >= size.width || self.min_row >= size.height {
             return Err(CameraError::InvalidROI(format!(
-                "ROI starts beyond sensor bounds ({width}x{height})"
+                "ROI starts beyond sensor bounds ({size})"
             )));
         }
 
-        if self.max_col >= width || self.max_row >= height {
+        if self.max_col >= size.width || self.max_row >= size.height {
             return Err(CameraError::InvalidROI(format!(
-                "ROI extends beyond sensor bounds ({width}x{height})"
+                "ROI extends beyond sensor bounds ({size})"
             )));
         }
 
@@ -536,7 +567,9 @@ mod tests {
             max_col: 100,
             max_row: 100,
         };
-        assert!(roi.validate_for_sensor(200, 200).is_ok());
+        assert!(roi
+            .validate_for_sensor(ImageSize::from_width_height(200, 200))
+            .is_ok());
 
         // ROI extends beyond sensor
         let roi = AABB {
@@ -545,7 +578,9 @@ mod tests {
             max_col: 250,
             max_row: 100,
         };
-        assert!(roi.validate_for_sensor(200, 200).is_err());
+        assert!(roi
+            .validate_for_sensor(ImageSize::from_width_height(200, 200))
+            .is_err());
 
         // ROI starts beyond sensor
         let roi = AABB {
@@ -554,7 +589,9 @@ mod tests {
             max_col: 250,
             max_row: 100,
         };
-        assert!(roi.validate_for_sensor(200, 200).is_err());
+        assert!(roi
+            .validate_for_sensor(ImageSize::from_width_height(200, 200))
+            .is_err());
     }
 
     #[test]
@@ -584,39 +621,23 @@ mod tests {
     #[test]
     fn test_camera_config_saturation() {
         // Test 8-bit depth
-        let config_8bit = CameraConfig {
-            width: 640,
-            height: 480,
-            exposure: Duration::from_millis(100),
-            bit_depth: SensorBitDepth::Bits8,
-        };
+        let config_8bit =
+            CameraConfig::new(640, 480, Duration::from_millis(100), SensorBitDepth::Bits8);
         assert_eq!(config_8bit.get_saturation(), 255.0);
 
         // Test 10-bit depth
-        let config_10bit = CameraConfig {
-            width: 640,
-            height: 480,
-            exposure: Duration::from_millis(100),
-            bit_depth: SensorBitDepth::Bits10,
-        };
+        let config_10bit =
+            CameraConfig::new(640, 480, Duration::from_millis(100), SensorBitDepth::Bits10);
         assert_eq!(config_10bit.get_saturation(), 1023.0);
 
         // Test 12-bit depth
-        let config_12bit = CameraConfig {
-            width: 640,
-            height: 480,
-            exposure: Duration::from_millis(100),
-            bit_depth: SensorBitDepth::Bits12,
-        };
+        let config_12bit =
+            CameraConfig::new(640, 480, Duration::from_millis(100), SensorBitDepth::Bits12);
         assert_eq!(config_12bit.get_saturation(), 4095.0);
 
         // Test 16-bit depth
-        let config_16bit = CameraConfig {
-            width: 640,
-            height: 480,
-            exposure: Duration::from_millis(100),
-            bit_depth: SensorBitDepth::Bits16,
-        };
+        let config_16bit =
+            CameraConfig::new(640, 480, Duration::from_millis(100), SensorBitDepth::Bits16);
         assert_eq!(config_16bit.get_saturation(), 65535.0);
     }
 }

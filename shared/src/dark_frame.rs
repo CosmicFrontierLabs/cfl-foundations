@@ -15,6 +15,8 @@ use ndarray::Array2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::image_size::ImageSize;
+
 /// Analysis results for a single pixel showing statistical deviation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PixelAnomaly {
@@ -48,8 +50,7 @@ struct PixelInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DarkFrameReport {
     pub num_frames: usize,
-    pub sensor_width: usize,
-    pub sensor_height: usize,
+    pub sensor_size: ImageSize,
 
     pub global_mean: f64,
     pub global_std_of_means: f64,
@@ -71,7 +72,7 @@ impl DarkFrameReport {
     pub fn generate_human_report(&self) -> String {
         let mut report = String::new();
 
-        let total_pixels = self.sensor_width * self.sensor_height;
+        let total_pixels = self.sensor_size.pixel_count();
         let num_anomalies = self.anomalies.len();
         let anomaly_percent = (num_anomalies as f64 / total_pixels as f64) * 100.0;
 
@@ -92,7 +93,7 @@ impl DarkFrameReport {
         report.push_str("## Executive Summary\n\n");
         report.push_str(&format!(
             "Analyzed {} dark frames from a {}×{} pixel sensor ({} total pixels).\n\n",
-            self.num_frames, self.sensor_width, self.sensor_height, total_pixels
+            self.num_frames, self.sensor_size.width, self.sensor_size.height, total_pixels
         ));
         report.push_str(&format!(
             "{num_anomalies} anomalous pixels detected ({anomaly_percent:.3}% of total)\n\n"
@@ -102,7 +103,7 @@ impl DarkFrameReport {
         report.push_str("## Sensor Specifications\n\n");
         report.push_str(&format!(
             "- **Resolution**: {}×{} pixels\n",
-            self.sensor_width, self.sensor_height
+            self.sensor_size.width, self.sensor_size.height
         ));
         report.push_str(&format!("- **Total Pixels**: {total_pixels}\n"));
         report.push_str(&format!("- **Frames Analyzed**: {}\n\n", self.num_frames));
@@ -185,8 +186,7 @@ impl DarkFrameReport {
 /// Stores all dark frames in memory and computes per-pixel temporal statistics
 /// when requested.
 pub struct DarkFrameAnalysis {
-    width: usize,
-    height: usize,
+    size: ImageSize,
     frames: Vec<Array2<u16>>,
     temperature_readings: HashMap<String, Vec<f64>>,
 }
@@ -195,8 +195,7 @@ impl DarkFrameAnalysis {
     /// Create a new analysis for a sensor of the given dimensions.
     pub fn new(width: usize, height: usize) -> Self {
         Self {
-            width,
-            height,
+            size: ImageSize::from_width_height(width, height),
             frames: Vec::new(),
             temperature_readings: HashMap::new(),
         }
@@ -208,7 +207,7 @@ impl DarkFrameAnalysis {
     pub fn add_frame(&mut self, frame: &Array2<u16>) {
         assert_eq!(
             frame.shape(),
-            &[self.height, self.width],
+            &[self.size.height, self.size.width],
             "Frame dimensions must match analysis dimensions"
         );
 
@@ -237,7 +236,7 @@ impl DarkFrameAnalysis {
 
     /// Compute and return the per-pixel mean array.
     pub fn mean(&self) -> Array2<f64> {
-        let mut mean = Array2::zeros((self.height, self.width));
+        let mut mean = Array2::zeros((self.size.height, self.size.width));
         let n = self.frames.len() as f64;
 
         for frame in &self.frames {
@@ -258,7 +257,7 @@ impl DarkFrameAnalysis {
         );
 
         let mean = self.mean();
-        let mut variance = Array2::zeros((self.height, self.width));
+        let mut variance = Array2::zeros((self.size.height, self.size.width));
         let n = (self.frames.len() - 1) as f64;
 
         for frame in &self.frames {
@@ -439,8 +438,7 @@ impl DarkFrameAnalysis {
 
         DarkFrameReport {
             num_frames: self.frames.len(),
-            sensor_width: self.width,
-            sensor_height: self.height,
+            sensor_size: self.size,
             global_mean: self.global_mean(),
             global_std_of_means: self.global_std_of_means(),
             median_read_noise: self.median_read_noise(),
@@ -465,7 +463,7 @@ impl DarkFrameAnalysis {
     /// - Blue: Dead pixels (zero mean, zero variance)
     /// - Orange: Hot pixels (elevated mean with normal variance)
     pub fn visualize_anomalies(&self, report: &DarkFrameReport) -> RgbImage {
-        let (height, width) = (self.height, self.width);
+        let (height, width) = (self.size.height, self.size.width);
         let mut img = RgbImage::new(width as u32, height as u32);
         let mean_array = self.mean();
 

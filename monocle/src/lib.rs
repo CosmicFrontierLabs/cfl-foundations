@@ -580,6 +580,7 @@ mod tests {
     use ndarray::Array2;
     use shared::camera_interface::mock::MockCameraInterface;
     use shared::camera_interface::SensorBitDepth;
+    use shared::image_size::ImageSize;
     use std::time::Duration;
 
     fn test_timestamp() -> Timestamp {
@@ -588,7 +589,7 @@ mod tests {
 
     fn create_test_camera(width: usize, height: usize) -> MockCameraInterface {
         let mut camera = MockCameraInterface::new_repeating(
-            (width, height),
+            ImageSize::from_width_height(width, height),
             SensorBitDepth::Bits16,
             Array2::<u16>::zeros((height, width)),
         );
