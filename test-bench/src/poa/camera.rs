@@ -271,9 +271,7 @@ impl CameraInterface for PlayerOneCamera {
             })
             .map_err(|e| CameraError::CaptureError(format!("Stream failed: {e}")))?;
 
-        camera.stop_exposure().map_err(|e| {
-            CameraError::HardwareError(format!("Failed to stop exposure at end of stream: {e}"))
-        })
+        Ok(())
     }
 
     fn saturation_value(&self) -> f64 {
