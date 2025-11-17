@@ -24,28 +24,33 @@ echo "Checking if code is properly formatted..."
 
 # Check if any Rust files are staged
 if git diff --cached --name-only | grep -q '\.rs$'; then
-    # Run cargo fmt check
-    if ! cargo fmt --all -- --check > /dev/null 2>&1; then
+    # Run cargo fmt check (show output on failure, matching CI)
+    fmt_output=$(cargo fmt --all -- --check 2>&1)
+    if [ $? -ne 0 ]; then
         echo "❌ Code is not properly formatted!"
-        echo "Please run 'cargo fmt' before committing."
+        echo "$fmt_output"
+        echo ""
+        echo "Please run 'cargo fmt --all' before committing."
         exit 1
     fi
     echo "✅ Code formatting is correct."
 
     # Run cargo check (matching CI)
     echo "Running cargo check..."
-    if ! cargo check --locked --all-targets > /dev/null 2>&1; then
+    check_output=$(cargo check --locked --all-targets 2>&1)
+    if [ $? -ne 0 ]; then
         echo "❌ Cargo check failed!"
-        echo "Please run 'cargo check --locked --all-targets' to see the issues."
+        echo "$check_output"
         exit 1
     fi
     echo "✅ Cargo check passed."
 
-    # Run cargo clippy with warnings as errors (matching CI)
+    # Run cargo clippy with warnings as errors (show output on failure, matching CI)
     echo "Running clippy checks..."
-    if ! cargo clippy -- -D warnings > /dev/null 2>&1; then
+    clippy_output=$(cargo clippy -- -D warnings 2>&1)
+    if [ $? -ne 0 ]; then
         echo "❌ Clippy found issues!"
-        echo "Please run 'cargo clippy -- -D warnings' to see the issues."
+        echo "$clippy_output"
         exit 1
     fi
     echo "✅ Clippy checks passed."
