@@ -1,0 +1,9 @@
+[build]
+target = "camera_index.html"
+dist = "dist/camera"
+
+[watch]
+ignore = ["dist"]
+
+[serve]
+port = 8082

@@ -22,6 +22,10 @@ histogram_output.txt
 **/.claude/settings.local.json
 ext_ref/
 
+# WASM frontend build outputs
+test-bench-frontend/dist/
+test-bench-frontend/.trunk/
+
 # Were I keep star catalogs
 cats/
 .vscode/

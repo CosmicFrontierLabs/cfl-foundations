@@ -9,7 +9,6 @@ use axum::{
 };
 use clap::Parser;
 use image::{ImageBuffer, Rgb};
-use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::mpsc;
@@ -17,10 +16,6 @@ use std::sync::Arc;
 use test_bench::display_patterns as patterns;
 use test_bench::display_utils::{get_display_resolution, list_displays};
 use tokio::sync::RwLock;
-
-#[derive(RustEmbed)]
-#[folder = "templates/"]
-struct Templates;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Calibration pattern web server")]
@@ -128,13 +123,23 @@ fn generate_pattern(
 }
 
 async fn pattern_page(State(state): State<Arc<AppState>>) -> Html<String> {
-    let template_content = Templates::get("calibrate_view.html")
-        .map(|file| String::from_utf8_lossy(&file.data).to_string())
-        .unwrap_or_else(|| "<html><body>Template not found</body></html>".to_string());
-
-    let html = template_content
-        .replace("{width}", &state.width.to_string())
-        .replace("{height}", &state.height.to_string());
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>Calibration Pattern Server</title>
+    <link rel="stylesheet" href="/static/shared-styles.css" />
+    <script type="module">
+        import init from '/static/calibrate_wasm.js';
+        init();
+    </script>
+</head>
+<body>
+    <div id="app" data-width="{}" data-height="{}"></div>
+</body>
+</html>"#,
+        state.width, state.height
+    );
 
     Html(html)
 }
@@ -220,11 +225,18 @@ async fn update_pattern_config(
 
 #[tokio::main]
 async fn run_web_server(state: Arc<AppState>, port: u16, bind_address: String) -> Result<()> {
+    use axum::routing::get_service;
+    use tower_http::services::ServeDir;
+
     let app = Router::new()
         .route("/", get(pattern_page))
         .route("/jpeg", get(jpeg_pattern_endpoint))
         .route("/config", get(get_pattern_config))
         .route("/config", axum::routing::post(update_pattern_config))
+        .nest_service(
+            "/static",
+            get_service(ServeDir::new("test-bench-frontend/dist/calibrate")),
+        )
         .with_state(state.clone());
 
     let addr: SocketAddr = format!("{bind_address}:{port}")
@@ -413,9 +425,32 @@ fn run_sdl_display(
     }
 }
 
+fn check_frontend_files() -> Result<()> {
+    let wasm_file = "test-bench-frontend/dist/calibrate/calibrate_wasm_bg.wasm";
+    let js_file = "test-bench-frontend/dist/calibrate/calibrate_wasm.js";
+
+    if !std::path::Path::new(wasm_file).exists() || !std::path::Path::new(js_file).exists() {
+        anyhow::bail!(
+            "Frontend WASM files not found!\n\n\
+            The calibrate server requires compiled Yew frontend files.\n\n\
+            To build the frontends, run:\n\
+            \x20   ./scripts/build-yew-frontends.sh\n\n\
+            Or if you don't have trunk installed:\n\
+            \x20   cargo install --locked trunk\n\
+            \x20   ./scripts/build-yew-frontends.sh\n\n\
+            Missing files:\n\
+            \x20   - {wasm_file}\n\
+            \x20   - {js_file}"
+        );
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
+
+    check_frontend_files()?;
 
     let sdl_context = sdl2::init().map_err(|e| anyhow::anyhow!("SDL init failed: {e}"))?;
     let video_subsystem = sdl_context

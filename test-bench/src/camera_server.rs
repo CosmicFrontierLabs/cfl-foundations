@@ -10,7 +10,6 @@ use axum::{
 use base64::Engine;
 use image::{DynamicImage, ImageBuffer, Luma};
 use ndarray::{s, Array2};
-use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use shared::camera_interface::{CameraInterface, FrameMetadata, SensorGeometry};
 use std::net::SocketAddr;
@@ -21,10 +20,6 @@ use crate::calibration_overlay::{
     analyze_calibration_pattern, render_annotated_image, render_svg_overlay,
 };
 use clap::Args;
-
-#[derive(RustEmbed)]
-#[folder = "templates/"]
-struct Templates;
 
 #[derive(Args, Debug, Clone)]
 pub struct CommonServerArgs {
@@ -333,20 +328,26 @@ async fn stats_endpoint<C: CameraInterface + 'static>(
 async fn camera_status_page<C: CameraInterface + 'static>(
     State(state): State<Arc<AppState<C>>>,
 ) -> Html<String> {
-    let template_content = Templates::get("live_view.html")
-        .map(|file| String::from_utf8_lossy(&file.data).to_string())
-        .unwrap_or_else(|| "<html><body>Template not found</body></html>".to_string());
-
     let width = state.camera_geometry.width();
     let height = state.camera_geometry.height();
     let camera_name = &state.camera_name;
 
-    let html = template_content
-        .replace("{device}", camera_name)
-        .replace("{width}", &width.to_string())
-        .replace("{height}", &height.to_string())
-        .replace("{resolutions_list}", "")
-        .replace("{test_patterns}", "");
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>Camera Monitor</title>
+    <link rel="stylesheet" href="/static/shared-styles.css" />
+    <script type="module">
+        import init from '/static/camera_wasm.js';
+        init();
+    </script>
+</head>
+<body>
+    <div id="app" data-device="{camera_name}" data-width="{width}" data-height="{height}"></div>
+</body>
+</html>"#
+    );
 
     Html(html)
 }
@@ -657,6 +658,9 @@ async fn logging_middleware(
 }
 
 pub fn create_router<C: CameraInterface + 'static>(state: Arc<AppState<C>>) -> Router {
+    use axum::routing::get_service;
+    use tower_http::services::ServeDir;
+
     Router::new()
         .route("/", get(camera_status_page::<C>))
         .route("/jpeg", get(jpeg_frame_endpoint::<C>))
@@ -669,6 +673,10 @@ pub fn create_router<C: CameraInterface + 'static>(state: Arc<AppState<C>>) -> R
         .route(
             "/zoom",
             post(set_zoom_endpoint::<C>).get(get_zoom_endpoint::<C>),
+        )
+        .nest_service(
+            "/static",
+            get_service(ServeDir::new("test-bench-frontend/dist/camera")),
         )
         .with_state(state)
         .layer(middleware::from_fn(logging_middleware))

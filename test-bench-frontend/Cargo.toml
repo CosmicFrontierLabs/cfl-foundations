@@ -1,0 +1,36 @@
+[package]
+name = "test-bench-frontend"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Yew WASM frontends for test-bench servers"
+repository.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "calibrate_wasm"
+path = "src/calibrate_main.rs"
+
+[[bin]]
+name = "camera_wasm"
+path = "src/camera_main.rs"
+
+[dependencies]
+anyhow = "1.0"
+gloo-net = "0.6"
+gloo-timers = { version = "0.3", features = ["futures"] }
+js-sys = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Element",
+    "HtmlCanvasElement",
+    "HtmlImageElement",
+    "CanvasRenderingContext2d",
+    "ImageData",
+    "Window",
+] }
+yew = { version = "0.21", features = ["csr"] }

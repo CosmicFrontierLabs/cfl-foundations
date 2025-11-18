@@ -135,6 +135,42 @@ Available log levels (in order of priority):
 - `debug`: Detailed debugging information (very verbose)
 - `trace`: Extremely detailed tracing information (rarely needed)
 
+### Test Bench
+
+The test bench includes web-based frontends for camera monitoring and calibration pattern generation. These frontends are built with Yew (Rust WebAssembly framework).
+
+#### Building the Frontends
+
+**First time setup:**
+```bash
+# Install trunk (WASM build tool) - only needed once
+cargo install --locked trunk
+
+# Build the frontends
+./scripts/build-yew-frontends.sh
+```
+
+The build script compiles the Yew applications in `test-bench-frontend/` and outputs to `test-bench-frontend/dist/`. Both servers will automatically serve these files.
+
+**If you see errors about missing WASM files**, run the build script above.
+
+#### Running the Servers
+
+```bash
+# Calibration pattern server
+cargo run --bin calibrate_serve
+# Opens web UI at http://localhost:3001
+
+# Camera monitoring server with mock camera
+cargo run --bin cam_serve -- --camera-type mock
+# Opens web UI at http://localhost:3000
+
+# Camera server with real hardware
+cargo run --bin cam_serve -- --camera-type playerone  # Or other camera types
+```
+
+See [Yew Frontend Migration Guide](docs/yew-frontend-migration.md) for details on the WebAssembly-based frontends.
+
 ## Documentation
 
 Generate and view the documentation with:
