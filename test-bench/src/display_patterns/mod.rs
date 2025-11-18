@@ -2,6 +2,7 @@ pub mod apriltag;
 pub mod assets;
 pub mod checkerboard;
 pub mod circling_pixel;
+pub mod gyro_walk;
 pub mod motion_profile;
 pub mod pixel;
 pub mod pixel_grid;

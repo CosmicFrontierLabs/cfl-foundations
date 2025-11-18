@@ -21,6 +21,7 @@ enum PatternType {
     PixelGrid,
     SiemensStar,
     MotionProfile,
+    GyroWalk,
 }
 
 #[derive(Parser, Debug)]
@@ -116,6 +117,34 @@ struct Args {
         default_value = "100.0"
     )]
     motion_scale_percent: f64,
+
+    #[arg(
+        long,
+        help = "Pixel size in micrometers for gyro-walk pattern",
+        default_value = "3.45"
+    )]
+    gyro_pixel_size_um: f64,
+
+    #[arg(
+        long,
+        help = "Focal length in millimeters for gyro-walk pattern",
+        default_value = "50.0"
+    )]
+    gyro_focal_length_mm: f64,
+
+    #[arg(
+        long,
+        help = "Target frame rate in Hz for gyro-walk simulation",
+        default_value = "60.0"
+    )]
+    gyro_frame_rate_hz: f64,
+
+    #[arg(
+        long,
+        help = "Motion multiplier for gyro-walk pattern (1.0 = normal, 2.0 = double motion)",
+        default_value = "1.0"
+    )]
+    gyro_motion_scale: f64,
 
     #[arg(short, long, help = "Invert pattern colors (black <-> white)")]
     invert: bool,
@@ -384,6 +413,46 @@ fn main() -> Result<()> {
 
             (img, "Motion Profile")
         }
+        PatternType::GyroWalk => {
+            let image_path = args
+                .image_path
+                .as_ref()
+                .context("--image-path required for gyro-walk pattern")?;
+
+            println!("Loading gyro-walk pattern");
+            println!("  Image: {}", image_path.display());
+            println!("  Pixel size: {} μm", args.gyro_pixel_size_um);
+            println!("  Focal length: {} mm", args.gyro_focal_length_mm);
+            println!("  Frame rate: {} Hz", args.gyro_frame_rate_hz);
+
+            let base_img = patterns::motion_profile::load_and_downsample_image(
+                image_path,
+                pattern_width,
+                pattern_height,
+            )?;
+
+            println!(
+                "  Downsampled image size: {}x{}",
+                base_img.width(),
+                base_img.height()
+            );
+            println!("  Pattern size: {pattern_width}x{pattern_height}");
+            println!(
+                "  Display {}: {}x{} at ({}, {})",
+                display_index,
+                mode.w,
+                mode.h,
+                bounds.x(),
+                bounds.y()
+            );
+
+            let mut img = image::RgbImage::new(pattern_width, pattern_height);
+            for pixel in img.pixels_mut() {
+                *pixel = image::Rgb([0, 0, 0]);
+            }
+
+            (img, "Gyro Walk")
+        }
     };
 
     if args.invert {
@@ -451,6 +520,7 @@ fn main() -> Result<()> {
             | PatternType::CirclingPixel
             | PatternType::WigglingGaussian
             | PatternType::MotionProfile
+            | PatternType::GyroWalk
     );
     let mut static_buffer = if is_animated {
         Some(vec![0u8; (pattern_width * pattern_height * 3) as usize])
@@ -468,6 +538,24 @@ fn main() -> Result<()> {
         let motion_profile = patterns::motion_profile::load_motion_profile(motion_csv)?;
 
         Some((base_img, motion_profile))
+    } else {
+        None
+    };
+
+    let gyro_data = if matches!(args.pattern, PatternType::GyroWalk) {
+        let image_path = args.image_path.as_ref().unwrap();
+
+        let base_img = image::open(image_path)
+            .with_context(|| format!("Failed to load image: {}", image_path.display()))?
+            .into_rgb8();
+
+        let gyro_state = patterns::gyro_walk::GyroWalkState::new(
+            args.gyro_pixel_size_um,
+            args.gyro_focal_length_mm,
+            args.gyro_motion_scale,
+        );
+
+        Some((base_img, std::sync::Mutex::new(gyro_state)))
     } else {
         None
     };
@@ -534,6 +622,24 @@ fn main() -> Result<()> {
                             motion_profile,
                             elapsed,
                             args.motion_scale_percent / 100.0,
+                        );
+                    }
+                }
+                PatternType::GyroWalk => {
+                    if let Some((ref base_img, ref gyro_state)) = gyro_data {
+                        let elapsed = SystemTime::now()
+                            .duration_since(SystemTime::UNIX_EPOCH)
+                            .unwrap();
+                        let frame_interval =
+                            std::time::Duration::from_secs_f64(1.0 / args.gyro_frame_rate_hz);
+                        patterns::gyro_walk::generate_into_buffer(
+                            buffer,
+                            pattern_width,
+                            pattern_height,
+                            base_img,
+                            gyro_state,
+                            elapsed,
+                            frame_interval,
                         );
                     }
                 }
