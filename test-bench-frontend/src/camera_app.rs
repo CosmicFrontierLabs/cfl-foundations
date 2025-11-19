@@ -27,14 +27,20 @@ pub struct CameraFrontend {
     connection_status: String,
     image_refresh_handle: Option<gloo_timers::callback::Interval>,
     stats_refresh_handle: Option<gloo_timers::callback::Interval>,
+    image_failure_count: u32,
+    stats_failure_count: u32,
 }
 
 pub enum Msg {
     RefreshImage,
+    ImageLoaded,
     RefreshStats,
     ToggleAnnotation,
     StatsLoaded(Stats),
     ImageError,
+    StatsError,
+    ResetImageInterval,
+    ResetStatsInterval,
 }
 
 impl Component for CameraFrontend {
@@ -59,22 +65,49 @@ impl Component for CameraFrontend {
             connection_status: "Connecting...".to_string(),
             image_refresh_handle: Some(image_handle),
             stats_refresh_handle: Some(stats_handle),
+            image_failure_count: 0,
+            stats_failure_count: 0,
         }
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
             Msg::RefreshImage => {
-                self.image_url = format!("/jpeg?t={}", js_sys::Date::now());
+                let link = ctx.link().clone();
+                let url = format!("/jpeg?t={}", js_sys::Date::now());
+                let url_clone = url.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    match gloo_net::http::Request::get(&url_clone).send().await {
+                        Ok(response) if response.ok() => {
+                            link.send_message(Msg::ImageLoaded);
+                        }
+                        _ => {
+                            link.send_message(Msg::ImageError);
+                        }
+                    }
+                });
+                self.image_url = url;
+                false
+            }
+            Msg::ImageLoaded => {
                 self.connection_status = "Connected".to_string();
-                true
+                self.image_failure_count = 0;
+                ctx.link().send_message(Msg::ResetImageInterval);
+                false
             }
             Msg::RefreshStats => {
                 let link = ctx.link().clone();
                 wasm_bindgen_futures::spawn_local(async move {
-                    if let Ok(response) = Request::get("/stats").send().await {
-                        if let Ok(stats) = response.json::<Stats>().await {
-                            link.send_message(Msg::StatsLoaded(stats));
+                    match Request::get("/stats").send().await {
+                        Ok(response) => {
+                            if let Ok(stats) = response.json::<Stats>().await {
+                                link.send_message(Msg::StatsLoaded(stats));
+                            } else {
+                                link.send_message(Msg::StatsError);
+                            }
+                        }
+                        Err(_) => {
+                            link.send_message(Msg::StatsError);
                         }
                     }
                 });
@@ -82,6 +115,8 @@ impl Component for CameraFrontend {
             }
             Msg::StatsLoaded(stats) => {
                 self.stats = Some(stats);
+                self.stats_failure_count = 0;
+                ctx.link().send_message(Msg::ResetStatsInterval);
                 true
             }
             Msg::ToggleAnnotation => {
@@ -90,7 +125,34 @@ impl Component for CameraFrontend {
             }
             Msg::ImageError => {
                 self.connection_status = "Connection Error".to_string();
+                self.image_failure_count += 1;
+                ctx.link().send_message(Msg::ResetImageInterval);
                 true
+            }
+            Msg::StatsError => {
+                self.stats_failure_count += 1;
+                ctx.link().send_message(Msg::ResetStatsInterval);
+                false
+            }
+            Msg::ResetImageInterval => {
+                let delay = Self::calculate_backoff_delay(self.image_failure_count, 100, 10000);
+                let link = ctx.link().clone();
+                self.image_refresh_handle = None;
+                self.image_refresh_handle =
+                    Some(gloo_timers::callback::Interval::new(delay, move || {
+                        link.send_message(Msg::RefreshImage);
+                    }));
+                false
+            }
+            Msg::ResetStatsInterval => {
+                let delay = Self::calculate_backoff_delay(self.stats_failure_count, 1000, 30000);
+                let link = ctx.link().clone();
+                self.stats_refresh_handle = None;
+                self.stats_refresh_handle =
+                    Some(gloo_timers::callback::Interval::new(delay, move || {
+                        link.send_message(Msg::RefreshStats);
+                    }));
+                false
             }
         }
     }
@@ -149,7 +211,6 @@ impl Component for CameraFrontend {
                             class="image-frame"
                             src={self.image_url.clone()}
                             alt="Camera Frame"
-                            onerror={ctx.link().callback(|_| Msg::ImageError)}
                         />
                     </div>
                 </div>
@@ -173,6 +234,15 @@ impl Component for CameraFrontend {
 }
 
 impl CameraFrontend {
+    fn calculate_backoff_delay(failure_count: u32, base_delay: u32, max_delay: u32) -> u32 {
+        if failure_count == 0 {
+            base_delay
+        } else {
+            let exponential_delay = base_delay * 2_u32.pow(failure_count.min(10));
+            exponential_delay.min(max_delay)
+        }
+    }
+
     fn view_stats(&self) -> Html {
         if let Some(ref stats) = self.stats {
             html! {

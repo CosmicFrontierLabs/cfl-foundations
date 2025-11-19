@@ -70,6 +70,7 @@ pub struct CalibrateFrontend {
     current_pattern_name: String,
     image_url: String,
     image_refresh_handle: Option<gloo_timers::callback::Interval>,
+    image_failure_count: u32,
 }
 
 pub enum Msg {
@@ -77,6 +78,9 @@ pub enum Msg {
     ToggleInvert,
     ApplyPattern,
     RefreshImage,
+    ImageLoaded,
+    ImageError,
+    ResetImageInterval,
 }
 
 impl Component for CalibrateFrontend {
@@ -95,6 +99,7 @@ impl Component for CalibrateFrontend {
             current_pattern_name: "AprilTag Array".to_string(),
             image_url: format!("/jpeg?t={}", js_sys::Date::now()),
             image_refresh_handle: Some(handle),
+            image_failure_count: 0,
         }
     }
 
@@ -126,8 +131,41 @@ impl Component for CalibrateFrontend {
                 true
             }
             Msg::RefreshImage => {
-                self.image_url = format!("/jpeg?t={}", js_sys::Date::now());
-                true
+                let link = ctx.link().clone();
+                let url = format!("/jpeg?t={}", js_sys::Date::now());
+                let url_clone = url.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    match Request::get(&url_clone).send().await {
+                        Ok(response) if response.ok() => {
+                            link.send_message(Msg::ImageLoaded);
+                        }
+                        _ => {
+                            link.send_message(Msg::ImageError);
+                        }
+                    }
+                });
+                self.image_url = url;
+                false
+            }
+            Msg::ImageLoaded => {
+                self.image_failure_count = 0;
+                ctx.link().send_message(Msg::ResetImageInterval);
+                false
+            }
+            Msg::ImageError => {
+                self.image_failure_count += 1;
+                ctx.link().send_message(Msg::ResetImageInterval);
+                false
+            }
+            Msg::ResetImageInterval => {
+                let delay = Self::calculate_backoff_delay(self.image_failure_count, 100, 10000);
+                let link = ctx.link().clone();
+                self.image_refresh_handle = None;
+                self.image_refresh_handle =
+                    Some(gloo_timers::callback::Interval::new(delay, move || {
+                        link.send_message(Msg::RefreshImage);
+                    }));
+                false
             }
         }
     }
@@ -202,6 +240,15 @@ impl Component for CalibrateFrontend {
 }
 
 impl CalibrateFrontend {
+    fn calculate_backoff_delay(failure_count: u32, base_delay: u32, max_delay: u32) -> u32 {
+        if failure_count == 0 {
+            base_delay
+        } else {
+            let exponential_delay = base_delay * 2_u32.pow(failure_count.min(10));
+            exponential_delay.min(max_delay)
+        }
+    }
+
     fn view_pattern_selector(&self, ctx: &Context<Self>) -> Html {
         let onchange = ctx.link().callback(|e: Event| {
             let target: HtmlInputElement = e.target_unchecked_into();
