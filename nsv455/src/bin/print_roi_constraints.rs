@@ -15,8 +15,8 @@ fn main() -> Result<()> {
     println!("NSV455 ROI Constraints");
     println!("Device: {}\n", args.device);
 
-    let camera = NSV455Camera::new(args.device)?;
-    let constraints = camera.roi_constraints()?;
+    let camera = NSV455Camera::from_device(args.device)?;
+    let constraints = camera.roi_constraints();
 
     println!("Horizontal Offset Constraints:");
     println!("  Minimum:        {} pixels", constraints.h_offset.min);

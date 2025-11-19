@@ -1,4 +1,6 @@
+use crate::camera::controls::{ControlMap, ControlType};
 use crate::camera::neutralino_imx455::{calculate_stride, read_sensor_temperatures};
+use crate::camera::roi_constraints::RoiConstraints;
 use ndarray::Array2;
 use once_cell::sync::OnceCell;
 use shared::camera_interface::{
@@ -17,20 +19,6 @@ use v4l::io::traits::CaptureStream;
 use v4l::prelude::*;
 use v4l::video::Capture;
 
-#[derive(Debug, Clone)]
-pub struct OffsetConstraints {
-    pub min: usize,
-    pub max: usize,
-    pub step: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct RoiConstraints {
-    pub h_offset: OffsetConstraints,
-    pub v_offset: OffsetConstraints,
-    pub supported_sizes: Vec<(usize, usize)>,
-}
-
 pub struct NSV455Camera {
     device_path: String,
     config: CameraConfig,
@@ -39,7 +27,10 @@ pub struct NSV455Camera {
     gain: i32,
     black_level: i32,
     framerate: u32,
-    roi_constraints: OnceCell<RoiConstraints>,
+    low_latency_mode: i32,
+    test_pattern: i32,
+    roi_constraints: RoiConstraints,
+    control_map: OnceCell<ControlMap>,
 }
 
 impl NSV455Camera {
@@ -48,13 +39,19 @@ impl NSV455Camera {
     pub const SENSOR_HEIGHT: u32 = 6380;
     pub const PIXEL_SIZE_MICRONS: f64 = 3.76;
 
-    pub fn new(device_path: String) -> CameraResult<Self> {
+    pub fn from_device(device_path: String) -> CameraResult<Self> {
         let config = CameraConfig::new(
             Self::SENSOR_WIDTH as usize,
             Self::SENSOR_HEIGHT as usize,
             Duration::from_millis(100),
             SensorBitDepth::Bits16,
         );
+
+        let device = Device::with_path(&device_path)
+            .map_err(|e| CameraError::HardwareError(format!("Failed to open device: {e}")))?;
+
+        let control_map = ControlMap::from_device(&device)?;
+        let roi_constraints = RoiConstraints::from_device(&device, &control_map)?;
 
         Ok(Self {
             device_path,
@@ -64,7 +61,10 @@ impl NSV455Camera {
             gain: 360,
             black_level: 0,
             framerate: 23_000_000,
-            roi_constraints: OnceCell::new(),
+            low_latency_mode: 1,
+            test_pattern: 0,
+            roi_constraints,
+            control_map: OnceCell::from(control_map),
         })
     }
 
@@ -74,6 +74,11 @@ impl NSV455Camera {
     }
 
     fn configure_device(&self, device: &mut Device) -> CameraResult<()> {
+        let control_map = self
+            .control_map
+            .get()
+            .expect("Control map should be initialized in from_device()");
+
         let mut format = device
             .format()
             .map_err(|e| CameraError::HardwareError(format!("Failed to get format: {e}")))?;
@@ -156,135 +161,46 @@ impl NSV455Camera {
             );
         }
 
-        if let Ok(controls) = device.query_controls() {
-            for control_desc in controls {
-                match control_desc.name.as_str() {
-                    "Gain" | "gain" => {
-                        let ctrl = v4l::Control {
-                            id: control_desc.id,
-                            value: v4l::control::Value::Integer(self.gain as i64),
-                        };
-                        let _ = device.set_control(ctrl);
-                    }
-                    "Exposure" | "exposure" => {
-                        let ctrl = v4l::Control {
-                            id: control_desc.id,
-                            value: v4l::control::Value::Integer(
-                                self.config.exposure.as_micros() as i64
-                            ),
-                        };
-                        let _ = device.set_control(ctrl);
-                    }
-                    "Black Level" | "black_level" => {
-                        let ctrl = v4l::Control {
-                            id: control_desc.id,
-                            value: v4l::control::Value::Integer(self.black_level as i64),
-                        };
-                        let _ = device.set_control(ctrl);
-                    }
-                    "Frame Rate" | "frame_rate" => {
-                        let ctrl = v4l::Control {
-                            id: control_desc.id,
-                            value: v4l::control::Value::Integer(self.framerate as i64),
-                        };
-                        let _ = device.set_control(ctrl);
-                    }
-                    _ => {}
-                }
-            }
+        control_map.set_control(device, ControlType::Gain, self.gain as i64)?;
+
+        control_map.set_control(
+            device,
+            ControlType::Exposure,
+            self.config.exposure.as_micros() as i64,
+        )?;
+
+        control_map.set_control(device, ControlType::BlackLevel, self.black_level as i64)?;
+
+        control_map.set_control(device, ControlType::FrameRate, self.framerate as i64)?;
+
+        control_map.set_control(
+            device,
+            ControlType::LowLatencyMode,
+            self.low_latency_mode as i64,
+        )?;
+
+        control_map.set_control(device, ControlType::TestPattern, self.test_pattern as i64)?;
+
+        if let Some(roi) = self.roi {
+            control_map.set_control(device, ControlType::ROIHOffset, roi.min_col as i64)?;
+            control_map.set_control(device, ControlType::ROIVOffset, roi.min_row as i64)?;
         }
 
         Ok(())
     }
 
-    fn query_roi_constraints(device: &Device) -> CameraResult<RoiConstraints> {
-        let controls = device
-            .query_controls()
-            .map_err(|e| CameraError::HardwareError(format!("Failed to query controls: {e}")))?;
-
-        let mut h_offset_min = 0;
-        let mut h_offset_max = 9440;
-        let mut h_offset_step = 16;
-        let mut v_offset_min = 25;
-        let mut v_offset_max = 6259;
-        let mut v_offset_step = 2;
-
-        for control in controls {
-            match control.id {
-                10117122 => {
-                    h_offset_min = control.minimum as usize;
-                    h_offset_max = control.maximum as usize;
-                    h_offset_step = control.step as usize;
-                }
-                10117123 => {
-                    v_offset_min = control.minimum as usize;
-                    v_offset_max = control.maximum as usize;
-                    v_offset_step = control.step as usize;
-                }
-                _ => {}
-            }
-        }
-
-        let mut supported_sizes = Vec::new();
-
-        if let Ok(formats) = device.enum_formats() {
-            for format in formats {
-                let fourcc_bytes = format.fourcc.repr;
-                let fourcc_str = std::str::from_utf8(&fourcc_bytes).unwrap_or("????");
-
-                if fourcc_str == "Y16 " || fourcc_str == "RG16" {
-                    if let Ok(framesizes) = device.enum_framesizes(format.fourcc) {
-                        for framesize in framesizes {
-                            if let v4l::framesize::FrameSizeEnum::Discrete(discrete) =
-                                framesize.size
-                            {
-                                supported_sizes
-                                    .push((discrete.width as usize, discrete.height as usize));
-                            }
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-
-        if supported_sizes.is_empty() {
-            return Err(CameraError::HardwareError(
-                "Failed to query supported frame sizes from device".to_string(),
-            ));
-        }
-
-        Ok(RoiConstraints {
-            h_offset: OffsetConstraints {
-                min: h_offset_min,
-                max: h_offset_max,
-                step: h_offset_step,
-            },
-            v_offset: OffsetConstraints {
-                min: v_offset_min,
-                max: v_offset_max,
-                step: v_offset_step,
-            },
-            supported_sizes,
-        })
+    fn get_roi_constraints(&self) -> &RoiConstraints {
+        &self.roi_constraints
     }
 
-    fn get_roi_constraints(&self) -> CameraResult<&RoiConstraints> {
-        self.roi_constraints.get_or_try_init(|| {
-            let device = Device::with_path(&self.device_path)
-                .map_err(|e| CameraError::HardwareError(format!("Failed to open device: {e}")))?;
-            Self::query_roi_constraints(&device)
-        })
-    }
-
-    pub fn roi_constraints(&self) -> CameraResult<&RoiConstraints> {
+    pub fn roi_constraints(&self) -> &RoiConstraints {
         self.get_roi_constraints()
     }
 }
 
 impl CameraInterface for NSV455Camera {
     fn check_roi_size(&self, size: PixelShape) -> CameraResult<()> {
-        let constraints = self.get_roi_constraints()?;
+        let constraints = self.get_roi_constraints();
 
         if !constraints
             .supported_sizes
@@ -306,7 +222,7 @@ impl CameraInterface for NSV455Camera {
     }
 
     fn set_roi(&mut self, roi: AABB) -> CameraResult<()> {
-        let constraints = self.get_roi_constraints()?;
+        let constraints = self.get_roi_constraints();
         let width = roi.max_col - roi.min_col + 1;
         let height = roi.max_row - roi.min_row + 1;
 
