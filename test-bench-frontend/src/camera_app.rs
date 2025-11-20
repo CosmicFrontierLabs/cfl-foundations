@@ -29,11 +29,12 @@ pub struct CameraFrontend {
     stats_refresh_handle: Option<gloo_timers::callback::Interval>,
     image_failure_count: u32,
     stats_failure_count: u32,
+    is_loading_image: bool,
 }
 
 pub enum Msg {
     RefreshImage,
-    ImageLoaded,
+    ImageLoaded(String),
     RefreshStats,
     ToggleAnnotation,
     StatsLoaded(Stats),
@@ -67,33 +68,38 @@ impl Component for CameraFrontend {
             stats_refresh_handle: Some(stats_handle),
             image_failure_count: 0,
             stats_failure_count: 0,
+            is_loading_image: false,
         }
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
             Msg::RefreshImage => {
+                if self.is_loading_image {
+                    return false;
+                }
+                self.is_loading_image = true;
                 let link = ctx.link().clone();
                 let url = format!("/jpeg?t={}", js_sys::Date::now());
-                let url_clone = url.clone();
                 wasm_bindgen_futures::spawn_local(async move {
-                    match gloo_net::http::Request::get(&url_clone).send().await {
+                    match gloo_net::http::Request::get(&url).send().await {
                         Ok(response) if response.ok() => {
-                            link.send_message(Msg::ImageLoaded);
+                            link.send_message(Msg::ImageLoaded(url));
                         }
                         _ => {
                             link.send_message(Msg::ImageError);
                         }
                     }
                 });
-                self.image_url = url;
                 false
             }
-            Msg::ImageLoaded => {
+            Msg::ImageLoaded(url) => {
+                self.is_loading_image = false;
+                self.image_url = url;
                 self.connection_status = "Connected".to_string();
                 self.image_failure_count = 0;
                 ctx.link().send_message(Msg::ResetImageInterval);
-                false
+                true
             }
             Msg::RefreshStats => {
                 let link = ctx.link().clone();
@@ -124,6 +130,7 @@ impl Component for CameraFrontend {
                 true
             }
             Msg::ImageError => {
+                self.is_loading_image = false;
                 self.connection_status = "Connection Error".to_string();
                 self.image_failure_count += 1;
                 ctx.link().send_message(Msg::ResetImageInterval);
@@ -245,16 +252,29 @@ impl CameraFrontend {
 
     fn view_stats(&self) -> Html {
         if let Some(ref stats) = self.stats {
+            let mut temps: Vec<_> = stats.temperatures.iter().collect();
+            temps.sort_by_key(|(k, _)| *k);
+            let temp_items: Html = temps
+                .into_iter()
+                .map(|(location, temp)| {
+                    let display_name = location
+                        .chars()
+                        .next()
+                        .map(|c| c.to_uppercase().to_string())
+                        .unwrap_or_default()
+                        + &location[1..];
+                    html! {
+                        <div style="padding-left: 10px;">{format!("{}: {:.1}°C", display_name, temp)}</div>
+                    }
+                })
+                .collect();
+
             html! {
                 <div class="stats-placeholder">
                     <div>{format!("FPS: {:.1}", stats.avg_fps)}</div>
                     <div>{format!("Frames: {}", stats.total_frames)}</div>
-                    { for stats.temperatures.iter().map(|(location, temp)| {
-                        let display_name = location.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default() + &location[1..];
-                        html! {
-                            <div>{format!("{}: {:.1}°C", display_name, temp)}</div>
-                        }
-                    })}
+                    <div style="margin-top: 10px;"><strong>{"Temperatures"}</strong></div>
+                    { temp_items }
                 </div>
             }
         } else {
