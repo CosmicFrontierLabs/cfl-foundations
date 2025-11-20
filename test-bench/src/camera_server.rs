@@ -694,6 +694,11 @@ pub async fn run_server<C: CameraInterface + Send + 'static>(
         .map_err(|e| anyhow::anyhow!("Failed to set exposure: {e}"))?;
     info!("Set camera exposure to {}ms", args.exposure_ms);
 
+    camera
+        .set_gain(args.gain)
+        .map_err(|e| anyhow::anyhow!("Failed to set gain: {e}"))?;
+    info!("Set camera gain to {}", args.gain);
+
     let bit_depth = camera.get_bit_depth();
     info!("Camera bit depth: {}", bit_depth);
 
