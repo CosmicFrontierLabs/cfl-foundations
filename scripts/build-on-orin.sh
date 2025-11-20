@@ -26,7 +26,7 @@ RUN_COMMAND=""
 # Host presets
 ORIN_HOST="${ORIN_HOST:-meawoppl@orin-nano.tail944341.ts.net}"
 ORIN_TAILSCALE_NAME="orin-nano"
-NEUT_HOST="cosmicfrontiers@192.168.15.229"
+NEUT_HOST="cosmicfrontiers@orin-416.tail944341.ts.net"
 NEUT_DEVICE_NAME="neutralino"
 
 # Apt dependencies management
