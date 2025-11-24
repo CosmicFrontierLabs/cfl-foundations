@@ -26,6 +26,7 @@
 //! and provides both automatic and fixed scaling options.
 
 use crate::algo::MinMaxScan;
+use anyhow::{Context as AnyhowContext, Result};
 use ndarray::Array2;
 use std::error::Error;
 use std::path::Path;
@@ -64,6 +65,39 @@ pub fn save_u8_image<P: AsRef<Path>>(image: &Array2<u8>, path: P) -> Result<(), 
     }
 
     img_buffer.save(path)?;
+
+    Ok(())
+}
+
+/// Save 16-bit grayscale image to PNG format without rescaling.
+///
+/// Saves raw u16 pixel values directly to 16-bit PNG without any scaling
+/// or normalization. Preserves exact sensor values for analysis.
+///
+/// # Arguments
+/// * `image` - 2D array of u16 pixel values (raw sensor data)
+/// * `path` - Output file path (should end in .png)
+///
+/// # Returns
+/// Result indicating success or I/O error
+///
+/// # Usage
+/// Save raw 16-bit sensor data as 16-bit PNG files without any modification.
+/// Useful for preserving exact pixel values for quantitative analysis.
+pub fn save_u16_image<P: AsRef<Path>>(image: &Array2<u16>, path: P) -> Result<()> {
+    use image::{ImageBuffer, Luma};
+
+    let (height, width) = image.dim();
+
+    let mut img_buffer = ImageBuffer::new(width as u32, height as u32);
+
+    for (x, y, pixel) in img_buffer.enumerate_pixels_mut() {
+        *pixel = Luma([image[[y as usize, x as usize]]]);
+    }
+
+    img_buffer
+        .save(&path)
+        .with_context(|| format!("Failed to save 16-bit image to {}", path.as_ref().display()))?;
 
     Ok(())
 }

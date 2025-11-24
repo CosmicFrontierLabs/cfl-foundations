@@ -1,5 +1,5 @@
 use crate::camera::controls::{ControlMap, ControlType};
-use crate::camera::neutralino_imx455::{calculate_stride, read_sensor_temperatures};
+use crate::camera::neutralino_imx455::read_sensor_temperatures;
 use crate::camera::roi_constraints::RoiConstraints;
 use ndarray::Array2;
 use once_cell::sync::OnceCell;
@@ -328,8 +328,9 @@ impl CameraInterface for NSV455Camera {
                 .map_err(|e| CameraError::CaptureError(format!("Failed to get frame: {e}")))?;
 
             let frame_data = buf.to_vec();
-            let stride =
-                calculate_stride(actual_format.width, actual_format.height, frame_data.len());
+            // let stride =
+            //     calculate_stride(actual_format.width, actual_format.height, frame_data.len());
+            let stride = actual_format.stride as usize;
 
             // TODO: Extra memcopy in the inner loop that could be avoided with a cast.
             // We're returning a pointer to a strided 2D array, so we could potentially

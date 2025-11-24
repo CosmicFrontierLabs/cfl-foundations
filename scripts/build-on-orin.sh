@@ -131,6 +131,9 @@ if [ -z "$FEATURES" ]; then
     if [ "$DEVICE_TYPE" = "orin" ]; then
         FEATURES="playerone"
         print_info "Auto-enabling 'playerone' feature for Orin device"
+    elif [ "$DEVICE_TYPE" = "neut" ]; then
+        FEATURES="nsv455"
+        print_info "Auto-enabling 'nsv455' feature for Neut device"
     fi
 fi
 

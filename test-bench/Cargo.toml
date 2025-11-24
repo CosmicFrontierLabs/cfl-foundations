@@ -36,6 +36,10 @@ name = "dark_frame_analysis"
 path = "src/bin/dark_frame_analysis.rs"
 required-features = ["playerone"]
 
+[[bin]]
+name = "led_latency_test"
+path = "src/bin/led_latency_test.rs"
+
 [dependencies]
 anyhow = "1.0"
 apriltag = "0.4.0"
