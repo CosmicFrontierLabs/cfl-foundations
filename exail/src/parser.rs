@@ -2,20 +2,9 @@
 
 use bytemuck::from_bytes;
 
-use crate::messages::{FilteredGyroInertialData, FullGyroData, RawGyroInertialData};
-
-/// Mask for extracting the 5-bit frame ID from the message_id byte
-pub const FRAME_ID_MASK: u8 = 0x1F;
-
-/// Frame ID constants (5-bit values)
-pub mod frame_id {
-    pub const RAW_GYRO_BASE: u8 = 17;
-    pub const RAW_GYRO: u8 = 18;
-    pub const FILTERED_GYRO_BASE: u8 = 19;
-    pub const FILTERED_GYRO: u8 = 20;
-    pub const FULL_GYRO_BASE: u8 = 21;
-    pub const FULL_GYRO: u8 = 22;
-}
+use crate::messages::{
+    frame_id, FilteredGyroInertialData, FullGyroData, RawGyroInertialData, FRAME_ID_MASK,
+};
 
 /// Parsed message variants
 #[derive(Debug, Clone, Copy)]

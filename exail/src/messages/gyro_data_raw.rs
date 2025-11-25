@@ -2,7 +2,10 @@
 
 use bytemuck::{Pod, Zeroable};
 
+use super::GyroData;
+use crate::angle::AngleData;
 use crate::health_status::HealthStatus;
+use crate::temperature::{TemperatureReading, TemperatureSensor};
 use crate::time::GyroTime;
 
 /// Raw Gyro Inertial Data packet from Exail Asterix NS
@@ -42,6 +45,35 @@ pub struct RawGyroInertialData {
 impl RawGyroInertialData {
     /// Expected packet size in bytes
     pub const PACKET_SIZE: usize = 26;
+}
+
+impl GyroData for RawGyroInertialData {
+    fn message_id(&self) -> u8 {
+        self.message_id
+    }
+
+    fn gyro_time(&self) -> &crate::time::GyroTime {
+        &self.gyro_time
+    }
+
+    fn temperature_readings(&self) -> Vec<TemperatureReading> {
+        vec![TemperatureReading::new(
+            TemperatureSensor::SiaFilter,
+            self.sia_fil_temp,
+        )]
+    }
+
+    fn raw_angle_data(&self) -> Option<AngleData> {
+        Some(AngleData::from_raw_counts(
+            self.angle_x,
+            self.angle_y,
+            self.angle_z,
+        ))
+    }
+
+    fn filtered_angle_data(&self) -> Option<AngleData> {
+        None // Raw messages don't have filtered data
+    }
 }
 
 // SAFETY: RawGyroInertialData is repr(C, packed) and all fields are Pod

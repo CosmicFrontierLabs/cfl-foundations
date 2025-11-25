@@ -5,6 +5,50 @@
 
 const ALPHA: f64 = 32768.0; // 2^15
 
+/// Temperature sensor location identifier
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemperatureSensor {
+    /// Board temperature sensor
+    Board,
+    /// SIA Filter temperature sensor
+    SiaFilter,
+    /// Organizer temperature sensor
+    Organizer,
+    /// Interface temperature sensor
+    Interface,
+}
+
+/// A temperature reading from a specific sensor
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TemperatureReading {
+    /// Which sensor this reading is from
+    pub sensor: TemperatureSensor,
+    /// Raw ADC value (u16)
+    pub raw: u16,
+    /// Decoded temperature in degrees Celsius (None if conversion failed)
+    pub celsius: Option<f64>,
+}
+
+impl TemperatureReading {
+    /// Create a new temperature reading with automatic decoding
+    pub fn new(sensor: TemperatureSensor, raw: u16) -> Self {
+        let decoder = match sensor {
+            TemperatureSensor::Board => &BOARD_TEMP,
+            TemperatureSensor::SiaFilter => &SIA_FIL_TEMP,
+            TemperatureSensor::Organizer => &BOARD_TEMP,
+            TemperatureSensor::Interface => &BOARD_TEMP,
+        };
+
+        let celsius = decoder.convert(raw);
+
+        Self {
+            sensor,
+            raw,
+            celsius,
+        }
+    }
+}
+
 /// Configuration for a thermistor temperature conversion.
 #[derive(Debug, Clone, Copy)]
 pub struct TempDecoder {
@@ -111,5 +155,28 @@ mod tests {
 
         // Max value that causes division issues
         assert!(SIA_FIL_TEMP.convert(32767).is_none());
+    }
+
+    #[test]
+    fn test_temperature_reading_board() {
+        let reading = TemperatureReading::new(TemperatureSensor::Board, 16384);
+        assert_eq!(reading.sensor, TemperatureSensor::Board);
+        assert_eq!(reading.raw, 16384);
+        assert!(reading.celsius.is_some());
+        let temp = reading.celsius.unwrap();
+        assert!(temp > -50.0 && temp < 100.0);
+    }
+
+    #[test]
+    fn test_temperature_reading_sia_filter() {
+        let reading = TemperatureReading::new(TemperatureSensor::SiaFilter, 16384);
+        assert_eq!(reading.sensor, TemperatureSensor::SiaFilter);
+        assert!(reading.celsius.is_some());
+    }
+
+    #[test]
+    fn test_temperature_reading_invalid() {
+        let reading = TemperatureReading::new(TemperatureSensor::Board, 0);
+        assert!(reading.celsius.is_none());
     }
 }
