@@ -3,6 +3,7 @@
 //! Stores the affine transformation between display coordinates and sensor coordinates,
 //! as determined by closed-loop calibration.
 
+use nalgebra::{DMatrix, DVector};
 use serde::{Deserialize, Serialize};
 
 /// Optical alignment calibration data.
@@ -111,6 +112,90 @@ impl Default for OpticalAlignment {
     }
 }
 
+/// A point correspondence for calibration: known source position and measured destination position.
+#[derive(Debug, Clone, Copy)]
+pub struct PointCorrespondence {
+    /// Source X coordinate (e.g., display pixel)
+    pub src_x: f64,
+    /// Source Y coordinate (e.g., display pixel)
+    pub src_y: f64,
+    /// Destination X coordinate (e.g., sensor pixel)
+    pub dst_x: f64,
+    /// Destination Y coordinate (e.g., sensor pixel)
+    pub dst_y: f64,
+}
+
+impl PointCorrespondence {
+    /// Create a new point correspondence
+    pub fn new(src_x: f64, src_y: f64, dst_x: f64, dst_y: f64) -> Self {
+        Self {
+            src_x,
+            src_y,
+            dst_x,
+            dst_y,
+        }
+    }
+}
+
+/// Estimate an affine transformation from point correspondences using SVD least squares.
+///
+/// Returns the estimated `OpticalAlignment` with RMS error computed, or `None` if
+/// estimation fails (e.g., fewer than 3 points or SVD fails).
+///
+/// # Arguments
+/// * `points` - Slice of point correspondences (source -> destination)
+pub fn estimate_affine_transform(points: &[PointCorrespondence]) -> Option<OpticalAlignment> {
+    let n = points.len();
+    if n < 3 {
+        return None;
+    }
+
+    // Build design matrix A: each row is [src_x, src_y, 1]
+    let mut a_data = Vec::with_capacity(n * 3);
+    let mut bx = Vec::with_capacity(n);
+    let mut by = Vec::with_capacity(n);
+
+    for p in points {
+        a_data.push(p.src_x);
+        a_data.push(p.src_y);
+        a_data.push(1.0);
+        bx.push(p.dst_x);
+        by.push(p.dst_y);
+    }
+
+    let a_matrix = DMatrix::from_row_slice(n, 3, &a_data);
+    let bx_vec = DVector::from_vec(bx);
+    let by_vec = DVector::from_vec(by);
+
+    // Solve using SVD (robust to ill-conditioned systems)
+    let svd = a_matrix.svd(true, true);
+
+    let params_x = svd.solve(&bx_vec, 1e-10).ok()?;
+    let params_y = svd.solve(&by_vec, 1e-10).ok()?;
+
+    let mut alignment = OpticalAlignment::new(
+        params_x[0], // a
+        params_x[1], // b
+        params_y[0], // c
+        params_y[1], // d
+        params_x[2], // tx
+        params_y[2], // ty
+        n,
+    );
+
+    // Compute RMS error
+    let mut sum_sq_error = 0.0;
+    for p in points {
+        let (pred_x, pred_y) = alignment.display_to_sensor(p.src_x, p.src_y);
+        let err_x = pred_x - p.dst_x;
+        let err_y = pred_y - p.dst_y;
+        sum_sq_error += err_x * err_x + err_y * err_y;
+    }
+    alignment.rms_error = Some((sum_sq_error / n as f64).sqrt());
+
+    Some(alignment)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,5 +222,56 @@ mod tests {
         let align = OpticalAlignment::new(0.0, -1.0, 1.0, 0.0, 0.0, 0.0, 100);
         let rot_deg = align.rotation_degrees();
         assert!((rot_deg - 90.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_estimate_affine_transform_identity_with_offset() {
+        // Points that form an identity transform with offset (10, 20)
+        let points = vec![
+            PointCorrespondence::new(0.0, 0.0, 10.0, 20.0),
+            PointCorrespondence::new(100.0, 0.0, 110.0, 20.0),
+            PointCorrespondence::new(0.0, 100.0, 10.0, 120.0),
+            PointCorrespondence::new(100.0, 100.0, 110.0, 120.0),
+        ];
+
+        let align = estimate_affine_transform(&points).unwrap();
+
+        // Should be ~identity with offset
+        assert!((align.a - 1.0).abs() < 1e-10);
+        assert!((align.d - 1.0).abs() < 1e-10);
+        assert!(align.b.abs() < 1e-10);
+        assert!(align.c.abs() < 1e-10);
+        assert!((align.tx - 10.0).abs() < 1e-10);
+        assert!((align.ty - 20.0).abs() < 1e-10);
+
+        // RMS error should be ~0
+        assert!(align.rms_error.unwrap() < 1e-10);
+    }
+
+    #[test]
+    fn test_estimate_affine_transform_scale() {
+        // Points that form a 2x scale transform
+        let points = vec![
+            PointCorrespondence::new(0.0, 0.0, 0.0, 0.0),
+            PointCorrespondence::new(100.0, 0.0, 200.0, 0.0),
+            PointCorrespondence::new(0.0, 100.0, 0.0, 200.0),
+            PointCorrespondence::new(100.0, 100.0, 200.0, 200.0),
+        ];
+
+        let align = estimate_affine_transform(&points).unwrap();
+
+        let (scale_x, scale_y) = align.scale();
+        assert!((scale_x - 2.0).abs() < 1e-10);
+        assert!((scale_y - 2.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_estimate_affine_transform_too_few_points() {
+        let points = vec![
+            PointCorrespondence::new(0.0, 0.0, 10.0, 20.0),
+            PointCorrespondence::new(100.0, 0.0, 110.0, 20.0),
+        ];
+
+        assert!(estimate_affine_transform(&points).is_none());
     }
 }
