@@ -18,5 +18,7 @@ pub mod optical_alignment;
 pub mod range_arg;
 pub mod star_projector;
 pub mod test_util;
+pub mod tracking_message;
 pub mod units;
 pub mod viz;
+pub mod zmq;

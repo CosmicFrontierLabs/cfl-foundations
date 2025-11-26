@@ -12,6 +12,8 @@ use serde::Serialize;
 use shared::camera_interface::{CameraInterface, Timestamp};
 use shared::config_storage::ConfigStorage;
 use shared::frame_writer::{FrameFormat, FrameWriterHandle};
+use shared::tracking_message::TrackingMessage;
+use shared::zmq::TypedZmqPublisher;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -96,6 +98,12 @@ struct Args {
         help = "Frame export queue buffer size (number of frames to buffer in RAM)"
     )]
     export_buffer_size: usize,
+
+    #[arg(
+        long,
+        help = "ZMQ PUB socket bind address for tracking updates (e.g., tcp://*:5555)"
+    )]
+    zmq_pub: Option<String>,
 }
 
 fn log_fgs_state(state: &monocle::FgsState) {
@@ -309,6 +317,22 @@ fn main() -> Result<()> {
     let current_tracking_state: Arc<Mutex<Option<(u32, f64, f64, Timestamp)>>> =
         Arc::new(Mutex::new(None));
 
+    let zmq_publisher: Option<Arc<TypedZmqPublisher<TrackingMessage>>> =
+        if let Some(ref bind_addr) = args.zmq_pub {
+            info!("Creating ZMQ PUB socket binding to {}", bind_addr);
+            let ctx = zmq::Context::new();
+            let socket = ctx
+                .socket(zmq::PUB)
+                .context("Failed to create ZMQ PUB socket")?;
+            socket
+                .bind(bind_addr)
+                .with_context(|| format!("Failed to bind ZMQ socket to {bind_addr}"))?;
+            info!("ZMQ PUB socket bound to {}", bind_addr);
+            Some(Arc::new(TypedZmqPublisher::new(socket)))
+        } else {
+            None
+        };
+
     info!("Creating Fine Guidance System");
     let mut fgs = FineGuidanceSystem::new(config);
 
@@ -317,6 +341,7 @@ fn main() -> Result<()> {
     let frame_writer_clone = frame_writer
         .as_ref()
         .map(|(writer, dir)| (writer.clone(), dir.clone()));
+    let zmq_publisher_clone = zmq_publisher.clone();
     let _callback_id = fgs.register_callback(move |event| match event {
         FgsCallbackEvent::TrackingStarted {
             track_id,
@@ -359,6 +384,18 @@ fn main() -> Result<()> {
                     if let Err(e) = csv.flush() {
                         warn!("Failed to flush CSV writer: {}", e);
                     }
+                }
+            }
+
+            if let Some(ref publisher) = zmq_publisher_clone {
+                let msg = TrackingMessage {
+                    track_id: *track_id,
+                    x: position.x,
+                    y: position.y,
+                    timestamp: position.timestamp,
+                };
+                if let Err(e) = publisher.send(&msg) {
+                    warn!("Failed to send ZMQ message: {}", e);
                 }
             }
         }
