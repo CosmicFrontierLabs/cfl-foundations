@@ -33,6 +33,192 @@ struct Args {
     list: bool,
 }
 
+// ============================================================================
+// Control Schema Types - Define UI controls that frontend renders dynamically
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ControlSpec {
+    IntRange {
+        id: String,
+        label: String,
+        min: i64,
+        max: i64,
+        step: i64,
+        default: i64,
+    },
+    FloatRange {
+        id: String,
+        label: String,
+        min: f64,
+        max: f64,
+        step: f64,
+        default: f64,
+    },
+    Bool {
+        id: String,
+        label: String,
+        default: bool,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PatternSpec {
+    pub id: String,
+    pub name: String,
+    pub controls: Vec<ControlSpec>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SchemaResponse {
+    pub patterns: Vec<PatternSpec>,
+    pub global_controls: Vec<ControlSpec>,
+}
+
+fn get_pattern_schemas() -> SchemaResponse {
+    SchemaResponse {
+        patterns: vec![
+            PatternSpec {
+                id: "April".into(),
+                name: "AprilTag Array".into(),
+                controls: vec![],
+            },
+            PatternSpec {
+                id: "Check".into(),
+                name: "Checkerboard".into(),
+                controls: vec![ControlSpec::IntRange {
+                    id: "checker_size".into(),
+                    label: "Checker Size (px)".into(),
+                    min: 10,
+                    max: 500,
+                    step: 10,
+                    default: 100,
+                }],
+            },
+            PatternSpec {
+                id: "Usaf".into(),
+                name: "USAF-1951 Target".into(),
+                controls: vec![],
+            },
+            PatternSpec {
+                id: "Static".into(),
+                name: "Digital Static".into(),
+                controls: vec![ControlSpec::IntRange {
+                    id: "pixel_size".into(),
+                    label: "Pixel Size (px)".into(),
+                    min: 1,
+                    max: 20,
+                    step: 1,
+                    default: 1,
+                }],
+            },
+            PatternSpec {
+                id: "Pixel".into(),
+                name: "Center Pixel".into(),
+                controls: vec![],
+            },
+            PatternSpec {
+                id: "CirclingPixel".into(),
+                name: "Circling Pixel".into(),
+                controls: vec![
+                    ControlSpec::IntRange {
+                        id: "orbit_count".into(),
+                        label: "Orbit Count".into(),
+                        min: 1,
+                        max: 10,
+                        step: 1,
+                        default: 1,
+                    },
+                    ControlSpec::IntRange {
+                        id: "orbit_radius_percent".into(),
+                        label: "Orbit Radius (% FOV)".into(),
+                        min: 5,
+                        max: 95,
+                        step: 5,
+                        default: 50,
+                    },
+                ],
+            },
+            PatternSpec {
+                id: "Uniform".into(),
+                name: "Uniform Screen".into(),
+                controls: vec![ControlSpec::IntRange {
+                    id: "level".into(),
+                    label: "Brightness Level".into(),
+                    min: 0,
+                    max: 255,
+                    step: 1,
+                    default: 128,
+                }],
+            },
+            PatternSpec {
+                id: "WigglingGaussian".into(),
+                name: "Wiggling Gaussian".into(),
+                controls: vec![
+                    ControlSpec::FloatRange {
+                        id: "fwhm".into(),
+                        label: "FWHM (px)".into(),
+                        min: 1.0,
+                        max: 100.0,
+                        step: 1.0,
+                        default: 47.0,
+                    },
+                    ControlSpec::FloatRange {
+                        id: "wiggle_radius".into(),
+                        label: "Wiggle Radius (px)".into(),
+                        min: 0.0,
+                        max: 50.0,
+                        step: 0.5,
+                        default: 3.0,
+                    },
+                    ControlSpec::FloatRange {
+                        id: "intensity".into(),
+                        label: "Intensity".into(),
+                        min: 0.0,
+                        max: 255.0,
+                        step: 1.0,
+                        default: 255.0,
+                    },
+                ],
+            },
+            PatternSpec {
+                id: "PixelGrid".into(),
+                name: "Pixel Grid".into(),
+                controls: vec![ControlSpec::IntRange {
+                    id: "spacing".into(),
+                    label: "Grid Spacing (px)".into(),
+                    min: 10,
+                    max: 200,
+                    step: 10,
+                    default: 50,
+                }],
+            },
+            PatternSpec {
+                id: "SiemensStar".into(),
+                name: "Siemens Star".into(),
+                controls: vec![ControlSpec::IntRange {
+                    id: "spokes".into(),
+                    label: "Number of Spokes".into(),
+                    min: 4,
+                    max: 72,
+                    step: 4,
+                    default: 24,
+                }],
+            },
+        ],
+        global_controls: vec![ControlSpec::Bool {
+            id: "invert".into(),
+            label: "Invert Colors".into(),
+            default: false,
+        }],
+    }
+}
+
+// ============================================================================
+// Pattern Config - Internal representation for pattern generation
+// ============================================================================
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(tag = "type")]
 enum PatternConfig {
@@ -180,12 +366,20 @@ async fn jpeg_pattern_endpoint(State(state): State<Arc<AppState>>) -> Response {
         .unwrap()
 }
 
+async fn get_schema() -> Json<SchemaResponse> {
+    Json(get_pattern_schemas())
+}
+
 async fn get_pattern_config(State(state): State<Arc<AppState>>) -> Response {
     let pattern_config = state.pattern.read().await.clone();
     let invert = *state.invert.read().await;
 
+    // Convert internal PatternConfig to dynamic format for frontend
+    let (pattern_id, values) = pattern_config_to_dynamic(&pattern_config);
+
     let json = serde_json::json!({
-        "pattern": pattern_config,
+        "pattern_id": pattern_id,
+        "values": values,
         "invert": invert,
     });
 
@@ -195,32 +389,117 @@ async fn get_pattern_config(State(state): State<Arc<AppState>>) -> Response {
         .unwrap()
 }
 
+fn pattern_config_to_dynamic(config: &PatternConfig) -> (String, serde_json::Value) {
+    use serde_json::json;
+    match config {
+        PatternConfig::April => ("April".into(), json!({})),
+        PatternConfig::Check { checker_size } => {
+            ("Check".into(), json!({"checker_size": checker_size}))
+        }
+        PatternConfig::Usaf => ("Usaf".into(), json!({})),
+        PatternConfig::Static { pixel_size } => {
+            ("Static".into(), json!({"pixel_size": pixel_size}))
+        }
+        PatternConfig::Pixel => ("Pixel".into(), json!({})),
+        PatternConfig::CirclingPixel {
+            orbit_count,
+            orbit_radius_percent,
+        } => (
+            "CirclingPixel".into(),
+            json!({"orbit_count": orbit_count, "orbit_radius_percent": orbit_radius_percent}),
+        ),
+        PatternConfig::Uniform { level } => ("Uniform".into(), json!({"level": level})),
+        PatternConfig::WigglingGaussian {
+            fwhm,
+            wiggle_radius,
+            intensity,
+        } => (
+            "WigglingGaussian".into(),
+            json!({"fwhm": fwhm, "wiggle_radius": wiggle_radius, "intensity": intensity}),
+        ),
+        PatternConfig::PixelGrid { spacing } => ("PixelGrid".into(), json!({"spacing": spacing})),
+        PatternConfig::SiemensStar { spokes } => ("SiemensStar".into(), json!({"spokes": spokes})),
+    }
+}
+
 #[derive(Debug, Deserialize)]
-struct UpdatePatternRequest {
-    pattern: PatternConfig,
+struct DynamicPatternRequest {
+    pattern_id: String,
+    values: serde_json::Map<String, serde_json::Value>,
     invert: Option<bool>,
+}
+
+fn dynamic_to_pattern_config(
+    pattern_id: &str,
+    values: &serde_json::Map<String, serde_json::Value>,
+) -> Result<PatternConfig, String> {
+    let get_i64 = |key: &str, default: i64| -> i64 {
+        values.get(key).and_then(|v| v.as_i64()).unwrap_or(default)
+    };
+    let get_f64 = |key: &str, default: f64| -> f64 {
+        values.get(key).and_then(|v| v.as_f64()).unwrap_or(default)
+    };
+
+    match pattern_id {
+        "April" => Ok(PatternConfig::April),
+        "Check" => Ok(PatternConfig::Check {
+            checker_size: get_i64("checker_size", 100) as u32,
+        }),
+        "Usaf" => Ok(PatternConfig::Usaf),
+        "Static" => Ok(PatternConfig::Static {
+            pixel_size: get_i64("pixel_size", 1) as u32,
+        }),
+        "Pixel" => Ok(PatternConfig::Pixel),
+        "CirclingPixel" => Ok(PatternConfig::CirclingPixel {
+            orbit_count: get_i64("orbit_count", 1) as u32,
+            orbit_radius_percent: get_i64("orbit_radius_percent", 50) as u32,
+        }),
+        "Uniform" => Ok(PatternConfig::Uniform {
+            level: get_i64("level", 128) as u8,
+        }),
+        "WigglingGaussian" => Ok(PatternConfig::WigglingGaussian {
+            fwhm: get_f64("fwhm", 47.0),
+            wiggle_radius: get_f64("wiggle_radius", 3.0),
+            intensity: get_f64("intensity", 255.0),
+        }),
+        "PixelGrid" => Ok(PatternConfig::PixelGrid {
+            spacing: get_i64("spacing", 50) as u32,
+        }),
+        "SiemensStar" => Ok(PatternConfig::SiemensStar {
+            spokes: get_i64("spokes", 24) as u32,
+        }),
+        _ => Err(format!("Unknown pattern_id: {pattern_id}")),
+    }
 }
 
 async fn update_pattern_config(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<UpdatePatternRequest>,
+    Json(req): Json<DynamicPatternRequest>,
 ) -> Response {
-    *state.pattern.write().await = req.pattern;
+    match dynamic_to_pattern_config(&req.pattern_id, &req.values) {
+        Ok(pattern) => {
+            *state.pattern.write().await = pattern;
 
-    if let Some(invert) = req.invert {
-        *state.invert.write().await = invert;
+            if let Some(invert) = req.invert {
+                *state.invert.write().await = invert;
+            }
+
+            *state.pattern_start_time.write().await = std::time::Instant::now();
+
+            if let Some(ref tx) = state.display_update_tx {
+                let _ = tx.send(());
+            }
+
+            Response::builder()
+                .status(StatusCode::OK)
+                .body(Body::from("Pattern updated"))
+                .unwrap()
+        }
+        Err(e) => Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::from(e))
+            .unwrap(),
     }
-
-    *state.pattern_start_time.write().await = std::time::Instant::now();
-
-    if let Some(ref tx) = state.display_update_tx {
-        let _ = tx.send(());
-    }
-
-    Response::builder()
-        .status(StatusCode::OK)
-        .body(Body::from("Pattern updated"))
-        .unwrap()
 }
 
 #[tokio::main]
@@ -230,6 +509,7 @@ async fn run_web_server(state: Arc<AppState>, port: u16, bind_address: String) -
 
     let app = Router::new()
         .route("/", get(pattern_page))
+        .route("/schema", get(get_schema))
         .route("/jpeg", get(jpeg_pattern_endpoint))
         .route("/config", get(get_pattern_config))
         .route("/config", axum::routing::post(update_pattern_config))

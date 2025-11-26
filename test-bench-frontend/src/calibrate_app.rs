@@ -1,62 +1,90 @@
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
+// ============================================================================
+// Schema Types - Match backend definitions
+// ============================================================================
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
-pub enum PatternConfig {
-    Check {
-        checker_size: u32,
+pub enum ControlSpec {
+    IntRange {
+        id: String,
+        label: String,
+        min: i64,
+        max: i64,
+        step: i64,
+        default: i64,
     },
-    Usaf,
-    Static {
-        pixel_size: u32,
+    FloatRange {
+        id: String,
+        label: String,
+        min: f64,
+        max: f64,
+        step: f64,
+        default: f64,
     },
-    Pixel,
-    April,
-    CirclingPixel {
-        orbit_count: u32,
-        orbit_radius_percent: u32,
-    },
-    Uniform {
-        level: u8,
-    },
-    WigglingGaussian {
-        fwhm: f64,
-        wiggle_radius: f64,
-        intensity: f64,
-    },
-    PixelGrid {
-        spacing: u32,
-    },
-    SiemensStar {
-        spokes: u32,
+    Bool {
+        id: String,
+        label: String,
+        default: bool,
     },
 }
 
-impl Default for PatternConfig {
-    fn default() -> Self {
-        Self::April
-    }
-}
-
-impl PatternConfig {
-    fn name(&self) -> &'static str {
+impl ControlSpec {
+    fn id(&self) -> &str {
         match self {
-            Self::April => "AprilTag Array",
-            Self::Check { .. } => "Checkerboard",
-            Self::Usaf => "USAF-1951 Target",
-            Self::Static { .. } => "Digital Static",
-            Self::Pixel => "Center Pixel",
-            Self::CirclingPixel { .. } => "Circling Pixel",
-            Self::Uniform { .. } => "Uniform Screen",
-            Self::WigglingGaussian { .. } => "Wiggling Gaussian",
-            Self::PixelGrid { .. } => "Pixel Grid",
-            Self::SiemensStar { .. } => "Siemens Star",
+            ControlSpec::IntRange { id, .. } => id,
+            ControlSpec::FloatRange { id, .. } => id,
+            ControlSpec::Bool { id, .. } => id,
+        }
+    }
+
+    fn default_value(&self) -> ControlValue {
+        match self {
+            ControlSpec::IntRange { default, .. } => ControlValue::Int(*default),
+            ControlSpec::FloatRange { default, .. } => ControlValue::Float(*default),
+            ControlSpec::Bool { default, .. } => ControlValue::Bool(*default),
         }
     }
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ControlValue {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+}
+
+impl ControlValue {
+    fn to_json(&self) -> serde_json::Value {
+        match self {
+            ControlValue::Int(v) => serde_json::json!(v),
+            ControlValue::Float(v) => serde_json::json!(v),
+            ControlValue::Bool(v) => serde_json::json!(v),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PatternSpec {
+    pub id: String,
+    pub name: String,
+    pub controls: Vec<ControlSpec>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SchemaResponse {
+    pub patterns: Vec<PatternSpec>,
+    pub global_controls: Vec<ControlSpec>,
+}
+
+// ============================================================================
+// Component
+// ============================================================================
 
 #[derive(Properties, PartialEq)]
 pub struct CalibrateFrontendProps {
@@ -65,16 +93,21 @@ pub struct CalibrateFrontendProps {
 }
 
 pub struct CalibrateFrontend {
-    pattern: PatternConfig,
+    schema: Option<SchemaResponse>,
+    selected_pattern_id: String,
+    control_values: HashMap<String, ControlValue>,
     invert: bool,
-    current_pattern_name: String,
     image_url: String,
     image_refresh_handle: Option<gloo_timers::callback::Interval>,
     image_failure_count: u32,
+    loading_schema: bool,
 }
 
 pub enum Msg {
-    UpdatePattern(PatternConfig),
+    SchemaLoaded(SchemaResponse),
+    SchemaError,
+    SelectPattern(String),
+    UpdateControl(String, ControlValue),
     ToggleInvert,
     ApplyPattern,
     RefreshImage,
@@ -88,25 +121,63 @@ impl Component for CalibrateFrontend {
     type Properties = CalibrateFrontendProps;
 
     fn create(ctx: &Context<Self>) -> Self {
+        // Start image refresh timer
         let link = ctx.link().clone();
         let handle = gloo_timers::callback::Interval::new(100, move || {
             link.send_message(Msg::RefreshImage);
         });
 
+        // Fetch schema on load
+        let link = ctx.link().clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            match Request::get("/schema").send().await {
+                Ok(response) => {
+                    if let Ok(schema) = response.json::<SchemaResponse>().await {
+                        link.send_message(Msg::SchemaLoaded(schema));
+                    } else {
+                        link.send_message(Msg::SchemaError);
+                    }
+                }
+                Err(_) => {
+                    link.send_message(Msg::SchemaError);
+                }
+            }
+        });
+
         Self {
-            pattern: PatternConfig::default(),
+            schema: None,
+            selected_pattern_id: "April".to_string(),
+            control_values: HashMap::new(),
             invert: false,
-            current_pattern_name: "AprilTag Array".to_string(),
             image_url: format!("/jpeg?t={}", js_sys::Date::now()),
             image_refresh_handle: Some(handle),
             image_failure_count: 0,
+            loading_schema: true,
         }
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
-            Msg::UpdatePattern(pattern) => {
-                self.pattern = pattern;
+            Msg::SchemaLoaded(schema) => {
+                self.schema = Some(schema);
+                self.loading_schema = false;
+                // Initialize with defaults for first pattern
+                self.init_pattern_defaults();
+                ctx.link().send_message(Msg::ApplyPattern);
+                true
+            }
+            Msg::SchemaError => {
+                self.loading_schema = false;
+                true
+            }
+            Msg::SelectPattern(pattern_id) => {
+                self.selected_pattern_id = pattern_id;
+                self.init_pattern_defaults();
+                ctx.link().send_message(Msg::ApplyPattern);
+                true
+            }
+            Msg::UpdateControl(id, value) => {
+                self.control_values.insert(id, value);
                 ctx.link().send_message(Msg::ApplyPattern);
                 true
             }
@@ -116,13 +187,19 @@ impl Component for CalibrateFrontend {
                 true
             }
             Msg::ApplyPattern => {
-                let pattern = self.pattern.clone();
+                let pattern_id = self.selected_pattern_id.clone();
                 let invert = self.invert;
-                self.current_pattern_name = pattern.name().to_string();
+
+                // Build values map
+                let mut values = serde_json::Map::new();
+                for (k, v) in &self.control_values {
+                    values.insert(k.clone(), v.to_json());
+                }
 
                 wasm_bindgen_futures::spawn_local(async move {
                     let body = serde_json::json!({
-                        "pattern": pattern,
+                        "pattern_id": pattern_id,
+                        "values": values,
                         "invert": invert,
                     });
 
@@ -173,25 +250,33 @@ impl Component for CalibrateFrontend {
     fn view(&self, ctx: &Context<Self>) -> Html {
         let props = ctx.props();
 
+        if self.loading_schema {
+            return html! {
+                <div class="loading">{"Loading schema..."}</div>
+            };
+        }
+
+        let Some(schema) = &self.schema else {
+            return html! {
+                <div class="error">{"Failed to load schema from server"}</div>
+            };
+        };
+
+        let current_pattern = schema
+            .patterns
+            .iter()
+            .find(|p| p.id == self.selected_pattern_id);
+
         html! {
             <>
                 <div class="column left-panel">
                     <h2>{"Pattern Selection"}</h2>
-                    { self.view_pattern_selector(ctx) }
+                    { self.view_pattern_selector(ctx, schema) }
 
                     <h2 style="margin-top: 20px;">{"Pattern Parameters"}</h2>
-                    { self.view_pattern_params(ctx) }
+                    { self.view_pattern_controls(ctx, current_pattern) }
 
-                    <div class="control-group">
-                        <label style="cursor: pointer;">
-                            <input
-                                type="checkbox"
-                                checked={self.invert}
-                                onchange={ctx.link().callback(|_| Msg::ToggleInvert)}
-                            />
-                            <span style="margin-left: 5px;">{"Invert Colors"}</span>
-                        </label>
-                    </div>
+                    { self.view_global_controls(ctx, schema) }
                 </div>
 
                 <div class="column center-panel">
@@ -212,20 +297,21 @@ impl Component for CalibrateFrontend {
                     </div>
                     <div class="info-item">
                         <span class="info-label">{"Current Pattern:"}</span><br/>
-                        <span class="status">{&self.current_pattern_name}</span>
+                        <span class="status">{
+                            current_pattern.map(|p| p.name.as_str()).unwrap_or("Unknown")
+                        }</span>
                     </div>
 
                     <h2 style="margin-top: 30px;">{"Endpoints"}</h2>
                     <div class="info-item">
                         <a href="/jpeg">{"JPEG Pattern"}</a><br/>
-                        <a href="/config">{"Config (JSON)"}</a>
+                        <a href="/config">{"Config (JSON)"}</a><br/>
+                        <a href="/schema">{"Schema (JSON)"}</a>
                     </div>
 
                     <h2 style="margin-top: 30px;">{"Info"}</h2>
                     <div class="info-item" style="font-size: 0.8em; color: #00aa00;">
-                        {"This server generates calibration patterns for display testing and camera calibration."}
-                        <br/><br/>
-                        {"Adjust parameters in real-time using the controls on the left."}
+                        {"Controls are dynamically loaded from the server schema."}
                         <br/><br/>
                         {"Animated patterns (Static, Circling Pixel, Wiggling Gaussian) will continuously regenerate."}
                     </div>
@@ -249,176 +335,203 @@ impl CalibrateFrontend {
         }
     }
 
-    fn view_pattern_selector(&self, ctx: &Context<Self>) -> Html {
+    fn init_pattern_defaults(&mut self) {
+        self.control_values.clear();
+
+        if let Some(schema) = &self.schema {
+            if let Some(pattern) = schema
+                .patterns
+                .iter()
+                .find(|p| p.id == self.selected_pattern_id)
+            {
+                for control in &pattern.controls {
+                    self.control_values
+                        .insert(control.id().to_string(), control.default_value());
+                }
+            }
+        }
+    }
+
+    fn view_pattern_selector(&self, ctx: &Context<Self>, schema: &SchemaResponse) -> Html {
         let onchange = ctx.link().callback(|e: Event| {
             let target: HtmlInputElement = e.target_unchecked_into();
-            let value = target.value();
-
-            let pattern = match value.as_str() {
-                "April" => PatternConfig::April,
-                "Check" => PatternConfig::Check { checker_size: 100 },
-                "Usaf" => PatternConfig::Usaf,
-                "Static" => PatternConfig::Static { pixel_size: 1 },
-                "Pixel" => PatternConfig::Pixel,
-                "CirclingPixel" => PatternConfig::CirclingPixel {
-                    orbit_count: 1,
-                    orbit_radius_percent: 50,
-                },
-                "Uniform" => PatternConfig::Uniform { level: 128 },
-                "WigglingGaussian" => PatternConfig::WigglingGaussian {
-                    fwhm: 47.0,
-                    wiggle_radius: 3.0,
-                    intensity: 255.0,
-                },
-                "PixelGrid" => PatternConfig::PixelGrid { spacing: 50 },
-                "SiemensStar" => PatternConfig::SiemensStar { spokes: 24 },
-                _ => PatternConfig::April,
-            };
-
-            Msg::UpdatePattern(pattern)
+            Msg::SelectPattern(target.value())
         });
 
         html! {
             <div class="control-group">
                 <label class="control-label">{"Pattern Type:"}</label>
                 <select id="pattern-type" {onchange}>
-                    <option value="April" selected={matches!(self.pattern, PatternConfig::April)}>{"AprilTag Array"}</option>
-                    <option value="Check" selected={matches!(self.pattern, PatternConfig::Check {..})}>{"Checkerboard"}</option>
-                    <option value="Usaf" selected={matches!(self.pattern, PatternConfig::Usaf)}>{"USAF-1951 Target"}</option>
-                    <option value="Static" selected={matches!(self.pattern, PatternConfig::Static {..})}>{"Digital Static"}</option>
-                    <option value="Pixel" selected={matches!(self.pattern, PatternConfig::Pixel)}>{"Center Pixel"}</option>
-                    <option value="CirclingPixel" selected={matches!(self.pattern, PatternConfig::CirclingPixel {..})}>{"Circling Pixel"}</option>
-                    <option value="Uniform" selected={matches!(self.pattern, PatternConfig::Uniform {..})}>{"Uniform Screen"}</option>
-                    <option value="WigglingGaussian" selected={matches!(self.pattern, PatternConfig::WigglingGaussian {..})}>{"Wiggling Gaussian"}</option>
-                    <option value="PixelGrid" selected={matches!(self.pattern, PatternConfig::PixelGrid {..})}>{"Pixel Grid"}</option>
-                    <option value="SiemensStar" selected={matches!(self.pattern, PatternConfig::SiemensStar {..})}>{"Siemens Star"}</option>
+                    { for schema.patterns.iter().map(|p| {
+                        let selected = p.id == self.selected_pattern_id;
+                        html! {
+                            <option value={p.id.clone()} {selected}>{&p.name}</option>
+                        }
+                    })}
                 </select>
             </div>
         }
     }
 
-    fn view_pattern_params(&self, ctx: &Context<Self>) -> Html {
-        match &self.pattern {
-            PatternConfig::Check { checker_size } => {
-                let oninput = ctx.link().callback(|e: InputEvent| {
-                    let target: HtmlInputElement = e.target_unchecked_into();
-                    let value = target.value().parse().unwrap_or(100);
-                    Msg::UpdatePattern(PatternConfig::Check {
-                        checker_size: value,
+    fn view_pattern_controls(&self, ctx: &Context<Self>, pattern: Option<&PatternSpec>) -> Html {
+        let Some(pattern) = pattern else {
+            return html! {};
+        };
+
+        if pattern.controls.is_empty() {
+            return html! {
+                <div class="control-group" style="color: #888;">
+                    {"No parameters for this pattern"}
+                </div>
+            };
+        }
+
+        html! {
+            <>
+                { for pattern.controls.iter().map(|control| {
+                    self.view_control(ctx, control)
+                })}
+            </>
+        }
+    }
+
+    fn view_control(&self, ctx: &Context<Self>, control: &ControlSpec) -> Html {
+        match control {
+            ControlSpec::IntRange {
+                id,
+                label,
+                min,
+                max,
+                step,
+                ..
+            } => {
+                let current_value = self
+                    .control_values
+                    .get(id)
+                    .and_then(|v| match v {
+                        ControlValue::Int(i) => Some(*i),
+                        _ => None,
                     })
-                });
+                    .unwrap_or(*min);
 
-                html! {
-                    <div class="control-group">
-                        <label class="control-label">
-                            {"Checker Size (px): "}
-                            <span class="range-value">{checker_size}</span>
-                        </label>
-                        <input
-                            type="range"
-                            min="10"
-                            max="500"
-                            value={checker_size.to_string()}
-                            step="10"
-                            {oninput}
-                        />
-                    </div>
-                }
-            }
-            PatternConfig::Static { pixel_size } => {
-                let oninput = ctx.link().callback(|e: InputEvent| {
+                let id_clone = id.clone();
+                let oninput = ctx.link().callback(move |e: InputEvent| {
                     let target: HtmlInputElement = e.target_unchecked_into();
-                    let value = target.value().parse().unwrap_or(1);
-                    Msg::UpdatePattern(PatternConfig::Static { pixel_size: value })
+                    let value = target.value().parse().unwrap_or(0);
+                    Msg::UpdateControl(id_clone.clone(), ControlValue::Int(value))
                 });
 
                 html! {
                     <div class="control-group">
                         <label class="control-label">
-                            {"Pixel Size (px): "}
-                            <span class="range-value">{pixel_size}</span>
+                            {label}{": "}
+                            <span class="range-value">{current_value}</span>
                         </label>
                         <input
                             type="range"
-                            min="1"
-                            max="20"
-                            value={pixel_size.to_string()}
+                            min={min.to_string()}
+                            max={max.to_string()}
+                            step={step.to_string()}
+                            value={current_value.to_string()}
                             {oninput}
                         />
                     </div>
                 }
             }
-            PatternConfig::Uniform { level } => {
-                let oninput = ctx.link().callback(|e: InputEvent| {
+            ControlSpec::FloatRange {
+                id,
+                label,
+                min,
+                max,
+                step,
+                ..
+            } => {
+                let current_value = self
+                    .control_values
+                    .get(id)
+                    .and_then(|v| match v {
+                        ControlValue::Float(f) => Some(*f),
+                        _ => None,
+                    })
+                    .unwrap_or(*min);
+
+                let id_clone = id.clone();
+                let oninput = ctx.link().callback(move |e: InputEvent| {
                     let target: HtmlInputElement = e.target_unchecked_into();
-                    let value = target.value().parse().unwrap_or(128);
-                    Msg::UpdatePattern(PatternConfig::Uniform { level: value })
+                    let value = target.value().parse().unwrap_or(0.0);
+                    Msg::UpdateControl(id_clone.clone(), ControlValue::Float(value))
                 });
 
                 html! {
                     <div class="control-group">
                         <label class="control-label">
-                            {"Brightness Level: "}
-                            <span class="range-value">{level}</span>
+                            {label}{": "}
+                            <span class="range-value">{format!("{:.1}", current_value)}</span>
                         </label>
                         <input
                             type="range"
-                            min="0"
-                            max="255"
-                            value={level.to_string()}
+                            min={min.to_string()}
+                            max={max.to_string()}
+                            step={step.to_string()}
+                            value={current_value.to_string()}
                             {oninput}
                         />
                     </div>
                 }
             }
-            PatternConfig::PixelGrid { spacing } => {
-                let oninput = ctx.link().callback(|e: InputEvent| {
-                    let target: HtmlInputElement = e.target_unchecked_into();
-                    let value = target.value().parse().unwrap_or(50);
-                    Msg::UpdatePattern(PatternConfig::PixelGrid { spacing: value })
+            ControlSpec::Bool { id, label, .. } => {
+                let current_value = self
+                    .control_values
+                    .get(id)
+                    .and_then(|v| match v {
+                        ControlValue::Bool(b) => Some(*b),
+                        _ => None,
+                    })
+                    .unwrap_or(false);
+
+                let id_clone = id.clone();
+                let onchange = ctx.link().callback(move |_| {
+                    Msg::UpdateControl(id_clone.clone(), ControlValue::Bool(!current_value))
                 });
 
                 html! {
                     <div class="control-group">
-                        <label class="control-label">
-                            {"Grid Spacing (px): "}
-                            <span class="range-value">{spacing}</span>
+                        <label style="cursor: pointer;">
+                            <input
+                                type="checkbox"
+                                checked={current_value}
+                                {onchange}
+                            />
+                            <span style="margin-left: 5px;">{label}</span>
                         </label>
-                        <input
-                            type="range"
-                            min="10"
-                            max="200"
-                            value={spacing.to_string()}
-                            {oninput}
-                        />
                     </div>
                 }
             }
-            PatternConfig::SiemensStar { spokes } => {
-                let oninput = ctx.link().callback(|e: InputEvent| {
-                    let target: HtmlInputElement = e.target_unchecked_into();
-                    let value = target.value().parse().unwrap_or(24);
-                    Msg::UpdatePattern(PatternConfig::SiemensStar { spokes: value })
-                });
+        }
+    }
 
-                html! {
-                    <div class="control-group">
-                        <label class="control-label">
-                            {"Number of Spokes: "}
-                            <span class="range-value">{spokes}</span>
-                        </label>
+    fn view_global_controls(&self, ctx: &Context<Self>, schema: &SchemaResponse) -> Html {
+        // Handle invert specially since it's a known global control
+        let has_invert = schema
+            .global_controls
+            .iter()
+            .any(|c| matches!(c, ControlSpec::Bool { id, .. } if id == "invert"));
+
+        if has_invert {
+            html! {
+                <div class="control-group">
+                    <label style="cursor: pointer;">
                         <input
-                            type="range"
-                            min="4"
-                            max="72"
-                            value={spokes.to_string()}
-                            step="4"
-                            {oninput}
+                            type="checkbox"
+                            checked={self.invert}
+                            onchange={ctx.link().callback(|_| Msg::ToggleInvert)}
                         />
-                    </div>
-                }
+                        <span style="margin-left: 5px;">{"Invert Colors"}</span>
+                    </label>
+                </div>
             }
-            _ => html! {},
+        } else {
+            html! {}
         }
     }
 }
