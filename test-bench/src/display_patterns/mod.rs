@@ -6,6 +6,7 @@ pub mod gyro_walk;
 pub mod motion_profile;
 pub mod pixel;
 pub mod pixel_grid;
+pub mod shared;
 pub mod siemens_star;
 pub mod static_noise;
 pub mod uniform;
