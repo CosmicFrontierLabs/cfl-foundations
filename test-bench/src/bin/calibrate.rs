@@ -6,7 +6,9 @@ use sdl2::rect::Rect;
 use std::path::PathBuf;
 use std::time::SystemTime;
 use test_bench::display_patterns as patterns;
-use test_bench::display_utils::{get_display_resolution, list_displays, SdlResultExt};
+use test_bench::display_utils::{
+    get_display_resolution, list_displays, resolve_display_index, SdlResultExt,
+};
 
 #[derive(Debug, Clone, ValueEnum)]
 enum PatternType {
@@ -165,7 +167,7 @@ fn main() -> Result<()> {
         return list_displays(&video_subsystem);
     }
 
-    let display_index = args.display.unwrap_or(0);
+    let display_index = resolve_display_index(&video_subsystem, args.display)?;
 
     let bounds = video_subsystem
         .display_bounds(display_index as i32)

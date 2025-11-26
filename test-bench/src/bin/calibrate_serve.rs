@@ -14,7 +14,7 @@ use std::net::SocketAddr;
 use std::sync::mpsc;
 use std::sync::Arc;
 use test_bench::display_patterns as patterns;
-use test_bench::display_utils::{get_display_resolution, list_displays};
+use test_bench::display_utils::{get_display_resolution, list_displays, resolve_display_index};
 use tokio::sync::RwLock;
 
 #[derive(Parser, Debug)]
@@ -461,7 +461,7 @@ fn main() -> Result<()> {
         return list_displays(&video_subsystem);
     }
 
-    let display_index = args.display.unwrap_or(0);
+    let display_index = resolve_display_index(&video_subsystem, args.display)?;
     let (width, height) = get_display_resolution(&video_subsystem, display_index)?;
 
     tracing::info!("Using display {display_index}: {}x{}", width, height);
