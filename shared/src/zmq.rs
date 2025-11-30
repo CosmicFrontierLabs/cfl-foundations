@@ -75,6 +75,18 @@ impl<T: DeserializeOwned> TypedZmqSubscriber<T> {
         }
     }
 
+    /// Connect to a ZMQ endpoint and subscribe to all messages.
+    ///
+    /// # Errors
+    /// Returns an error if socket creation, connection, or subscription fails.
+    pub fn connect(endpoint: &str) -> Result<Self, zmq::Error> {
+        let ctx = zmq::Context::new();
+        let socket = ctx.socket(zmq::SUB)?;
+        socket.connect(endpoint)?;
+        socket.set_subscribe(b"")?;
+        Ok(Self::new(socket))
+    }
+
     /// Try to receive a single message (non-blocking).
     ///
     /// Returns `None` if no message is available or if deserialization fails.

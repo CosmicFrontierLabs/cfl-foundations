@@ -3,8 +3,10 @@ use clap::{Parser, ValueEnum};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::rect::Rect;
+use shared::config_storage::ConfigStorage;
+use shared::image_size::PixelShape;
 use std::path::PathBuf;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use test_bench::display_patterns as patterns;
 use test_bench::display_utils::{
     get_display_resolution, list_displays, resolve_display_index, SdlResultExt,
@@ -24,6 +26,7 @@ enum PatternType {
     SiemensStar,
     MotionProfile,
     GyroWalk,
+    OpticalCalibration,
 }
 
 #[derive(Parser, Debug)]
@@ -73,10 +76,38 @@ struct Args {
 
     #[arg(
         long,
-        help = "Orbit radius as percentage of FOV (0-100)",
+        help = "Orbit radius as percentage of FOV (0-100) for circling-pixel pattern",
         default_value = "50"
     )]
     orbit_radius_percent: u32,
+
+    #[arg(
+        long,
+        help = "Grid size for optical-calibration pattern (NxN points)",
+        default_value = "5"
+    )]
+    calibration_grid_size: usize,
+
+    #[arg(
+        long,
+        help = "Grid spacing in pixels for optical-calibration pattern",
+        default_value = "5.0"
+    )]
+    calibration_grid_spacing: f64,
+
+    #[arg(
+        long,
+        help = "Spot FWHM in pixels for optical-calibration pattern",
+        default_value = "2.0"
+    )]
+    spot_fwhm_pixels: f64,
+
+    #[arg(
+        long,
+        help = "Warmup time in seconds to ignore before collecting calibration data",
+        default_value = "5.0"
+    )]
+    warmup_secs: f64,
 
     #[arg(long, help = "Uniform brightness level (0-255)", default_value = "0")]
     uniform_level: u8,
@@ -147,6 +178,12 @@ struct Args {
         default_value = "1.0"
     )]
     gyro_motion_scale: f64,
+
+    #[arg(
+        long,
+        help = "ZMQ SUB endpoint for closed-loop pattern (e.g., tcp://orin.tail12345.ts.net:5555)"
+    )]
+    zmq_sub: Option<String>,
 
     #[arg(short, long, help = "Invert pattern colors (black <-> white)")]
     invert: bool,
@@ -455,6 +492,41 @@ fn main() -> Result<()> {
 
             (img, "Gyro Walk")
         }
+        PatternType::OpticalCalibration => {
+            let grid_radius =
+                args.calibration_grid_spacing * (args.calibration_grid_size - 1) as f64 / 2.0;
+            println!("Generating optical calibration pattern");
+            println!("  Pattern size: {pattern_width}x{pattern_height}");
+            println!(
+                "  Grid: {}x{} points, {} pixel spacing (radius {:.1} pixels)",
+                args.calibration_grid_size,
+                args.calibration_grid_size,
+                args.calibration_grid_spacing,
+                grid_radius
+            );
+            println!("  Spot FWHM: {} pixels", args.spot_fwhm_pixels);
+            println!("  Warmup period: {} seconds", args.warmup_secs);
+            if let Some(ref endpoint) = args.zmq_sub {
+                println!("  ZMQ SUB endpoint: {endpoint}");
+            } else {
+                println!("  ZMQ SUB: not configured (running without feedback)");
+            }
+            println!(
+                "  Display {}: {}x{} at ({}, {})",
+                display_index,
+                mode.w,
+                mode.h,
+                bounds.x(),
+                bounds.y()
+            );
+
+            let mut img = image::RgbImage::new(pattern_width, pattern_height);
+            for pixel in img.pixels_mut() {
+                *pixel = image::Rgb([0, 0, 0]);
+            }
+
+            (img, "Optical Calibration")
+        }
     };
 
     if args.invert {
@@ -523,6 +595,7 @@ fn main() -> Result<()> {
             | PatternType::WigglingGaussian
             | PatternType::MotionProfile
             | PatternType::GyroWalk
+            | PatternType::OpticalCalibration
     );
     let mut static_buffer = if is_animated {
         Some(vec![0u8; (pattern_width * pattern_height * 3) as usize])
@@ -558,6 +631,29 @@ fn main() -> Result<()> {
         );
 
         Some((base_img, std::sync::Mutex::new(gyro_state)))
+    } else {
+        None
+    };
+
+    let optical_cal_data = if matches!(args.pattern, PatternType::OpticalCalibration) {
+        let zmq_endpoint = args.zmq_sub.as_deref().ok_or_else(|| {
+            anyhow::anyhow!("--zmq-sub is required for optical-calibration pattern")
+        })?;
+        let zmq_subscriber = shared::zmq::TypedZmqSubscriber::connect(zmq_endpoint)
+            .map_err(|e| anyhow::anyhow!("Failed to connect ZMQ subscriber: {e}"))?;
+        println!("ZMQ SUB connected to {zmq_endpoint}");
+
+        let pattern_size =
+            PixelShape::with_width_height(pattern_width as usize, pattern_height as usize);
+        let optical_cal_state = patterns::optical_calibration::CalibrationRunner::for_grid(
+            zmq_subscriber,
+            args.calibration_grid_size,
+            args.calibration_grid_spacing,
+            pattern_size,
+            args.spot_fwhm_pixels,
+            Duration::from_secs_f64(args.warmup_secs),
+        );
+        Some(std::sync::Mutex::new(optical_cal_state))
     } else {
         None
     };
@@ -645,6 +741,19 @@ fn main() -> Result<()> {
                         );
                     }
                 }
+                PatternType::OpticalCalibration => {
+                    if let Some(ref optical_cal_state) = optical_cal_data {
+                        let size = PixelShape::with_width_height(
+                            pattern_width as usize,
+                            pattern_height as usize,
+                        );
+                        patterns::optical_calibration::generate_into_buffer(
+                            buffer,
+                            size,
+                            optical_cal_state,
+                        );
+                    }
+                }
                 _ => {}
             }
             texture
@@ -665,6 +774,33 @@ fn main() -> Result<()> {
             println!("FPS: {fps:.1}");
             frame_count = 0;
             last_fps_report = std::time::Instant::now();
+        }
+    }
+
+    // Save optical calibration on exit
+    if let Some(ref optical_cal_state) = optical_cal_data {
+        let state = optical_cal_state.lock().unwrap();
+        if let Some(alignment) = state.estimate_transform() {
+            let (sx, sy) = alignment.scale();
+            println!(
+                "Calibration: scale=({:.4}, {:.4}), rot={:.2}°, offset=({:.1}, {:.1})",
+                sx,
+                sy,
+                alignment.rotation_degrees(),
+                alignment.tx,
+                alignment.ty
+            );
+            println!("  Points used: {}", alignment.num_points);
+            if let Some(rms) = alignment.rms_error {
+                println!("  RMS error: {rms:.3} pixels");
+            }
+
+            match ConfigStorage::new().and_then(|s| s.save_optical_alignment(&alignment)) {
+                Ok(path) => println!("Saved to: {}", path.display()),
+                Err(e) => eprintln!("Failed to save: {e}"),
+            }
+        } else {
+            println!("No calibration data to save (not enough points collected)");
         }
     }
 

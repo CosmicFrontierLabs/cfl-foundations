@@ -27,6 +27,16 @@
   - Current: 120 second timeout for 10 Mbps adapter (NSV455 full-res frames are ~102MB)
   - Needed: Reduce to ~30 seconds when proper ethernet is installed
   - Why: Current timeout is unnecessarily long for normal network conditions
+- [ ] Accept SpotParams directly in render_gaussian_spot
+  - Location: test-bench/src/display_patterns/shared.rs (render_gaussian_spot function)
+  - Current: Takes x, y, fwhm_pixels, normalization_factor as separate arguments
+  - Needed: Accept SpotParams struct to reduce argument count and improve type safety
+  - Why: SpotParams already bundles these values, passing struct is cleaner
+- [ ] Gate clock_comparison ARM assembly to aarch64 target only
+  - Location: test-bench/src/bin/clock_comparison.rs:8
+  - Current: Uses ARM-specific `mrs` instruction that fails on x86_64 builds
+  - Needed: Add `#[cfg(target_arch = "aarch64")]` and provide x86 fallback or exclude binary
+  - Why: Breaks `cargo build --package test-bench` on x86_64 hosts
 
 ### Dependencies
 - [x] Update ndarray from 0.15 to 0.16 across all crates

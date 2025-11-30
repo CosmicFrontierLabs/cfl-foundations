@@ -4,6 +4,7 @@ pub mod checkerboard;
 pub mod circling_pixel;
 pub mod gyro_walk;
 pub mod motion_profile;
+pub mod optical_calibration;
 pub mod pixel;
 pub mod pixel_grid;
 pub mod shared;
