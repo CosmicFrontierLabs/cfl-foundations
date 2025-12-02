@@ -11,6 +11,7 @@ members = [
     "exolambda",
     "exail",
     "proto-control",
+    "hardware",
 ]
 resolver = "2"
 

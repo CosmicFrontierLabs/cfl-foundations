@@ -1,0 +1,24 @@
+[package]
+name = "hardware"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Hardware drivers for test bench equipment"
+repository.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "pi_fsm_test"
+path = "src/bin/pi_fsm_test.rs"
+
+[[bin]]
+name = "pi_raw_test"
+path = "src/bin/pi_raw_test.rs"
+
+[dependencies]
+anyhow = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[dev-dependencies]
