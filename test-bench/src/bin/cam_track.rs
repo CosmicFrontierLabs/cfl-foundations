@@ -57,6 +57,13 @@ struct Args {
     snr_dropout_threshold: f64,
 
     #[arg(
+        long,
+        default_value = "7.0",
+        help = "Expected FWHM of stars in pixels (used for centroiding and SNR calculation)"
+    )]
+    fwhm: f64,
+
+    #[arg(
         short = 'e',
         long,
         default_value = "25",
@@ -299,7 +306,7 @@ fn main() -> Result<()> {
         roi_size: args.roi_size,
         max_reacquisition_attempts: 5,
         centroid_radius_multiplier: 3.0,
-        fwhm: 7.0,
+        fwhm: args.fwhm,
         snr_dropout_threshold: args.snr_dropout_threshold,
     };
 
