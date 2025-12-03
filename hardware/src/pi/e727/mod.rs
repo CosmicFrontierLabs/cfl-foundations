@@ -98,9 +98,13 @@
 //!
 //! # References
 //!
-//! - E-727 User Manual: `ext_ref/E727-UserManual.txt`
-//! - GCS Commands: `ext_ref/GCS-Commands.txt`
-//! - Python reference: `ext_ref/PIPython/.../pipython/pidevice/gcs2/gcs2commands.py`
+//! - [PI E-727 Documentation (Google Drive)](https://drive.google.com/drive/u/0/folders/1ebFyabBYmZ5Ts942VnFBqXl_U1nlaOlV)
+
+mod errors;
+mod params;
+
+pub use errors::PiErrorCode;
+pub use params::SpaParam;
 
 use std::collections::HashMap;
 use std::net::ToSocketAddrs;
@@ -177,18 +181,25 @@ impl E727 {
 
         let axes = Self::query_axes(&mut device)?;
         debug!("Available axes: {:?}", axes);
+        debug!("Overriding to 1,2");
 
-        Ok(Self { device, axes })
+        Ok(Self {
+            device,
+            axes: vec!["1".to_string(), "2".to_string()],
+        })
     }
 
     /// Query available axes from the controller.
     fn query_axes(device: &mut GcsDevice) -> GcsResult<Vec<String>> {
         let response = device.query("SAI?")?;
-        Ok(response
+        debug!("SAI? raw response: {:?}", response);
+        let axes: Vec<String> = response
             .lines()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
-            .collect())
+            .collect();
+        debug!("Parsed axes: {:?}", axes);
+        Ok(axes)
     }
 
     /// Set the timeout for operations.
@@ -196,6 +207,14 @@ impl E727 {
     /// The default is 7 seconds. Increase for long moves or homing operations.
     pub fn set_timeout(&mut self, timeout: Duration) {
         self.device.set_timeout(timeout);
+    }
+
+    /// Get mutable access to the underlying GCS device.
+    ///
+    /// Use this for low-level commands not exposed by the E727 API,
+    /// such as data recorder configuration.
+    pub fn device_mut(&mut self) -> &mut GcsDevice {
+        &mut self.device
     }
 
     /// Query device identification string.
@@ -210,8 +229,34 @@ impl E727 {
     /// Get the list of available axis identifiers.
     ///
     /// Typically returns `["1", "2", "3", "4"]` for a 4-axis E-727.
+    /// Note: This includes all axes reported by the controller, even if
+    /// some are not physically connected. Use [`connected_axes()`](Self::connected_axes)
+    /// to get only axes with valid sensor readings.
     pub fn axes(&self) -> &[String] {
         &self.axes
+    }
+
+    /// Get axes that appear to be connected (position within valid range).
+    ///
+    /// Filters out axes where the position reading is outside the travel range,
+    /// which typically indicates a disconnected or malfunctioning sensor.
+    pub fn connected_axes(&mut self) -> GcsResult<Vec<String>> {
+        let mut connected = Vec::new();
+        for axis in &self.axes.clone() {
+            let pos = self.get_position(axis)?;
+            let (min, max) = self.get_travel_range(axis)?;
+            // Allow 10% margin outside range for drift
+            let margin = (max - min) * 0.1;
+            if pos >= min - margin && pos <= max + margin {
+                connected.push(axis.clone());
+            } else {
+                debug!(
+                    "Axis {} appears disconnected: position {:.1} outside [{:.1}, {:.1}]",
+                    axis, pos, min, max
+                );
+            }
+        }
+        Ok(connected)
     }
 
     // ==================== Position Queries ====================
@@ -316,6 +361,19 @@ impl E727 {
     /// * `distance` - Distance to move (positive or negative)
     pub fn move_relative(&mut self, axis: &str, distance: f64) -> GcsResult<()> {
         self.device.command(&format!("MVR {axis} {distance}"))
+    }
+
+    /// Fast 2-axis move without error checking.
+    ///
+    /// Sends a single MOV command for both axes without querying ERR? afterward.
+    /// Use this for high-speed motion loops where latency matters.
+    ///
+    /// # Safety
+    ///
+    /// No error checking is performed. Use [`move_to`](Self::move_to) or
+    /// [`move_all`](Self::move_all) for commands that need verification.
+    pub fn move_xy_fast(&mut self, x: f64, y: f64) -> GcsResult<()> {
+        self.device.send(&format!("MOV 1 {x} 2 {y}"))
     }
 
     // ==================== Servo Control ====================
@@ -471,6 +529,31 @@ impl E727 {
         Err(GcsError::ParseError("No unit in response".to_string()))
     }
 
+    /// Get the center position of an axis (midpoint of travel range).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use hardware::pi::E727;
+    /// # let mut fsm = E727::connect_ip("192.168.15.210")?;
+    /// let center = fsm.get_center("1")?;
+    /// println!("Axis 1 center: {} µrad", center);
+    /// # Ok::<(), hardware::pi::GcsError>(())
+    /// ```
+    pub fn get_center(&mut self, axis: &str) -> GcsResult<f64> {
+        let (min, max) = self.get_travel_range(axis)?;
+        Ok((min + max) / 2.0)
+    }
+
+    /// Get center positions for X and Y axes (1 and 2).
+    ///
+    /// Returns `(center_x, center_y)` tuple.
+    pub fn get_xy_centers(&mut self) -> GcsResult<(f64, f64)> {
+        let center_x = self.get_center("1")?;
+        let center_y = self.get_center("2")?;
+        Ok((center_x, center_y))
+    }
+
     // ==================== Utility Methods ====================
 
     /// Wait until all axes are on target or timeout.
@@ -509,8 +592,8 @@ impl E727 {
 
     /// Query the last error code from the controller.
     ///
-    /// Returns `0` if no error, otherwise a PI error code.
-    /// See [`GcsError::ControllerError`] for common error codes.
+    /// Returns the raw error code (0 = no error).
+    /// Use [`last_error_decoded`](Self::last_error_decoded) for a decoded error.
     pub fn last_error(&mut self) -> GcsResult<i32> {
         self.device.send("ERR?")?;
         let response = self.device.read()?;
@@ -518,5 +601,217 @@ impl E727 {
             .trim()
             .parse()
             .map_err(|_| GcsError::InvalidResponse(format!("Invalid error code: {response}")))
+    }
+
+    /// Query and decode the last error from the controller.
+    ///
+    /// Returns `None` if no error (code 0), otherwise returns the decoded error.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use hardware::pi::E727;
+    /// # let mut fsm = E727::connect_ip("192.168.15.210")?;
+    /// if let Some(err) = fsm.last_error_decoded()? {
+    ///     println!("Error {:?}: {}", err, err.description());
+    /// }
+    /// # Ok::<(), hardware::pi::GcsError>(())
+    /// ```
+    pub fn last_error_decoded(&mut self) -> GcsResult<Option<PiErrorCode>> {
+        let code = self.last_error()?;
+        if code == 0 {
+            return Ok(None);
+        }
+        Ok(PiErrorCode::from_code(code))
+    }
+
+    // ==================== Autozero ====================
+
+    /// Check if an axis has been autozeroed.
+    ///
+    /// Returns `true` if the axis has completed autozero successfully.
+    pub fn is_autozeroed(&mut self, axis: &str) -> GcsResult<bool> {
+        let response = self.device.query(&format!("ATZ? {axis}"))?;
+        Ok(response.contains("=1"))
+    }
+
+    /// Check if all axes have been autozeroed.
+    pub fn all_autozeroed(&mut self) -> GcsResult<bool> {
+        for axis in self.axes.clone() {
+            if !self.is_autozeroed(&axis)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Perform autozero on all axes.
+    ///
+    /// Autozero calibrates the piezo sensors and should be performed after power-on
+    /// or when position accuracy degrades. This operation takes several seconds.
+    ///
+    /// # Arguments
+    ///
+    /// * `force` - If `true`, always run autozero. If `false`, skip if already done.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(true)` - Autozero was performed
+    /// * `Ok(false)` - Autozero was skipped (already done and force=false)
+    /// * `Err(_)` - Autozero failed
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use hardware::pi::E727;
+    /// # let mut fsm = E727::connect_ip("192.168.15.210")?;
+    /// // Only autozero if needed
+    /// if fsm.autozero(false)? {
+    ///     println!("Autozero completed");
+    /// } else {
+    ///     println!("Already autozeroed, skipped");
+    /// }
+    ///
+    /// // Force autozero even if already done
+    /// fsm.autozero(true)?;
+    /// # Ok::<(), hardware::pi::GcsError>(())
+    /// ```
+    pub fn autozero(&mut self, force: bool) -> GcsResult<bool> {
+        // Check if already autozeroed
+        if !force && self.all_autozeroed()? {
+            return Ok(false);
+        }
+
+        info!("Starting autozero...");
+
+        // Send ATZ command to all axes
+        for axis in self.axes.clone() {
+            self.device.send(&format!("ATZ {axis} NaN"))?;
+
+            // Poll ATZ? until all axes are autozeroed
+            loop {
+                match self.is_autozeroed(&axis) {
+                    Ok(true) => {
+                        break;
+                    }
+                    Ok(false) => {
+                        debug!("ATZ? returned false, waiting...");
+                    }
+                    Err(GcsError::ControllerError {
+                        error: Some(PiErrorCode::AutozeroRunning),
+                        ..
+                    }) => {
+                        debug!("ATZ in progress...");
+                    }
+                    Err(err) => {
+                        return Err(err);
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(1000));
+            }
+
+            info!("Axis {} autozeroed", axis);
+        }
+
+        info!("Autozero complete");
+        Ok(true)
+    }
+
+    // ==================== Data Recording ====================
+
+    /// Record position error and current position data for an axis.
+    ///
+    /// Uses the E-727's built-in data recorder to capture high-speed (50kHz)
+    /// position data. Returns vectors of (error, position) samples.
+    ///
+    /// # Arguments
+    ///
+    /// * `axis` - Axis to record (e.g., "1", "2")
+    /// * `duration` - How long to record
+    ///
+    /// # Returns
+    ///
+    /// Tuple of (position_errors, positions) vectors, sampled at 50kHz (20µs intervals).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use hardware::pi::E727;
+    /// use std::time::Duration;
+    ///
+    /// # let mut fsm = E727::connect_ip("192.168.15.210")?;
+    /// let (errors, positions) = fsm.record_position("1", Duration::from_millis(200))?;
+    /// println!("Recorded {} samples", errors.len());
+    /// # Ok::<(), hardware::pi::GcsError>(())
+    /// ```
+    pub fn record_position(
+        &mut self,
+        axis: &str,
+        duration: Duration,
+    ) -> GcsResult<(Vec<f64>, Vec<f64>)> {
+        const RECORD_POSITION_ERROR: u8 = 3;
+        const RECORD_CURRENT_POSITION: u8 = 2;
+        const TRIGGER_IMMEDIATE: u8 = 4;
+
+        // Configure recorder: table 1=error, table 2=position
+        self.device.send("RTR 1")?; // Max sample rate (50kHz)
+        self.device
+            .send(&format!("DRC 1 {axis} {RECORD_POSITION_ERROR}"))?;
+        self.device
+            .send(&format!("DRC 2 {axis} {RECORD_CURRENT_POSITION}"))?;
+
+        // Start recording (immediate trigger)
+        self.device.send(&format!("DRT 1 {TRIGGER_IMMEDIATE} 0"))?;
+        self.device.send(&format!("DRT 2 {TRIGGER_IMMEDIATE} 0"))?;
+
+        // Wait for recording duration
+        std::thread::sleep(duration);
+
+        // Stop recording
+        self.device.send("DRT 1 0 0")?;
+        self.device.send("DRT 2 0 0")?;
+
+        // Get sample count
+        let response = self.device.query("DRL? 1")?;
+        let num_points: usize = response
+            .split('=')
+            .nth(1)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0);
+
+        if num_points == 0 {
+            return Ok((Vec::new(), Vec::new()));
+        }
+
+        // Read data from both tables
+        let resp1 = self.device.query(&format!("DRR? 1 {num_points} 1"))?;
+        let resp2 = self.device.query(&format!("DRR? 1 {num_points} 2"))?;
+
+        // Parse data (skip header lines starting with #)
+        let parse_data = |s: &str| -> Vec<f64> {
+            s.lines()
+                .filter_map(|l| {
+                    let t = l.trim();
+                    if t.is_empty() || t.starts_with('#') {
+                        None
+                    } else {
+                        t.parse().ok()
+                    }
+                })
+                .collect()
+        };
+
+        let errors = parse_data(&resp1);
+        let positions = parse_data(&resp2);
+
+        debug!(
+            "Recorded {} error samples, {} position samples",
+            errors.len(),
+            positions.len()
+        );
+
+        Ok((errors, positions))
     }
 }

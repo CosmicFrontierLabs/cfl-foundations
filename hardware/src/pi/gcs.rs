@@ -67,11 +67,7 @@
 //!
 //! # References
 //!
-//! - GCS Commands Manual: `ext_ref/GCS-Commands.txt` (converted from PZ281E PDF)
-//! - Python reference: `ext_ref/PIPython/PIPython/extracted/PIPython-2.10.2.1/pipython/`
-//!   - `pidevice/interfaces/pisocket.py` - TCP transport
-//!   - `pidevice/gcsmessages.py` - Message framing and error checking
-//!   - `pidevice/gcs2/gcs2commands.py` - High-level command wrappers
+//! - [PI E-727 Documentation (Google Drive)](https://drive.google.com/drive/u/0/folders/1ebFyabBYmZ5Ts942VnFBqXl_U1nlaOlV)
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -79,7 +75,9 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
 use thiserror::Error;
-use tracing::{debug, trace};
+use tracing::debug;
+
+use super::e727::PiErrorCode;
 
 /// Default TCP port for PI controllers.
 ///
@@ -114,21 +112,12 @@ pub enum GcsError {
     InvalidResponse(String),
 
     /// Controller reported an error via `ERR?` query.
-    ///
-    /// Common error codes:
-    /// - 1: Parameter syntax error
-    /// - 2: Unknown command
-    /// - 5: Unallowable move on unreferenced axis
-    /// - 6: Parameter out of range
-    /// - 7: Position out of limits
-    /// - 10: Controller in wrong state
-    /// - 23: Invalid axis identifier
-    #[error("Controller error {code}: {message}")]
+    #[error("Controller error {code}: {}", error.map(|e| e.description()).unwrap_or("Unknown error"))]
     ControllerError {
-        /// PI error code (1-25+)
+        /// Raw error code from controller
         code: i32,
-        /// Human-readable error description
-        message: String,
+        /// Decoded error if known
+        error: Option<PiErrorCode>,
     },
 
     /// Failed to parse response values.
@@ -305,18 +294,23 @@ impl GcsDevice {
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
+                    debug!("Read timeout TimedOut");
                     return Err(GcsError::Timeout);
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    debug!("Read timeout WouldBlock");
                     return Err(GcsError::Timeout);
                 }
-                Err(e) => return Err(e.into()),
+                Err(e) => {
+                    debug!("Read error: {}", e);
+                    return Err(e.into());
+                }
             }
         }
 
         // Convert Latin-1 to UTF-8 (Latin-1 bytes 0-255 map directly to Unicode code points)
         let response: String = bytes.iter().map(|&b| b as char).collect();
-        trace!("GCS recv: {:?}", response);
+        debug!("GCS recv: {:?}", response);
         Ok(response)
     }
 
@@ -348,11 +342,11 @@ impl GcsDevice {
         // Check for errors after each query
         self.send("ERR?")?;
         let err_response = self.read()?;
-        let err_code: i32 = err_response.trim().parse().unwrap_or(-1);
+        let err_code: i32 = err_response.trim().parse().unwrap_or(0);
         if err_code != 0 {
             return Err(GcsError::ControllerError {
                 code: err_code,
-                message: Self::error_message(err_code),
+                error: PiErrorCode::from_code(err_code),
             });
         }
         Ok(response)
@@ -394,29 +388,10 @@ impl GcsDevice {
         if error_code != 0 {
             Err(GcsError::ControllerError {
                 code: error_code,
-                message: Self::error_message(error_code),
+                error: PiErrorCode::from_code(error_code),
             })
         } else {
             Ok(())
-        }
-    }
-
-    /// Get human-readable message for a PI error code.
-    fn error_message(code: i32) -> String {
-        match code {
-            1 => "Parameter syntax error".to_string(),
-            2 => "Unknown command".to_string(),
-            3 => "Command length out of limits".to_string(),
-            4 => "Error while scanning".to_string(),
-            5 => "Unallowable move attempted on unreferenced axis".to_string(),
-            6 => "Parameter out of range".to_string(),
-            7 => "Position out of limits".to_string(),
-            10 => "Controller in wrong state".to_string(),
-            17 => "Param not found in non-volatile memory".to_string(),
-            23 => "Invalid axis identifier".to_string(),
-            24 => "Incorrect number of parameters".to_string(),
-            25 => "Invalid floating point number".to_string(),
-            _ => format!("Unknown error ({code})"),
         }
     }
 
