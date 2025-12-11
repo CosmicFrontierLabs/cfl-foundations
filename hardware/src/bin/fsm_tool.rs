@@ -24,6 +24,11 @@ use tracing::info;
 /// Default E-727 IP address
 const DEFAULT_IP: &str = "192.168.15.210";
 
+/// Parse axis string (e.g. "1", "2") into Axis enum.
+fn parse_axis(s: &str) -> Result<Axis> {
+    s.parse().map_err(|e: String| anyhow::anyhow!(e))
+}
+
 /// PI E-727 Fast Steering Mirror Control Tool
 #[derive(Parser, Debug)]
 #[command(name = "fsm_tool")]
@@ -472,7 +477,7 @@ fn cmd_move(
     let mut fsm = E727::connect_ip(ip)?;
 
     let axis_str = axis.ok_or_else(|| anyhow::anyhow!("--axis is required for move operations"))?;
-    let axis: Axis = axis_str.parse().map_err(|e: String| anyhow::anyhow!(e))?;
+    let axis = parse_axis(&axis_str)?;
 
     let (min, max) = fsm.get_travel_range(axis)?;
     let unit = fsm.get_unit(axis)?;
@@ -706,7 +711,7 @@ fn cmd_query(ip: &str, axis: Option<String>) -> Result<()> {
     let mut fsm = E727::connect_ip(ip)?;
 
     let axes: Vec<Axis> = if let Some(ax) = axis {
-        vec![ax.parse().map_err(|e: String| anyhow::anyhow!(e))?]
+        vec![parse_axis(&ax)?]
     } else {
         fsm.connected_axes()?
     };
@@ -734,7 +739,7 @@ fn cmd_off(ip: &str, axis: Option<String>) -> Result<()> {
     let mut fsm = E727::connect_ip(ip)?;
 
     let axes: Vec<Axis> = if let Some(ax) = axis {
-        vec![ax.parse().map_err(|e: String| anyhow::anyhow!(e))?]
+        vec![parse_axis(&ax)?]
     } else {
         fsm.connected_axes()?
     };
