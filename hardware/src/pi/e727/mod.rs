@@ -273,6 +273,14 @@ impl E727 {
         }
     }
 
+    /// Move a single axis to an absolute position.
+    ///
+    /// Convenience method for single-axis moves. The servo must be enabled
+    /// before motion commands will work.
+    pub fn move_axis(&mut self, axis: Axis, position: f64) -> GcsResult<()> {
+        self.device.command(&format!("MOV {axis} {position}"))
+    }
+
     /// Move axes by relative distances.
     ///
     /// # Arguments

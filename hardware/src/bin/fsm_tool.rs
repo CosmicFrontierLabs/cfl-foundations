@@ -15,7 +15,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
-use hardware::pi::{Axis, GcsDevice, PiErrorCode, SpaParam, E727, RECORDER_SAMPLE_RATE_HZ, S330};
+use hardware::pi::{
+    Axis, GcsDevice, PiErrorCode, RecordChannel, RecordTrigger, SpaParam, E727,
+    RECORDER_SAMPLE_RATE_HZ, S330,
+};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use strum::IntoEnumIterator;
@@ -557,78 +560,50 @@ fn cmd_move(
 
 // ==================== Resonance Command ====================
 
-fn cmd_resonance(ip: &str, axis: &str, step: f64, rate: u32, output: &str) -> Result<()> {
-    const RECORD_POSITION_ERROR: u8 = 3;
-    const RECORD_CURRENT_POSITION: u8 = 2;
-    const TRIGGER_IMMEDIATE: u8 = 4;
+fn cmd_resonance(ip: &str, axis_str: &str, step: f64, rate: u32, output: &str) -> Result<()> {
+    let axis = parse_axis(axis_str)?;
 
     info!("Connecting to E-727 at {}...", ip);
-    let mut gcs = GcsDevice::connect_default_port(ip)?;
+    let mut fsm = E727::connect_ip(ip)?;
 
     // Query axis range
-    let response = gcs.query(&format!("TMN? {axis}"))?;
-    let min: f64 = response.split('=').nth(1).unwrap().trim().parse()?;
-    let response = gcs.query(&format!("TMX? {axis}"))?;
-    let max: f64 = response.split('=').nth(1).unwrap().trim().parse()?;
-    let center = (min + max) / 2.0;
-    info!(
-        "Axis {} range: [{:.1}, {:.1}], center: {:.1}",
-        axis, min, max, center
-    );
+    let (min, max) = fsm.get_travel_range(axis)?;
+    let center = fsm.get_center(axis)?;
+    info!("Axis {axis} range: [{min:.1}, {max:.1}], center: {center:.1}");
 
-    let response = gcs.query(&format!("POS? {axis}"))?;
-    let current: f64 = response.split('=').nth(1).unwrap().trim().parse()?;
-    info!("Current position: {:.3}", current);
+    let current = fsm.get_position(axis)?;
+    info!("Current position: {current:.3}");
 
-    info!("Configuring data recorder...");
-    gcs.send(&format!("RTR {rate}"))?;
-    info!("Sample rate divider: {}", rate);
-
-    gcs.send(&format!("DRC 1 {axis} {RECORD_POSITION_ERROR}"))?;
-    gcs.send(&format!("DRC 2 {axis} {RECORD_CURRENT_POSITION}"))?;
-
-    gcs.send(&format!("DRT 1 {TRIGGER_IMMEDIATE} 0"))?;
-    gcs.send(&format!("DRT 2 {TRIGGER_IMMEDIATE} 0"))?;
-
-    let response = gcs.query("DRC? 1")?;
-    info!("Table 1 config: {}", response.trim());
-    let response = gcs.query("DRC? 2")?;
-    info!("Table 2 config: {}", response.trim());
-
-    info!("Enabling servo on axis {}...", axis);
-    gcs.send(&format!("SVO {axis} 1"))?;
+    info!("Enabling servo on axis {axis}...");
+    fsm.set_servo(axis, true)?;
     std::thread::sleep(Duration::from_millis(100));
 
     let start_pos = center - step / 2.0;
     let end_pos = center + step / 2.0;
 
-    info!("Moving to start position {:.1}...", start_pos);
-    gcs.send(&format!("MOV {axis} {start_pos}"))?;
+    info!("Moving to start position {start_pos:.1}...");
+    fsm.move_axis(axis, start_pos)?;
     std::thread::sleep(Duration::from_millis(500));
 
-    info!("Starting data recording...");
-    info!(
-        "Applying step: {:.1} -> {:.1} µrad ({:.1} µrad step)",
-        start_pos, end_pos, step
-    );
-    gcs.send(&format!("MOV {axis} {end_pos}"))?;
+    // Configure recording to trigger on next move command
+    let channels = [
+        RecordChannel::PositionError(axis),
+        RecordChannel::CurrentPosition(axis),
+    ];
+    info!("Configuring data recorder (trigger on move, rate divider: {rate})...");
+    fsm.configure_recording(RecordTrigger::OnMove, &channels, rate)?;
+
+    info!("Applying step: {start_pos:.1} -> {end_pos:.1} µrad ({step:.1} µrad step)");
+    fsm.move_axis(axis, end_pos)?;
 
     info!("Waiting for transient response...");
     std::thread::sleep(Duration::from_millis(200));
 
     info!("Stopping recording...");
-    gcs.send("DRT 1 0 0")?;
-    gcs.send("DRT 2 0 0")?;
+    fsm.stop_recording()?;
 
-    let response = gcs.query("DRL? 1")?;
-    let num_points: usize = response
-        .split('=')
-        .nth(1)
-        .unwrap_or("0")
-        .trim()
-        .parse()
-        .unwrap_or(0);
-    info!("Recorded {} points in table 1", num_points);
+    let num_points = fsm.recording_length()?;
+    info!("Recorded {num_points} points");
 
     if num_points == 0 {
         info!("No data recorded!");
@@ -636,68 +611,40 @@ fn cmd_resonance(ip: &str, axis: &str, step: f64, rate: u32, output: &str) -> Re
     }
 
     info!("Reading recorded data...");
-    let response = gcs.query(&format!("DRR? 1 {num_points} 1"))?;
-    let error_data: Vec<f64> = response
-        .lines()
-        .filter_map(|line| {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                None
-            } else {
-                trimmed.parse().ok()
-            }
-        })
-        .collect();
-
-    let response = gcs.query(&format!("DRR? 1 {num_points} 2"))?;
-    let position_data: Vec<f64> = response
-        .lines()
-        .filter_map(|line| {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                None
-            } else {
-                trimmed.parse().ok()
-            }
-        })
-        .collect();
-
-    info!(
-        "Got {} error samples and {} position samples",
-        error_data.len(),
-        position_data.len()
-    );
+    let data = fsm.read_recording(channels.len())?;
+    let n_samples = data.nrows();
+    info!("Got {n_samples} samples x {} channels", data.ncols());
 
     let sample_period_us = (rate as f64) / RECORDER_SAMPLE_RATE_HZ * 1e6;
 
-    info!("Writing to {}...", output);
+    info!("Writing to {output}...");
     let mut file = std::fs::File::create(output)?;
     writeln!(file, "time_us,position_error,position")?;
 
-    let n_samples = error_data.len().min(position_data.len());
     for i in 0..n_samples {
         let time_us = i as f64 * sample_period_us;
         writeln!(
             file,
             "{:.3},{:.6},{:.6}",
-            time_us, error_data[i], position_data[i]
+            time_us,
+            data[[i, 0]],
+            data[[i, 1]]
         )?;
     }
 
-    info!("Done! {} samples written", n_samples);
+    info!("Done! {n_samples} samples written");
 
-    if !error_data.is_empty() {
-        let max_error = error_data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        let min_error = error_data.iter().cloned().fold(f64::INFINITY, f64::min);
+    // Calculate error statistics from first column (position error)
+    let error_col = data.column(0);
+    if !error_col.is_empty() {
+        let max_error = error_col.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let min_error = error_col.iter().cloned().fold(f64::INFINITY, f64::min);
         let peak_to_peak = max_error - min_error;
-        info!(
-            "Position error: min={:.3}, max={:.3}, pk-pk={:.3}",
-            min_error, max_error, peak_to_peak
-        );
+        info!("Position error: min={min_error:.3}, max={max_error:.3}, pk-pk={peak_to_peak:.3}");
     }
 
     info!("Disabling servo...");
-    gcs.send(&format!("SVO {axis} 0"))?;
+    fsm.set_servo(axis, false)?;
 
     info!("Done!");
     Ok(())
