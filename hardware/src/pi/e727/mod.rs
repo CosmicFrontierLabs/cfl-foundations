@@ -53,14 +53,17 @@
 
 mod errors;
 mod params;
+mod recorder;
 
 pub use errors::PiErrorCode;
 pub use params::{Axis, SpaParam};
+pub use recorder::{RecordChannel, RecordTrigger};
 
 use std::collections::HashMap;
 use std::net::ToSocketAddrs;
 use std::time::Duration;
 
+use ndarray::Array2;
 use tracing::{debug, info};
 
 use super::gcs::{GcsDevice, GcsError, GcsResult, DEFAULT_PORT};
@@ -731,5 +734,280 @@ impl E727 {
         );
 
         Ok((errors, positions))
+    }
+
+    // ==================== Recording Configuration ====================
+
+    /// Configure data recording channels and trigger.
+    ///
+    /// Sets up the data recorder with the specified channels and trigger mode.
+    /// Recording will start based on the trigger type:
+    /// - `Immediate`: Recording starts immediately
+    /// - `OnMove`: Recording starts when a motion command is sent
+    /// - `Default`: Recording starts with IMP/STE/WGO/WGR commands
+    /// - `ExternalInput`: Recording starts from digital input signal
+    ///
+    /// # Arguments
+    ///
+    /// * `trigger` - What triggers recording to start
+    /// * `channels` - What data to record (up to 8 channels)
+    /// * `sample_rate_divider` - Divides the 50kHz base rate (1 = full rate)
+    pub fn configure_recording(
+        &mut self,
+        trigger: RecordTrigger,
+        channels: &[RecordChannel],
+        sample_rate_divider: u32,
+    ) -> GcsResult<()> {
+        if channels.is_empty() {
+            return Err(GcsError::InvalidArgument(
+                "At least one channel must be specified".to_string(),
+            ));
+        }
+        if channels.len() > 8 {
+            return Err(GcsError::InvalidArgument(
+                "Maximum 8 channels supported".to_string(),
+            ));
+        }
+
+        // Set sample rate divider
+        self.device.send(&format!("RTR {sample_rate_divider}"))?;
+
+        // Configure each channel (table)
+        for (table_id, &channel) in channels.iter().enumerate() {
+            let table = table_id + 1; // Tables are 1-indexed
+            let (source, option) = channel.to_drc_args();
+            self.device
+                .send(&format!("DRC {table} {source} {option}"))?;
+        }
+
+        // Set trigger for all configured tables
+        let (trigger_source, trigger_value) = trigger.to_drt_args();
+        for table_id in 0..channels.len() {
+            let table = table_id + 1;
+            self.device
+                .send(&format!("DRT {table} {trigger_source} {trigger_value}"))?;
+        }
+
+        debug!(
+            "Configured {} recording channels with trigger {:?}",
+            channels.len(),
+            trigger
+        );
+
+        Ok(())
+    }
+
+    /// Stop any active recording.
+    ///
+    /// Disables the trigger on all tables, stopping data collection.
+    pub fn stop_recording(&mut self) -> GcsResult<()> {
+        // Query number of tables
+        let response = self.device.query("TNR?")?;
+        let num_tables: usize = response
+            .split('=')
+            .nth(1)
+            .unwrap_or("8")
+            .trim()
+            .parse()
+            .unwrap_or(8);
+
+        // Disable trigger on all tables
+        for table in 1..=num_tables {
+            self.device.send(&format!("DRT {table} 0 0"))?;
+        }
+
+        Ok(())
+    }
+
+    /// Get the number of points recorded so far.
+    ///
+    /// Useful for checking recording progress or determining when
+    /// the recording buffer is full.
+    pub fn recording_length(&mut self) -> GcsResult<usize> {
+        let response = self.device.query("DRL? 1")?;
+        let num_points: usize = response
+            .split('=')
+            .nth(1)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0);
+        Ok(num_points)
+    }
+
+    /// Get the maximum number of points per recording table.
+    ///
+    /// The E-727 has 262144 total points shared equally among configured tables.
+    /// With 2 tables, each can hold 131072 points (~2.6s at 50kHz).
+    pub fn recording_max_points(&mut self, num_tables: usize) -> GcsResult<usize> {
+        const TOTAL_RECORDER_POINTS: usize = 262144;
+        let tables = num_tables.max(1);
+        Ok(TOTAL_RECORDER_POINTS / tables)
+    }
+
+    /// Wait for recording buffer to fill completely.
+    ///
+    /// Polls `DRL?` until the recorded points reach the maximum capacity
+    /// for the given number of tables, or until the timeout expires.
+    ///
+    /// # Arguments
+    ///
+    /// * `num_tables` - Number of recording tables configured
+    /// * `timeout` - Maximum time to wait
+    /// * `poll_interval` - How often to check progress
+    pub fn wait_recording_complete(
+        &mut self,
+        num_tables: usize,
+        timeout: Duration,
+        poll_interval: Duration,
+    ) -> GcsResult<usize> {
+        let max_points = self.recording_max_points(num_tables)?;
+        let start = std::time::Instant::now();
+
+        loop {
+            let current = self.recording_length()?;
+            if current >= max_points {
+                return Ok(current);
+            }
+
+            if start.elapsed() > timeout {
+                return Err(GcsError::Timeout);
+            }
+
+            std::thread::sleep(poll_interval);
+        }
+    }
+
+    /// Read recorded data as a 2D array.
+    ///
+    /// Returns an Array2<f64> with shape (num_samples, num_channels).
+    /// Each column contains data from one recording table.
+    ///
+    /// # Arguments
+    ///
+    /// * `num_channels` - Number of channels that were configured
+    pub fn read_recording(&mut self, num_channels: usize) -> GcsResult<Array2<f64>> {
+        let num_points = self.recording_length()?;
+
+        if num_points == 0 {
+            return Ok(Array2::zeros((0, num_channels)));
+        }
+
+        // Read data from each table
+        let mut columns: Vec<Vec<f64>> = Vec::with_capacity(num_channels);
+        for table in 1..=num_channels {
+            let response = self.device.query(&format!("DRR? 1 {num_points} {table}"))?;
+            let data = Self::parse_recorder_data(&response);
+            columns.push(data);
+        }
+
+        // Find minimum length (all should be equal, but be safe)
+        let min_len = columns.iter().map(|c| c.len()).min().unwrap_or(0);
+        if min_len == 0 {
+            return Ok(Array2::zeros((0, num_channels)));
+        }
+
+        // Build Array2 with shape (samples, channels)
+        let mut array = Array2::zeros((min_len, num_channels));
+        for (col_idx, col_data) in columns.iter().enumerate() {
+            for (row_idx, &value) in col_data.iter().take(min_len).enumerate() {
+                array[[row_idx, col_idx]] = value;
+            }
+        }
+
+        debug!(
+            "Read recording: {} samples x {} channels",
+            min_len, num_channels
+        );
+
+        Ok(array)
+    }
+
+    /// Parse data recorder response into vector of floats.
+    fn parse_recorder_data(response: &str) -> Vec<f64> {
+        response
+            .lines()
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    None
+                } else {
+                    trimmed.parse().ok()
+                }
+            })
+            .collect()
+    }
+
+    /// Record data with immediate trigger for a fixed duration.
+    ///
+    /// Convenience method that configures recording, waits for the specified
+    /// duration, stops recording, and returns the data as an Array2.
+    ///
+    /// # Arguments
+    ///
+    /// * `channels` - What data to record
+    /// * `duration` - How long to record
+    /// * `sample_rate_divider` - Divides the 50kHz base rate (1 = full rate)
+    ///
+    /// # Returns
+    ///
+    /// Array2<f64> with shape (num_samples, num_channels).
+    /// For 100ms at 50kHz with 2 channels, shape would be (5000, 2).
+    pub fn record(
+        &mut self,
+        channels: &[RecordChannel],
+        duration: Duration,
+        sample_rate_divider: u32,
+    ) -> GcsResult<Array2<f64>> {
+        let num_channels = channels.len();
+
+        self.configure_recording(RecordTrigger::Immediate, channels, sample_rate_divider)?;
+
+        std::thread::sleep(duration);
+
+        self.stop_recording()?;
+
+        self.read_recording(num_channels)
+    }
+
+    /// Record data triggered by the next motion command.
+    ///
+    /// Configures recording to start when a motion command is sent,
+    /// then calls the provided closure to perform the motion.
+    /// After motion completes, stops recording and returns the data.
+    ///
+    /// # Arguments
+    ///
+    /// * `channels` - What data to record
+    /// * `sample_rate_divider` - Divides the 50kHz base rate (1 = full rate)
+    /// * `motion` - Closure that performs the motion (receives &mut E727)
+    /// * `settle_time` - Additional time to record after motion starts
+    ///
+    /// # Returns
+    ///
+    /// Array2<f64> with shape (num_samples, num_channels)
+    pub fn record_motion<F>(
+        &mut self,
+        channels: &[RecordChannel],
+        sample_rate_divider: u32,
+        motion: F,
+        settle_time: Duration,
+    ) -> GcsResult<Array2<f64>>
+    where
+        F: FnOnce(&mut Self) -> GcsResult<()>,
+    {
+        let num_channels = channels.len();
+
+        self.configure_recording(RecordTrigger::OnMove, channels, sample_rate_divider)?;
+
+        // Execute motion - this triggers recording
+        motion(self)?;
+
+        // Wait for settling
+        std::thread::sleep(settle_time);
+
+        self.stop_recording()?;
+
+        self.read_recording(num_channels)
     }
 }

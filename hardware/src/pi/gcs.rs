@@ -100,6 +100,10 @@ pub enum GcsError {
     /// Failed to parse response values.
     #[error("Parse error: {0}")]
     ParseError(String),
+
+    /// Invalid argument provided to a method.
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
 }
 
 /// Result type for GCS operations.
