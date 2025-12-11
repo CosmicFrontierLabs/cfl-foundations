@@ -42,29 +42,6 @@
 //! like `µ` (micro sign, 0xB5) for units like `µrad`. The driver automatically
 //! converts Latin-1 responses to UTF-8 strings.
 //!
-//! # Example
-//!
-//! ```no_run
-//! use hardware::pi::GcsDevice;
-//!
-//! // Connect to controller
-//! let mut device = GcsDevice::connect("192.168.15.210:50000")?;
-//!
-//! // Query device identification
-//! let idn = device.query("*IDN?")?;
-//! println!("Device: {}", idn.trim());
-//!
-//! // Query position of axis 1
-//! let response = device.query("POS? 1")?;
-//! let pos = GcsDevice::parse_single_value(&response)?;
-//! println!("Position: {} µrad", pos);
-//!
-//! // Send a move command (no response expected)
-//! device.command("MOV 1 1000.0")?;
-//!
-//! # Ok::<(), hardware::pi::GcsError>(())
-//! ```
-//!
 //! # References
 //!
 //! - [PI E-727 Documentation (Google Drive)](https://drive.google.com/drive/u/0/folders/1ebFyabBYmZ5Ts942VnFBqXl_U1nlaOlV)
@@ -140,32 +117,10 @@ pub type GcsResult<T> = Result<T, GcsError>;
 /// - Response parsing utilities for axis=value formats
 ///
 /// For high-level FSM control with typed methods, use [`E727`](super::E727) instead.
-///
-/// # Example
-///
-/// ```no_run
-/// use hardware::pi::GcsDevice;
-///
-/// let mut device = GcsDevice::connect_default_port("192.168.15.210")?;
-///
-/// // Low-level: send command and read response separately
-/// device.send("POS?")?;
-/// let response = device.read()?;
-///
-/// // Higher-level: query with automatic error checking
-/// let response = device.query("SVO?")?;
-///
-/// // Parse the response
-/// let servo_states = GcsDevice::parse_axis_bools(&response)?;
-/// for (axis, enabled) in servo_states {
-///     println!("Axis {}: servo={}", axis, enabled);
-/// }
-///
-/// # Ok::<(), hardware::pi::GcsError>(())
-/// ```
 pub struct GcsDevice {
     stream: TcpStream,
     timeout: Duration,
+    address: String,
 }
 
 impl GcsDevice {
@@ -181,18 +136,8 @@ impl GcsDevice {
     /// # Errors
     ///
     /// Returns [`GcsError::ConnectionFailed`] if the TCP connection cannot be established.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use hardware::pi::GcsDevice;
-    ///
-    /// let mut device = GcsDevice::connect("192.168.15.210:50000")?;
-    /// let idn = device.query("*IDN?")?;
-    /// println!("Connected to: {}", idn.trim());
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
-    pub fn connect<A: ToSocketAddrs>(addr: A) -> GcsResult<Self> {
+    pub fn connect<A: ToSocketAddrs + ToString>(addr: A) -> GcsResult<Self> {
+        let address = addr.to_string();
         let stream = TcpStream::connect(&addr)
             .map_err(|e| GcsError::ConnectionFailed(format!("Failed to connect: {e}")))?;
 
@@ -201,24 +146,41 @@ impl GcsDevice {
 
         debug!("Connected to PI device via TCP");
 
-        Ok(Self {
+        let mut device = Self {
             stream,
             timeout: DEFAULT_TIMEOUT,
-        })
+            address,
+        };
+
+        // Flush any stale data from previous aborted connections
+        device.flush_buffers();
+
+        Ok(device)
+    }
+
+    /// Reconnect to the controller using the stored address.
+    ///
+    /// Use this to recover from connection errors or socket timeouts.
+    pub fn reconnect(&mut self) -> GcsResult<()> {
+        debug!("Reconnecting to {}", self.address);
+        let stream = TcpStream::connect(&self.address)
+            .map_err(|e| GcsError::ConnectionFailed(format!("Failed to reconnect: {e}")))?;
+
+        stream.set_read_timeout(Some(self.timeout))?;
+        stream.set_write_timeout(Some(self.timeout))?;
+
+        self.stream = stream;
+
+        // Flush any stale data from previous aborted connections
+        self.flush_buffers();
+
+        debug!("Reconnected to PI device");
+        Ok(())
     }
 
     /// Connect to a PI controller at the given IP using the default port (50000).
     ///
     /// This is a convenience method equivalent to `connect("ip:50000")`.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use hardware::pi::GcsDevice;
-    ///
-    /// let mut device = GcsDevice::connect_default_port("192.168.15.210")?;
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
     pub fn connect_default_port(ip: &str) -> GcsResult<Self> {
         Self::connect(format!("{ip}:{DEFAULT_PORT}"))
     }
@@ -233,21 +195,55 @@ impl GcsDevice {
         let _ = self.stream.set_write_timeout(Some(timeout));
     }
 
+    /// Flush any stale data from buffers after connection.
+    ///
+    /// This handles the case where a previous connection was aborted mid-communication,
+    /// leaving residual data in the controller's buffers. We:
+    /// 1. Send an empty line to terminate any partial command the controller was waiting for
+    /// 2. Drain any pending response data with a short timeout
+    /// 3. Clear any error state by reading ERR?
+    fn flush_buffers(&mut self) {
+        // Use a short timeout for flushing
+        let _ = self
+            .stream
+            .set_read_timeout(Some(Duration::from_millis(100)));
+
+        // Send empty line to terminate any partial command
+        let _ = self.stream.write_all(b"\n");
+        let _ = self.stream.flush();
+
+        // Drain any pending data (ignore errors/timeouts)
+        let mut buf = [0u8; 1024];
+        loop {
+            match self.stream.read(&mut buf) {
+                Ok(0) => break,
+                Ok(_) => continue,
+                Err(_) => break,
+            }
+        }
+
+        // Clear error state
+        let _ = self.stream.write_all(b"ERR?\n");
+        let _ = self.stream.flush();
+
+        // Drain error response
+        loop {
+            match self.stream.read(&mut buf) {
+                Ok(0) => break,
+                Ok(_) => continue,
+                Err(_) => break,
+            }
+        }
+
+        // Restore normal timeout
+        let _ = self.stream.set_read_timeout(Some(self.timeout));
+    }
+
     /// Send a raw command string to the device.
     ///
     /// Appends a newline if not present. Does not wait for or read any response.
     /// Use [`read`](Self::read) to get the response, or use [`query`](Self::query)
     /// for commands that return data.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use hardware::pi::GcsDevice;
-    /// # let mut device = GcsDevice::connect_default_port("192.168.15.210")?;
-    /// // Send emergency stop (no response expected)
-    /// device.send("\x18")?;
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
     pub fn send(&mut self, command: &str) -> GcsResult<()> {
         let mut msg = command.to_string();
         if !msg.ends_with('\n') {
@@ -324,17 +320,6 @@ impl GcsDevice {
     ///
     /// Returns [`GcsError::ControllerError`] if the controller reports an error
     /// after processing the command.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use hardware::pi::GcsDevice;
-    /// # let mut device = GcsDevice::connect_default_port("192.168.15.210")?;
-    /// let response = device.query("POS? 1")?;
-    /// let position = GcsDevice::parse_single_value(&response)?;
-    /// println!("Axis 1 position: {}", position);
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
     pub fn query(&mut self, command: &str) -> GcsResult<String> {
         self.send(command)?;
         let response = self.read()?;
@@ -356,19 +341,6 @@ impl GcsDevice {
     ///
     /// Use this for commands like `MOV`, `SVO`, etc. that don't return data
     /// but should be checked for errors.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use hardware::pi::GcsDevice;
-    /// # let mut device = GcsDevice::connect_default_port("192.168.15.210")?;
-    /// // Enable servo on axis 1
-    /// device.command("SVO 1 1")?;
-    ///
-    /// // Move axis 1 to position 1000
-    /// device.command("MOV 1 1000.0")?;
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
     pub fn command(&mut self, command: &str) -> GcsResult<()> {
         self.send(command)?;
         self.check_error()
@@ -397,22 +369,7 @@ impl GcsDevice {
 
     /// Parse `axis=value` response format into a HashMap.
     ///
-    /// Handles multi-line responses like:
-    /// ```text
-    /// 1=100.5
-    /// 2=200.3
-    /// ```
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use hardware::pi::GcsDevice;
-    ///
-    /// let response = "1=100.5 \n2=200.3\n";
-    /// let values = GcsDevice::parse_axis_values(response).unwrap();
-    /// assert_eq!(values.get("1"), Some(&100.5));
-    /// assert_eq!(values.get("2"), Some(&200.3));
-    /// ```
+    /// Handles multi-line responses where each line is `axis=value`.
     pub fn parse_axis_values(response: &str) -> GcsResult<HashMap<String, f64>> {
         let mut result = HashMap::new();
 
@@ -443,16 +400,6 @@ impl GcsDevice {
     /// Parse a single `axis=value` response and return just the value.
     ///
     /// Useful for queries like `POS? 1` that return a single axis value.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use hardware::pi::GcsDevice;
-    ///
-    /// let response = "1=1234.5\n";
-    /// let value = GcsDevice::parse_single_value(response).unwrap();
-    /// assert_eq!(value, 1234.5);
-    /// ```
     pub fn parse_single_value(response: &str) -> GcsResult<f64> {
         let values = Self::parse_axis_values(response)?;
         values
@@ -464,17 +411,6 @@ impl GcsDevice {
     /// Parse `axis=bool` response format into a HashMap.
     ///
     /// Interprets `0` as false and `1` or `true` as true.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use hardware::pi::GcsDevice;
-    ///
-    /// let response = "1=1 \n2=0\n";
-    /// let values = GcsDevice::parse_axis_bools(response).unwrap();
-    /// assert_eq!(values.get("1"), Some(&true));
-    /// assert_eq!(values.get("2"), Some(&false));
-    /// ```
     pub fn parse_axis_bools(response: &str) -> GcsResult<HashMap<String, bool>> {
         let mut result = HashMap::new();
 

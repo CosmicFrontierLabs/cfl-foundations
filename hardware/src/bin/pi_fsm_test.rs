@@ -17,16 +17,13 @@ fn main() -> Result<()> {
     info!("Device ID: {}", fsm.idn()?);
     info!("Available axes: {:?}", fsm.axes());
 
-    for axis in fsm.axes().to_vec() {
-        let (min, max) = fsm.get_travel_range(&axis)?;
-        let unit = fsm.get_unit(&axis)?;
-        let servo = fsm.get_servo(&axis)?;
-        let pos = fsm.get_position(&axis)?;
+    for axis in fsm.axes() {
+        let (min, max) = fsm.get_travel_range(axis)?;
+        let unit = fsm.get_unit(axis)?;
+        let servo = fsm.get_servo(axis)?;
+        let pos = fsm.get_position(axis)?;
 
-        info!(
-            "Axis {}: range [{:.3}, {:.3}] {}, servo={}, pos={:.3}",
-            axis, min, max, unit, servo, pos
-        );
+        info!("Axis {axis}: range [{min:.3}, {max:.3}] {unit}, servo={servo}, pos={pos:.3}");
     }
 
     let on_target = fsm.all_on_target()?;

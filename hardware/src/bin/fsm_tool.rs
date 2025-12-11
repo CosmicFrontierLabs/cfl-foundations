@@ -15,19 +15,14 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
-use hardware::pi::{GcsDevice, SpaParam, E727};
+use hardware::pi::{Axis, GcsDevice, PiErrorCode, SpaParam, E727, S330};
+use rustyline::error::ReadlineError;
+use rustyline::DefaultEditor;
 use strum::IntoEnumIterator;
 use tracing::info;
 
 /// Default E-727 IP address
 const DEFAULT_IP: &str = "192.168.15.210";
-
-/// Maximum fraction of range to use for circle (safety margin)
-const MAX_RANGE_FRACTION: f64 = 0.80;
-
-/// Tilt axis identifiers
-const AXIS_X: &str = "1";
-const AXIS_Y: &str = "2";
 
 /// PI E-727 Fast Steering Mirror Control Tool
 #[derive(Parser, Debug)]
@@ -38,10 +33,6 @@ struct Args {
     /// E-727 IP address
     #[arg(long, global = true, default_value = DEFAULT_IP)]
     ip: String,
-
-    /// Force autozero even if already done
-    #[arg(long, global = true)]
-    force_atz: bool,
 
     #[command(subcommand)]
     command: Command,
@@ -63,9 +54,9 @@ enum Command {
         #[arg(short, long, default_value = "0")]
         count: u32,
 
-        /// Maximum step size per update in µrad
-        #[arg(long, default_value = "10")]
-        step: f64,
+        /// Delay between commands in milliseconds
+        #[arg(long, default_value = "1")]
+        delay_ms: u64,
     },
 
     /// Interactive FSM steering with arrow keys
@@ -163,21 +154,23 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
+    // Commands that use S330 interface (handles init, autozero, servo enable)
     match args.command {
         Command::Circle {
             radius_percent,
             period,
             count,
-            step,
-        } => cmd_circle(
-            &args.ip,
-            args.force_atz,
-            radius_percent,
-            period,
-            count,
-            step,
-        ),
-        Command::Steer => cmd_steer(&args.ip, args.force_atz),
+            delay_ms,
+        } => {
+            info!("Connecting to S-330 at {}...", args.ip);
+            let mut fsm = S330::connect_ip(&args.ip)?;
+            cmd_circle(&mut fsm, radius_percent, period, count, delay_ms)
+        }
+        Command::Steer => {
+            info!("Connecting to S-330 at {}...", args.ip);
+            let mut fsm = S330::connect_ip(&args.ip)?;
+            cmd_steer(&mut fsm)
+        }
         Command::Move {
             axis,
             position,
@@ -187,15 +180,7 @@ fn main() -> Result<()> {
             timeout,
             no_wait,
         } => cmd_move(
-            &args.ip,
-            args.force_atz,
-            axis,
-            position,
-            relative,
-            center,
-            max_step,
-            timeout,
-            no_wait,
+            &args.ip, axis, position, relative, center, max_step, timeout, no_wait,
         ),
         Command::Resonance {
             axis,
@@ -217,150 +202,137 @@ fn main() -> Result<()> {
 
 // ==================== Circle Command ====================
 
+/// Linearly interpolate from one position to another over the given duration.
+fn ramp_to(
+    fsm: &mut S330,
+    from_x: f64,
+    from_y: f64,
+    to_x: f64,
+    to_y: f64,
+    duration: Duration,
+    delay_ms: u64,
+) -> Result<()> {
+    let start = Instant::now();
+    while start.elapsed() < duration {
+        let t = start.elapsed().as_secs_f64() / duration.as_secs_f64();
+        let x = from_x + (to_x - from_x) * t;
+        let y = from_y + (to_y - from_y) * t;
+        fsm.move_to(x, y)?;
+        std::thread::sleep(Duration::from_millis(delay_ms));
+    }
+    fsm.move_to(to_x, to_y)?;
+    Ok(())
+}
+
 fn cmd_circle(
-    ip: &str,
-    force_atz: bool,
+    fsm: &mut S330,
     radius_percent: f64,
     period: f64,
     count: u32,
-    max_step: f64,
+    delay_ms: u64,
 ) -> Result<()> {
-    info!("Connecting to E-727 at {}...", ip);
-    let mut fsm = E727::connect_ip(ip)?;
-
-    if fsm.autozero(force_atz)? {
-        info!("Autozero completed");
-    } else {
-        info!("Autozero skipped (use --force-atz to re-run)");
-    }
-
-    let (min1, max1) = fsm.get_travel_range(AXIS_X)?;
-    let (min2, max2) = fsm.get_travel_range(AXIS_Y)?;
-    let unit = fsm.get_unit(AXIS_X)?;
-    let (center1, center2) = fsm.get_xy_centers()?;
+    let ((min_x, max_x), (min_y, max_y)) = fsm.get_travel_ranges()?;
+    let unit = fsm.get_unit()?;
+    let (center_x, center_y) = fsm.get_centers()?;
 
     info!(
         "Axis 1: center={:.1} {}, range=[{:.1}, {:.1}]",
-        center1, unit, min1, max1
+        center_x, unit, min_x, max_x
     );
     info!(
         "Axis 2: center={:.1} {}, range=[{:.1}, {:.1}]",
-        center2, unit, min2, max2
+        center_y, unit, min_y, max_y
     );
 
-    // Calculate max radius (80% of available range for safety)
-    let max_radius1 = (max1 - center1).min(center1 - min1) * MAX_RANGE_FRACTION;
-    let max_radius2 = (max2 - center2).min(center2 - min2) * MAX_RANGE_FRACTION;
-    let max_radius = max_radius1.min(max_radius2);
+    let max_radius_x = (max_x - center_x).min(center_x - min_x);
+    let max_radius_y = (max_y - center_y).min(center_y - min_y);
+    let max_radius = max_radius_x.min(max_radius_y);
 
     let radius_pct = radius_percent.clamp(0.0, 100.0);
     let radius = max_radius * (radius_pct / 100.0);
 
     info!(
-        "Circle: radius={:.1} {} ({:.0}% of {:.1} max), period={:.2}s, max_step={:.1}",
-        radius, unit, radius_pct, max_radius, period, max_step
+        "Circle: radius={:.1} {} ({:.0}% of {:.1} max), period={:.2}s",
+        radius, unit, radius_pct, max_radius, period
     );
 
-    info!("Enabling servos...");
-    fsm.set_servo(AXIS_X, true)?;
-    fsm.set_servo(AXIS_Y, true)?;
+    let (cur_x, cur_y) = fsm.get_position()?;
+    info!("Starting from: ({:.1}, {:.1})", cur_x, cur_y);
 
-    let mut cur1 = fsm.get_position(AXIS_X)?.clamp(min1, max1);
-    let mut cur2 = fsm.get_position(AXIS_Y)?.clamp(min2, max2);
-    info!("Starting from: ({:.1}, {:.1})", cur1, cur2);
+    // Move to starting position (right side of circle) over 1 second
+    let start_x = center_x + radius;
+    let start_y = center_y;
+    info!("Moving to circle start ({:.1}, {:.1})...", start_x, start_y);
+    ramp_to(
+        fsm,
+        cur_x,
+        cur_y,
+        start_x,
+        start_y,
+        Duration::from_secs(1),
+        delay_ms,
+    )?;
 
     let angular_velocity = 2.0 * PI / period;
     info!("Starting circular motion (Ctrl+C to stop)...");
 
     let start_time = Instant::now();
-    let mut revolutions = 0u32;
-    let mut last_rev_check = 0.0f64;
     let mut last_report_time = Instant::now();
     let mut pointings_since_report = 0u64;
 
     loop {
         let elapsed = start_time.elapsed().as_secs_f64();
         let angle = elapsed * angular_velocity;
+        let revolutions = angle / (2.0 * PI);
 
-        let target1 = center1 + radius * angle.cos();
-        let target2 = center2 + radius * angle.sin();
+        let target_x = center_x + radius * angle.cos();
+        let target_y = center_y + radius * angle.sin();
 
-        fsm.move_xy_fast(target1, target2)?;
+        fsm.move_to(target_x, target_y)?;
         pointings_since_report += 1;
 
-        if last_report_time.elapsed() >= Duration::from_secs(1) {
-            info!("{} pointings/sec", pointings_since_report);
+        if last_report_time.elapsed() >= Duration::from_millis(200) {
+            info!(
+                "{:.2} revs, {} pointings",
+                revolutions, pointings_since_report
+            );
             pointings_since_report = 0;
             last_report_time = Instant::now();
         }
 
-        let current_rev = angle / (2.0 * PI);
-        if current_rev.floor() > last_rev_check.floor() {
-            revolutions += 1;
-            info!("Revolution {} complete", revolutions);
-            fsm.last_error()?;
-
-            if count > 0 && revolutions >= count {
-                break;
-            }
-        }
-        std::thread::sleep(Duration::from_millis(1));
-        last_rev_check = current_rev;
-    }
-
-    // Return to center
-    info!("Returning to center...");
-    for _ in 0..10000 {
-        cur1 = step_toward_clamped(cur1, center1, max_step, min1, max1);
-        cur2 = step_toward_clamped(cur2, center2, max_step, min2, max2);
-        fsm.move_xy_fast(cur1, cur2)?;
-        if (cur1 - center1).abs() < 0.1 && (cur2 - center2).abs() < 0.1 {
+        if count > 0 && revolutions >= count as f64 {
             break;
         }
+
+        std::thread::sleep(Duration::from_millis(delay_ms));
     }
 
-    info!("Disabling servos...");
-    fsm.set_servo(AXIS_X, false)?;
-    fsm.set_servo(AXIS_Y, false)?;
+    // Return to center over 1 second
+    let (cur_x, cur_y) = fsm.get_position()?;
+    info!("Returning to center...");
+    ramp_to(
+        fsm,
+        cur_x,
+        cur_y,
+        center_x,
+        center_y,
+        Duration::from_secs(1),
+        delay_ms,
+    )?;
 
+    // S330 Drop will handle servo disable and shutdown
     info!("Done!");
     Ok(())
 }
 
-fn step_toward_clamped(current: f64, target: f64, max_step: f64, min: f64, max: f64) -> f64 {
-    let clamped_target = target.clamp(min, max);
-    let delta = clamped_target - current;
-    let next = if delta.abs() <= max_step {
-        clamped_target
-    } else {
-        current + delta.signum() * max_step
-    };
-    next.clamp(min, max)
-}
-
 // ==================== Steer Command ====================
 
-fn cmd_steer(ip: &str, force_atz: bool) -> Result<()> {
-    println!("Connecting to E-727 at {ip}...");
-    let mut fsm = E727::connect_ip(ip)?;
+fn cmd_steer(fsm: &mut S330) -> Result<()> {
+    let ((min_x, max_x), (min_y, max_y)) = fsm.get_travel_ranges()?;
+    let (center_x, center_y) = fsm.get_centers()?;
 
-    let (min_x, max_x) = fsm.get_travel_range(AXIS_X)?;
-    let (min_y, max_y) = fsm.get_travel_range(AXIS_Y)?;
-    let (center_x, center_y) = fsm.get_xy_centers()?;
-
-    if fsm.autozero(force_atz)? {
-        println!("Autozero completed");
-    } else {
-        println!("Autozero skipped (use --force-atz to re-run)");
-    }
-
-    let mut pos_x = fsm.get_position(AXIS_X)?;
-    let mut pos_y = fsm.get_position(AXIS_Y)?;
+    let (mut pos_x, mut pos_y) = fsm.get_position()?;
     println!("Position: ({pos_x:.1}, {pos_y:.1})");
-
-    fsm.set_servo(AXIS_X, true)?;
-    fsm.set_servo(AXIS_Y, true)?;
-    std::thread::sleep(Duration::from_millis(50));
 
     let step_sizes = [0.1, 1.0, 10.0, 100.0];
     let mut step_idx = 1;
@@ -403,16 +375,16 @@ fn cmd_steer(ip: &str, force_atz: bool) -> Result<()> {
                 [b'c'] | [b'C'] => {
                     pos_x = center_x;
                     pos_y = center_y;
-                    fsm.move_to(AXIS_X, pos_x)?;
-                    fsm.move_to(AXIS_Y, pos_y)?;
+                    fsm.move_to(pos_x, pos_y)?;
                     continue;
                 }
                 [b'r'] | [b'R'] => {
                     print!("\r Recording...                                        ");
                     io::stdout().flush()?;
 
-                    let (errors, positions) =
-                        fsm.record_position(AXIS_X, Duration::from_millis(200))?;
+                    let (errors, positions) = fsm
+                        .e727_mut()
+                        .record_position(Axis::Axis1, Duration::from_millis(200))?;
 
                     if let Some(filename) = write_capture_csv(&errors, &positions)? {
                         let n = errors.len().min(positions.len());
@@ -427,18 +399,14 @@ fn cmd_steer(ip: &str, force_atz: bool) -> Result<()> {
             if dx != 0.0 || dy != 0.0 {
                 pos_x = (pos_x + dx).clamp(min_x, max_x);
                 pos_y = (pos_y + dy).clamp(min_y, max_y);
-                fsm.move_to(AXIS_X, pos_x)?;
-                fsm.move_to(AXIS_Y, pos_y)?;
+                fsm.move_to(pos_x, pos_y)?;
             }
         }
         Ok(())
     })();
 
     restore_terminal()?;
-    println!("\n\nDisabling servos...");
-    fsm.set_servo(AXIS_X, false)?;
-    fsm.set_servo(AXIS_Y, false)?;
-    println!("Done!");
+    println!("\n\nDone! (S330 will shutdown on drop)");
 
     result
 }
@@ -488,7 +456,6 @@ fn write_capture_csv(errors: &[f64], positions: &[f64]) -> Result<Option<String>
 #[allow(clippy::too_many_arguments)]
 fn cmd_move(
     ip: &str,
-    force_atz: bool,
     axis: Option<String>,
     position: Option<f64>,
     relative: Option<f64>,
@@ -504,22 +471,16 @@ fn cmd_move(
     info!("Connecting to E-727 at {}...", ip);
     let mut fsm = E727::connect_ip(ip)?;
 
-    if fsm.autozero(force_atz)? {
-        info!("Autozero completed");
-    } else {
-        info!("Autozero skipped (use --force-atz to re-run)");
-    }
+    let axis_str = axis.ok_or_else(|| anyhow::anyhow!("--axis is required for move operations"))?;
+    let axis: Axis = axis_str.parse().map_err(|e: String| anyhow::anyhow!(e))?;
 
-    let axis = axis.ok_or_else(|| anyhow::anyhow!("--axis is required for move operations"))?;
-
-    let (min, max) = fsm.get_travel_range(&axis)?;
-    let unit = fsm.get_unit(&axis)?;
-    let current_pos = fsm.get_position(&axis)?;
-    let servo_on = fsm.get_servo(&axis)?;
+    let (min, max) = fsm.get_travel_range(axis)?;
+    let unit = fsm.get_unit(axis)?;
+    let current_pos = fsm.get_position(axis)?;
+    let servo_on = fsm.get_servo(axis)?;
 
     info!(
-        "Axis {}: current={:.3} {}, range=[{:.3}, {:.3}], servo={}",
-        axis, current_pos, unit, min, max, servo_on
+        "Axis {axis}: current={current_pos:.3} {unit}, range=[{min:.3}, {max:.3}], servo={servo_on}"
     );
 
     let mut target = if let Some(pos) = position {
@@ -527,7 +488,7 @@ fn cmd_move(
     } else if let Some(rel) = relative {
         current_pos + rel
     } else {
-        fsm.get_center(&axis)?
+        fsm.get_center(axis)?
     };
 
     if target < min || target > max {
@@ -540,27 +501,31 @@ fn cmd_move(
         let original_target = target;
         target = current_pos + clamped_step;
         info!(
-            "Step size {:.3} exceeds max {:.1}, clamping to {:.3} (requested {:.3})",
-            step.abs(),
-            max_step,
-            target,
-            original_target
+            "Step size {:.3} exceeds max {max_step:.1}, clamping to {target:.3} (requested {original_target:.3})",
+            step.abs()
         );
     }
 
-    info!("Target position: {:.3} {}", target, unit);
+    info!("Target position: {target:.3} {unit}");
 
     if !servo_on {
-        info!("Enabling servo on axis {}...", axis);
-        fsm.set_servo(&axis, true)?;
+        info!("Enabling servo on axis {axis}...");
+        fsm.set_servo(axis, true)?;
     }
 
-    info!("Moving axis {} to {:.3} {}...", axis, target, unit);
-    fsm.move_to(&axis, target)?;
+    info!("Moving axis {axis} to {target:.3} {unit}...");
+    // Build move command with target in correct axis slot
+    let (a1, a2, a3, a4) = match axis {
+        Axis::Axis1 => (Some(target), None, None, None),
+        Axis::Axis2 => (None, Some(target), None, None),
+        Axis::Axis3 => (None, None, Some(target), None),
+        Axis::Axis4 => (None, None, None, Some(target)),
+    };
+    fsm.move_to(a1, a2, a3, a4)?;
 
     if !no_wait {
         let timeout_dur = Duration::from_secs(timeout);
-        info!("Waiting for motion to complete (timeout: {}s)...", timeout);
+        info!("Waiting for motion to complete (timeout: {timeout}s)...");
 
         let start = Instant::now();
         loop {
@@ -568,19 +533,16 @@ fn cmd_move(
                 bail!("Timeout waiting for motion to complete");
             }
 
-            if fsm.is_on_target(&axis)? {
+            if fsm.is_on_target(axis)? {
                 break;
             }
 
             std::thread::sleep(Duration::from_millis(10));
         }
 
-        let final_pos = fsm.get_position(&axis)?;
+        let final_pos = fsm.get_position(axis)?;
         let error = final_pos - target;
-        info!(
-            "Motion complete! Final position: {:.3} {} (error: {:.3} {})",
-            final_pos, unit, error, unit
-        );
+        info!("Motion complete! Final position: {final_pos:.3} {unit} (error: {error:.3} {unit})");
     } else {
         info!("Motion command sent (not waiting for completion)");
     }
@@ -743,13 +705,13 @@ fn cmd_query(ip: &str, axis: Option<String>) -> Result<()> {
     info!("Connecting to E-727 at {}...", ip);
     let mut fsm = E727::connect_ip(ip)?;
 
-    let axes: Vec<String> = if let Some(ax) = axis {
-        vec![ax]
+    let axes: Vec<Axis> = if let Some(ax) = axis {
+        vec![ax.parse().map_err(|e: String| anyhow::anyhow!(e))?]
     } else {
         fsm.connected_axes()?
     };
 
-    for axis in &axes {
+    for axis in axes {
         let (min, max) = fsm.get_travel_range(axis)?;
         let unit = fsm.get_unit(axis)?;
         let current_pos = fsm.get_position(axis)?;
@@ -758,8 +720,7 @@ fn cmd_query(ip: &str, axis: Option<String>) -> Result<()> {
         let autozeroed = fsm.is_autozeroed(axis)?;
 
         info!(
-            "Axis {}: position={:.3} {}, range=[{:.3}, {:.3}], servo={}, on_target={}, atz={}",
-            axis, current_pos, unit, min, max, servo_on, on_target, autozeroed
+            "Axis {axis}: position={current_pos:.3} {unit}, range=[{min:.3}, {max:.3}], servo={servo_on}, on_target={on_target}, atz={autozeroed}"
         );
     }
 
@@ -772,14 +733,14 @@ fn cmd_off(ip: &str, axis: Option<String>) -> Result<()> {
     info!("Connecting to E-727 at {}...", ip);
     let mut fsm = E727::connect_ip(ip)?;
 
-    let axes: Vec<String> = if let Some(ax) = axis {
-        vec![ax]
+    let axes: Vec<Axis> = if let Some(ax) = axis {
+        vec![ax.parse().map_err(|e: String| anyhow::anyhow!(e))?]
     } else {
         fsm.connected_axes()?
     };
 
-    for axis in &axes {
-        info!("Disabling servo on axis {}...", axis);
+    for axis in axes {
+        info!("Disabling servo on axis {axis}...");
         fsm.set_servo(axis, false)?;
     }
 
@@ -858,33 +819,48 @@ fn cmd_info(ip: &str, dump_params: bool, show_recorder: bool, show_hpa: bool) ->
         // Note: GCS requires axis identifier even for system-wide params, use axis 1
         info!("  System-wide:");
         for param in SpaParam::iter().filter(|p| p.is_system_wide()) {
-            let response = gcs.query(&format!("SPA? 1 0x{:08X}", param.address()))?;
+            let addr = param.address();
+            let response = gcs.query(&format!("SPA? 1 0x{addr:08X}"))?;
             // Parse value from response (format: "1=value")
             let value = response
                 .split('=')
                 .nth(1)
                 .map(|s| s.trim())
                 .unwrap_or(response.trim());
-            info!("    {:width$} : {}", param, value, width = max_name_len);
+            info!(
+                "    {:width$} (0x{:08X}) : {}",
+                param,
+                addr,
+                value,
+                width = max_name_len
+            );
         }
 
-        // Then query per-axis parameters (MaxItem=4) for axes 1 and 2
-        for axis in ["1", "2"] {
+        // Then query per-axis parameters (MaxItem=4) for all 4 axes
+        for axis in ["1", "2", "3", "4"] {
             info!("  Axis {}:", axis);
             for param in SpaParam::iter().filter(|p| p.max_items() == 4) {
-                match gcs.query(&format!("SPA? {axis} 0x{:08X}", param.address())) {
+                let addr = param.address();
+                match gcs.query(&format!("SPA? {axis} 0x{addr:08X}")) {
                     Ok(response) => {
                         let value = response
                             .split('=')
                             .nth(1)
                             .map(|s| s.trim())
                             .unwrap_or(response.trim());
-                        info!("    {:width$} : {}", param, value, width = max_name_len);
+                        info!(
+                            "    {:width$} (0x{:08X}) : {}",
+                            param,
+                            addr,
+                            value,
+                            width = max_name_len
+                        );
                     }
                     Err(e) => {
                         info!(
-                            "    {:width$} : <error: {}>",
+                            "    {:width$} (0x{:08X}) : <error: {}>",
                             param,
+                            addr,
                             e,
                             width = max_name_len
                         );
@@ -902,10 +878,11 @@ fn cmd_info(ip: &str, dump_params: bool, show_recorder: bool, show_hpa: bool) ->
         if !other_params.is_empty() {
             info!("  Other (per-channel/table):");
             for param in other_params {
+                let addr = param.address();
                 let n_items = param.max_items();
                 // Query all items for this parameter
                 for item in 1..=n_items {
-                    match gcs.query(&format!("SPA? {item} 0x{:08X}", param.address())) {
+                    match gcs.query(&format!("SPA? {item} 0x{addr:08X}")) {
                         Ok(response) => {
                             let value = response
                                 .split('=')
@@ -913,21 +890,39 @@ fn cmd_info(ip: &str, dump_params: bool, show_recorder: bool, show_hpa: bool) ->
                                 .map(|s| s.trim())
                                 .unwrap_or(response.trim());
                             if item == 1 {
-                                info!("    {:width$} : {}", param, value, width = max_name_len);
+                                info!(
+                                    "    {:width$} (0x{:08X}) : {}",
+                                    param,
+                                    addr,
+                                    value,
+                                    width = max_name_len
+                                );
                             } else {
-                                info!("    {:width$} : {}", "", value, width = max_name_len);
+                                // Continuation lines for same param, pad to align
+                                info!(
+                                    "    {:width$}               : {}",
+                                    "",
+                                    value,
+                                    width = max_name_len
+                                );
                             }
                         }
                         Err(e) => {
                             if item == 1 {
                                 info!(
-                                    "    {:width$} : <error: {}>",
+                                    "    {:width$} (0x{:08X}) : <error: {}>",
                                     param,
+                                    addr,
                                     e,
                                     width = max_name_len
                                 );
                             } else {
-                                info!("    {:width$} : <error: {}>", "", e, width = max_name_len);
+                                info!(
+                                    "    {:width$}               : <error: {}>",
+                                    "",
+                                    e,
+                                    width = max_name_len
+                                );
                             }
                         }
                     }
@@ -942,52 +937,162 @@ fn cmd_info(ip: &str, dump_params: bool, show_recorder: bool, show_hpa: bool) ->
 
 // ==================== REPL Command ====================
 
+const HISTORY_MAX_LINES: usize = 500;
+
+fn get_history_path() -> Option<std::path::PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    let config_dir = std::path::Path::new(&home).join(".config");
+    std::fs::create_dir_all(&config_dir).ok()?;
+    Some(config_dir.join("fsm_tool_hist.txt"))
+}
+
+fn truncate_history_file(path: &std::path::Path, max_lines: usize) {
+    if let Ok(contents) = std::fs::read_to_string(path) {
+        let lines: Vec<&str> = contents.lines().collect();
+        if lines.len() > max_lines {
+            let skip_count = lines.len() - max_lines;
+            let truncated: Vec<&str> = lines.into_iter().skip(skip_count).collect();
+            let _ = std::fs::write(path, truncated.join("\n") + "\n");
+        }
+    }
+}
+
 fn cmd_repl(ip: &str) -> Result<()> {
     println!("Connecting to E-727 at {ip}...");
-    let mut gcs = GcsDevice::connect_default_port(ip)?;
+    let mut fsm = E727::connect_ip(ip)?;
 
-    let response = gcs.query("*IDN?")?;
-    println!("Connected: {}", response.trim());
+    {
+        let gcs = fsm.device_mut();
+        let response = gcs.query("*IDN?")?;
+        println!("Connected: {}", response.trim());
+    }
+
     println!();
     println!("GCS REPL - Enter commands (queries end with '?'), 'quit' to exit");
+    println!("Use Up/Down arrows for command history");
     println!("Examples: *IDN?, POS?, SVO 1 1, MOV 1 1000");
     println!();
 
-    let stdin = io::stdin();
+    let mut rl = DefaultEditor::new()?;
+
+    let history_path = get_history_path();
+    if let Some(ref path) = history_path {
+        truncate_history_file(path, HISTORY_MAX_LINES);
+        if path.exists() {
+            let _ = rl.load_history(path);
+        }
+    }
+
+    // Helper to handle connection errors with reconnect (exponential backoff)
+    fn handle_connection_error(fsm: &mut E727, e: &dyn std::fmt::Display) {
+        println!("Connection disrupted: {e}");
+        let mut backoff_ms = 100u64;
+        let mut attempts = 0u32;
+        const MAX_BACKOFF_MS: u64 = 3000;
+
+        loop {
+            attempts += 1;
+            print!("\rReconnecting... (attempt {attempts}, next retry in {backoff_ms}ms)      ");
+            io::stdout().flush().ok();
+            match fsm.reconnect() {
+                Ok(()) => {
+                    println!("\rReconnected successfully                                      ");
+                    break;
+                }
+                Err(_) => {
+                    std::thread::sleep(Duration::from_millis(backoff_ms));
+                    backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_MS);
+                }
+            }
+        }
+    }
+
     loop {
-        print!("> ");
-        io::stdout().flush()?;
+        match rl.readline("> ") {
+            Ok(line) => {
+                let cmd = line.trim();
+                if cmd.is_empty() {
+                    continue;
+                }
 
-        let mut input = String::new();
-        if stdin.read_line(&mut input)? == 0 {
-            break; // EOF
-        }
+                // Add to history and save
+                let _ = rl.add_history_entry(&line);
+                if let Some(ref path) = history_path {
+                    let _ = rl.save_history(path);
+                }
 
-        let cmd = input.trim();
-        if cmd.is_empty() {
-            continue;
-        }
+                if cmd.eq_ignore_ascii_case("quit") || cmd.eq_ignore_ascii_case("exit") {
+                    println!("Bye!");
+                    break;
+                }
 
-        if cmd.eq_ignore_ascii_case("quit") || cmd.eq_ignore_ascii_case("exit") {
-            println!("Bye!");
-            break;
-        }
+                // Get mutable ref to device for raw commands
+                let gcs = fsm.device_mut();
 
-        // If command ends with ?, it's a query - expect response
-        if cmd.ends_with('?') {
-            match gcs.query(cmd) {
-                Ok(response) => {
-                    for line in response.lines() {
-                        println!("{line}");
+                // If command ends with ?, it's a query - expect response
+                if cmd.ends_with('?') {
+                    // Send query and read response
+                    if let Err(e) = gcs.send(cmd) {
+                        handle_connection_error(&mut fsm, &e);
+                        continue;
+                    }
+                    match gcs.read() {
+                        Ok(response) => {
+                            for line in response.lines() {
+                                println!("{line}");
+                            }
+                        }
+                        Err(e) => {
+                            handle_connection_error(&mut fsm, &e);
+                            continue;
+                        }
+                    }
+                } else {
+                    // It's a command - send it
+                    if let Err(e) = gcs.send(cmd) {
+                        handle_connection_error(&mut fsm, &e);
+                        continue;
+                    }
+
+                    // Try to read any response with 200ms timeout
+                    let gcs = fsm.device_mut();
+                    gcs.set_timeout(Duration::from_millis(200));
+                    match gcs.read() {
+                        Ok(response) => {
+                            for line in response.lines() {
+                                println!("{line}");
+                            }
+                        }
+                        Err(_) => {
+                            // Timeout is expected for commands with no response
+                        }
+                    }
+                    // Restore normal timeout
+                    gcs.set_timeout(Duration::from_secs(7));
+                }
+
+                // Query and decode ERR? after any command, only show if error
+                match fsm.last_error_decoded() {
+                    Ok((code, err)) => {
+                        if err != PiErrorCode::NoError {
+                            println!("ERR: {} ({code})", err.description());
+                        }
+                    }
+                    Err(e) => {
+                        handle_connection_error(&mut fsm, &e);
                     }
                 }
-                Err(e) => println!("Error: {e}"),
             }
-        } else {
-            // It's a command - send and check for errors
-            match gcs.send(cmd) {
-                Ok(()) => println!("OK"),
-                Err(e) => println!("Error: {e}"),
+            Err(ReadlineError::Interrupted) => {
+                println!("^C");
+                break;
+            }
+            Err(ReadlineError::Eof) => {
+                break;
+            }
+            Err(err) => {
+                println!("Error: {err}");
+                break;
             }
         }
     }

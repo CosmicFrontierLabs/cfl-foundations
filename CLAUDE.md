@@ -68,7 +68,7 @@ IMPORTANT: Always run `cargo fmt` before committing any code changes!
 - Always use specific file patterns or `git add -u` (for modified files only)
 - **NEVER use force push (`git push -f` or `git push --force`)** - Can cause data loss and conflicts for collaborators
 - **NEVER use `git commit --amend`** - Create new commits instead of modifying existing ones
-- **NEVER use `--no-verify` to skip pre-commit hooks** - Hooks are there for a reason, wait for them to complete
+- **NEVER use `--no-verify` to skip pre-commit hooks** - Hooks are there for a reason, fix the underlying issue instead. If you use `--no-verify` and the user reminds you, add a line to `pennance.md` acknowledging you won't do it again.
 - **Strongly prefer `git merge` over `git rebase`** - We use squash merge in GitHub to keep main clean, so merge commits in branches are fine
 - Do NOT include attribution in commit messages
 - Do NOT include "Created with Claude Code" or any Claude attribution in commit messages

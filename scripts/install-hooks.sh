@@ -37,20 +37,24 @@ if git diff --cached --name-only | grep -q '\.rs$'; then
 
     # Run cargo check (matching CI)
     echo "Running cargo check..."
-    check_output=$(cargo check --locked --all-targets 2>&1)
-    if [ $? -ne 0 ]; then
-        echo "❌ Cargo check failed!"
-        echo "$check_output"
+    if ! cargo check --locked --all-targets; then
+        echo ""
+        echo "========================================"
+        echo "❌ CARGO CHECK FAILED!"
+        echo "========================================"
+        echo ""
         exit 1
     fi
     echo "✅ Cargo check passed."
 
     # Run cargo clippy with warnings as errors (show output on failure, matching CI)
     echo "Running clippy checks..."
-    clippy_output=$(cargo clippy -- -D warnings 2>&1)
-    if [ $? -ne 0 ]; then
-        echo "❌ Clippy found issues!"
-        echo "$clippy_output"
+    if ! cargo clippy -- -D warnings; then
+        echo ""
+        echo "========================================"
+        echo "❌ CLIPPY FOUND ISSUES!"
+        echo "========================================"
+        echo ""
         exit 1
     fi
     echo "✅ Clippy checks passed."

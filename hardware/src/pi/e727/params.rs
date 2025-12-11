@@ -1,5 +1,58 @@
 use clap::ValueEnum;
 
+/// E-727 axis identifiers (1-based).
+///
+/// The E-727 supports up to 4 axes, numbered 1-4.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Axis {
+    /// Axis 1 (typically X tilt)
+    Axis1 = 1,
+    /// Axis 2 (typically Y tilt)
+    Axis2 = 2,
+    /// Axis 3 (additional tilt or unused)
+    Axis3 = 3,
+    /// Axis 4 (typically piston/focus)
+    Axis4 = 4,
+}
+
+impl Axis {
+    /// Get the 1-based axis number.
+    pub fn number(self) -> u8 {
+        self as u8
+    }
+
+    /// Get the axis identifier string for GCS commands.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Axis::Axis1 => "1",
+            Axis::Axis2 => "2",
+            Axis::Axis3 => "3",
+            Axis::Axis4 => "4",
+        }
+    }
+}
+
+impl std::fmt::Display for Axis {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.number())
+    }
+}
+
+impl std::str::FromStr for Axis {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim() {
+            "1" => Ok(Axis::Axis1),
+            "2" => Ok(Axis::Axis2),
+            "3" => Ok(Axis::Axis3),
+            "4" => Ok(Axis::Axis4),
+            _ => Err(format!("Invalid axis: {s}, expected 1-4")),
+        }
+    }
+}
+
 /// E-727 SPA (Set Parameter Access) parameter IDs.
 ///
 /// These hex addresses are used with SPA/SPA? commands to read/write

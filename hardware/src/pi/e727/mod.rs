@@ -28,20 +28,7 @@
 //! # Servo Control
 //!
 //! The E-727 uses closed-loop servo control for precision positioning. Before
-//! moving, you must enable the servo on each axis:
-//!
-//! ```no_run
-//! use hardware::pi::E727;
-//!
-//! let mut fsm = E727::connect_ip("192.168.15.210")?;
-//!
-//! // Enable servos (required before motion commands)
-//! fsm.set_all_servos(true)?;
-//!
-//! // Now moves will work
-//! fsm.move_to("1", 1000.0)?;
-//! # Ok::<(), hardware::pi::GcsError>(())
-//! ```
+//! moving, you must enable the servo on each axis with `set_all_servos(true)`.
 //!
 //! # Connection
 //!
@@ -51,42 +38,6 @@
 //!
 //! **Note:** USB transport was attempted but has firmware bugs causing
 //! communication failures after 2-3 short packet reads.
-//!
-//! # Example: Complete FSM Control
-//!
-//! ```no_run
-//! use hardware::pi::E727;
-//! use std::time::Duration;
-//!
-//! // Connect to E-727
-//! let mut fsm = E727::connect_ip("192.168.15.210")?;
-//!
-//! // Check device identity
-//! println!("Connected to: {}", fsm.idn()?);
-//! println!("Axes: {:?}", fsm.axes());
-//!
-//! // Query current state
-//! for axis in fsm.axes().to_vec() {
-//!     let (min, max) = fsm.get_travel_range(&axis)?;
-//!     let unit = fsm.get_unit(&axis)?;
-//!     let pos = fsm.get_position(&axis)?;
-//!     println!("Axis {}: {:.1} {} (range {:.1}-{:.1})", axis, pos, unit, min, max);
-//! }
-//!
-//! // Enable servos and move
-//! fsm.set_all_servos(true)?;
-//! fsm.move_to("1", 1000.0)?;
-//! fsm.move_to("2", 1000.0)?;
-//!
-//! // Wait for motion to complete
-//! fsm.wait_on_target(Duration::from_secs(5))?;
-//!
-//! // Check final positions
-//! let positions = fsm.get_all_positions()?;
-//! println!("Final positions: {:?}", positions);
-//!
-//! # Ok::<(), hardware::pi::GcsError>(())
-//! ```
 //!
 //! # Safety
 //!
@@ -104,7 +55,7 @@ mod errors;
 mod params;
 
 pub use errors::PiErrorCode;
-pub use params::SpaParam;
+pub use params::{Axis, SpaParam};
 
 use std::collections::HashMap;
 use std::net::ToSocketAddrs;
@@ -118,22 +69,8 @@ use super::gcs::{GcsDevice, GcsError, GcsResult, DEFAULT_PORT};
 ///
 /// Provides convenient methods for fast steering mirror control including
 /// position commands, servo control, and motion monitoring.
-///
-/// # Example
-///
-/// ```no_run
-/// use hardware::pi::E727;
-/// use std::time::Duration;
-///
-/// let mut fsm = E727::connect_ip("192.168.15.210")?;
-/// fsm.set_all_servos(true)?;
-/// fsm.move_to("1", 1000.0)?;
-/// fsm.wait_on_target(Duration::from_secs(2))?;
-/// # Ok::<(), hardware::pi::GcsError>(())
-/// ```
 pub struct E727 {
     device: GcsDevice,
-    axes: Vec<String>,
 }
 
 impl E727 {
@@ -143,15 +80,7 @@ impl E727 {
     ///
     /// * `addr` - Socket address (IP:port). For just IP, use [`connect_ip`](Self::connect_ip).
     ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use hardware::pi::E727;
-    ///
-    /// let mut fsm = E727::connect("192.168.15.210:50000")?;
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
-    pub fn connect<A: ToSocketAddrs>(addr: A) -> GcsResult<Self> {
+    pub fn connect<A: ToSocketAddrs + ToString>(addr: A) -> GcsResult<Self> {
         let device = GcsDevice::connect(addr)?;
         Self::init(device)
     }
@@ -159,16 +88,6 @@ impl E727 {
     /// Connect to an E-727 at the given IP using the default port (50000).
     ///
     /// This is the recommended connection method for most use cases.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use hardware::pi::E727;
-    ///
-    /// let mut fsm = E727::connect_ip("192.168.15.210")?;
-    /// println!("Connected to: {}", fsm.idn()?);
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
     pub fn connect_ip(ip: &str) -> GcsResult<Self> {
         let device = GcsDevice::connect(format!("{ip}:{DEFAULT_PORT}"))?;
         Self::init(device)
@@ -179,27 +98,7 @@ impl E727 {
         let idn = device.query("*IDN?")?;
         info!("Connected to: {}", idn.trim());
 
-        let axes = Self::query_axes(&mut device)?;
-        debug!("Available axes: {:?}", axes);
-        debug!("Overriding to 1,2");
-
-        Ok(Self {
-            device,
-            axes: vec!["1".to_string(), "2".to_string()],
-        })
-    }
-
-    /// Query available axes from the controller.
-    fn query_axes(device: &mut GcsDevice) -> GcsResult<Vec<String>> {
-        let response = device.query("SAI?")?;
-        debug!("SAI? raw response: {:?}", response);
-        let axes: Vec<String> = response
-            .lines()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        debug!("Parsed axes: {:?}", axes);
-        Ok(axes)
+        Ok(Self { device })
     }
 
     /// Set the timeout for operations.
@@ -207,6 +106,13 @@ impl E727 {
     /// The default is 7 seconds. Increase for long moves or homing operations.
     pub fn set_timeout(&mut self, timeout: Duration) {
         self.device.set_timeout(timeout);
+    }
+
+    /// Reconnect to the controller.
+    ///
+    /// Use this to recover from connection errors or socket timeouts.
+    pub fn reconnect(&mut self) -> GcsResult<()> {
+        self.device.reconnect()
     }
 
     /// Get mutable access to the underlying GCS device.
@@ -226,33 +132,30 @@ impl E727 {
         Ok(response.trim().to_string())
     }
 
-    /// Get the list of available axis identifiers.
+    /// Get the list of all possible axis identifiers.
     ///
-    /// Typically returns `["1", "2", "3", "4"]` for a 4-axis E-727.
-    /// Note: This includes all axes reported by the controller, even if
-    /// some are not physically connected. Use [`connected_axes()`](Self::connected_axes)
+    /// Returns all 4 axes for the E-727. Use [`connected_axes()`](Self::connected_axes)
     /// to get only axes with valid sensor readings.
-    pub fn axes(&self) -> &[String] {
-        &self.axes
+    pub fn axes(&self) -> [Axis; 4] {
+        [Axis::Axis1, Axis::Axis2, Axis::Axis3, Axis::Axis4]
     }
 
     /// Get axes that appear to be connected (position within valid range).
     ///
     /// Filters out axes where the position reading is outside the travel range,
     /// which typically indicates a disconnected or malfunctioning sensor.
-    pub fn connected_axes(&mut self) -> GcsResult<Vec<String>> {
+    pub fn connected_axes(&mut self) -> GcsResult<Vec<Axis>> {
         let mut connected = Vec::new();
-        for axis in &self.axes.clone() {
+        for axis in self.axes() {
             let pos = self.get_position(axis)?;
             let (min, max) = self.get_travel_range(axis)?;
             // Allow 10% margin outside range for drift
             let margin = (max - min) * 0.1;
             if pos >= min - margin && pos <= max + margin {
-                connected.push(axis.clone());
+                connected.push(axis);
             } else {
                 debug!(
-                    "Axis {} appears disconnected: position {:.1} outside [{:.1}, {:.1}]",
-                    axis, pos, min, max
+                    "Axis {axis} appears disconnected: position {pos:.1} outside [{min:.1}, {max:.1}]"
                 );
             }
         }
@@ -262,118 +165,156 @@ impl E727 {
     // ==================== Position Queries ====================
 
     /// Get current position of an axis in physical units (µrad or µm).
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use hardware::pi::E727;
-    /// # let mut fsm = E727::connect_ip("192.168.15.210")?;
-    /// let pos = fsm.get_position("1")?;
-    /// println!("Axis 1 position: {} µrad", pos);
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
-    pub fn get_position(&mut self, axis: &str) -> GcsResult<f64> {
+    pub fn get_position(&mut self, axis: Axis) -> GcsResult<f64> {
         let response = self.device.query(&format!("POS? {axis}"))?;
         GcsDevice::parse_single_value(&response)
     }
 
     /// Get current positions of all axes.
     ///
-    /// Returns a HashMap mapping axis ID to position value.
-    pub fn get_all_positions(&mut self) -> GcsResult<HashMap<String, f64>> {
-        let response = self.device.query("POS?")?;
-        GcsDevice::parse_axis_values(&response)
+    /// Returns a HashMap mapping axis to position value.
+    pub fn get_all_positions(&mut self) -> GcsResult<HashMap<Axis, f64>> {
+        let mut result = HashMap::new();
+        for axis in [Axis::Axis1, Axis::Axis2, Axis::Axis3, Axis::Axis4] {
+            if let Ok(pos) = self.get_position(axis) {
+                result.insert(axis, pos);
+            }
+        }
+        Ok(result)
     }
 
     /// Get target (commanded) position of an axis.
     ///
     /// This is the position commanded by the last `MOV` command, which may
     /// differ from the actual position if motion is in progress.
-    pub fn get_target(&mut self, axis: &str) -> GcsResult<f64> {
+    pub fn get_target(&mut self, axis: Axis) -> GcsResult<f64> {
         let response = self.device.query(&format!("MOV? {axis}"))?;
         GcsDevice::parse_single_value(&response)
     }
 
     /// Get target positions of all axes.
-    pub fn get_all_targets(&mut self) -> GcsResult<HashMap<String, f64>> {
-        let response = self.device.query("MOV?")?;
-        GcsDevice::parse_axis_values(&response)
+    pub fn get_all_targets(&mut self) -> GcsResult<HashMap<Axis, f64>> {
+        let mut result = HashMap::new();
+        for axis in [Axis::Axis1, Axis::Axis2, Axis::Axis3, Axis::Axis4] {
+            if let Ok(pos) = self.get_target(axis) {
+                result.insert(axis, pos);
+            }
+        }
+        Ok(result)
     }
 
     // ==================== Motion Commands ====================
 
-    /// Move an axis to an absolute position.
+    /// Move axes to absolute positions.
     ///
-    /// The servo must be enabled on the axis before motion commands will work.
+    /// The servo must be enabled on each axis before motion commands will work.
     /// The command returns immediately; use [`wait_on_target`](Self::wait_on_target)
     /// to wait for motion completion.
     ///
     /// # Arguments
     ///
-    /// * `axis` - Axis identifier (e.g., "1", "2")
-    /// * `position` - Target position in physical units (µrad or µm)
+    /// * `axis1` - Target position for axis 1, or None to skip
+    /// * `axis2` - Target position for axis 2, or None to skip
+    /// * `axis3` - Target position for axis 3, or None to skip
+    /// * `axis4` - Target position for axis 4, or None to skip
     ///
     /// # Errors
     ///
     /// Returns `ControllerError` with code 7 if position is out of limits,
     /// or code 5 if servo is not enabled.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use hardware::pi::E727;
-    /// # let mut fsm = E727::connect_ip("192.168.15.210")?;
-    /// fsm.set_servo("1", true)?;
-    /// fsm.move_to("1", 1000.0)?;  // Move to 1000 µrad
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
-    pub fn move_to(&mut self, axis: &str, position: f64) -> GcsResult<()> {
-        self.device.command(&format!("MOV {axis} {position}"))
-    }
-
-    /// Move multiple axes to absolute positions simultaneously.
-    ///
-    /// This sends a single command to move all specified axes at once,
-    /// which is more efficient than multiple [`move_to`](Self::move_to) calls.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use hardware::pi::E727;
-    /// # let mut fsm = E727::connect_ip("192.168.15.210")?;
-    /// fsm.set_all_servos(true)?;
-    /// fsm.move_all(&[("1", 1000.0), ("2", 1000.0)])?;
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
-    pub fn move_all(&mut self, positions: &[(impl AsRef<str>, f64)]) -> GcsResult<()> {
-        let args: Vec<String> = positions
-            .iter()
-            .map(|(axis, pos)| format!("{} {}", axis.as_ref(), pos))
-            .collect();
+    pub fn move_to(
+        &mut self,
+        axis1: Option<f64>,
+        axis2: Option<f64>,
+        axis3: Option<f64>,
+        axis4: Option<f64>,
+    ) -> GcsResult<()> {
+        let mut args = Vec::new();
+        if let Some(pos) = axis1 {
+            args.push(format!("1 {pos}"));
+        }
+        if let Some(pos) = axis2 {
+            args.push(format!("2 {pos}"));
+        }
+        if let Some(pos) = axis3 {
+            args.push(format!("3 {pos}"));
+        }
+        if let Some(pos) = axis4 {
+            args.push(format!("4 {pos}"));
+        }
+        if args.is_empty() {
+            return Ok(());
+        }
         self.device.command(&format!("MOV {}", args.join(" ")))
     }
 
-    /// Move an axis by a relative distance.
+    /// Move axes by relative distances.
     ///
     /// # Arguments
     ///
-    /// * `axis` - Axis identifier
-    /// * `distance` - Distance to move (positive or negative)
-    pub fn move_relative(&mut self, axis: &str, distance: f64) -> GcsResult<()> {
-        self.device.command(&format!("MVR {axis} {distance}"))
+    /// * `axis1` - Distance to move axis 1, or None to skip
+    /// * `axis2` - Distance to move axis 2, or None to skip
+    /// * `axis3` - Distance to move axis 3, or None to skip
+    /// * `axis4` - Distance to move axis 4, or None to skip
+    pub fn move_relative(
+        &mut self,
+        axis1: Option<f64>,
+        axis2: Option<f64>,
+        axis3: Option<f64>,
+        axis4: Option<f64>,
+    ) -> GcsResult<()> {
+        let mut args = Vec::new();
+        if let Some(dist) = axis1 {
+            args.push(format!("1 {dist}"));
+        }
+        if let Some(dist) = axis2 {
+            args.push(format!("2 {dist}"));
+        }
+        if let Some(dist) = axis3 {
+            args.push(format!("3 {dist}"));
+        }
+        if let Some(dist) = axis4 {
+            args.push(format!("4 {dist}"));
+        }
+        if args.is_empty() {
+            return Ok(());
+        }
+        self.device.command(&format!("MVR {}", args.join(" ")))
     }
 
-    /// Fast 2-axis move without error checking.
+    /// Fast move without error checking.
     ///
-    /// Sends a single MOV command for both axes without querying ERR? afterward.
+    /// Sends a single MOV command without querying ERR? afterward.
     /// Use this for high-speed motion loops where latency matters.
     ///
     /// # Safety
     ///
-    /// No error checking is performed. Use [`move_to`](Self::move_to) or
-    /// [`move_all`](Self::move_all) for commands that need verification.
-    pub fn move_xy_fast(&mut self, x: f64, y: f64) -> GcsResult<()> {
-        self.device.send(&format!("MOV 1 {x} 2 {y}"))
+    /// No error checking is performed. Use [`move_to`](Self::move_to) for
+    /// commands that need verification.
+    pub fn move_to_fast(
+        &mut self,
+        axis1: Option<f64>,
+        axis2: Option<f64>,
+        axis3: Option<f64>,
+        axis4: Option<f64>,
+    ) -> GcsResult<()> {
+        let mut args = Vec::new();
+        if let Some(pos) = axis1 {
+            args.push(format!("1 {pos}"));
+        }
+        if let Some(pos) = axis2 {
+            args.push(format!("2 {pos}"));
+        }
+        if let Some(pos) = axis3 {
+            args.push(format!("3 {pos}"));
+        }
+        if let Some(pos) = axis4 {
+            args.push(format!("4 {pos}"));
+        }
+        if args.is_empty() {
+            return Ok(());
+        }
+        self.device.send(&format!("MOV {}", args.join(" ")))
     }
 
     // ==================== Servo Control ====================
@@ -382,17 +323,7 @@ impl E727 {
     ///
     /// Servo must be enabled before motion commands will work. When disabled,
     /// the piezo operates in open-loop mode.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use hardware::pi::E727;
-    /// # let mut fsm = E727::connect_ip("192.168.15.210")?;
-    /// fsm.set_servo("1", true)?;   // Enable servo
-    /// fsm.set_servo("1", false)?;  // Disable servo
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
-    pub fn set_servo(&mut self, axis: &str, enabled: bool) -> GcsResult<()> {
+    pub fn set_servo(&mut self, axis: Axis, enabled: bool) -> GcsResult<()> {
         let state = if enabled { 1 } else { 0 };
         self.device.command(&format!("SVO {axis} {state}"))
     }
@@ -401,8 +332,8 @@ impl E727 {
     ///
     /// Convenience method to set all axes at once.
     pub fn set_all_servos(&mut self, enabled: bool) -> GcsResult<()> {
-        for axis in self.axes.clone() {
-            self.set_servo(&axis, enabled)?;
+        for axis in [Axis::Axis1, Axis::Axis2, Axis::Axis3, Axis::Axis4] {
+            self.set_servo(axis, enabled)?;
         }
         Ok(())
     }
@@ -410,7 +341,7 @@ impl E727 {
     /// Get servo (closed-loop) state for an axis.
     ///
     /// Returns `true` if servo is enabled, `false` if disabled (open-loop).
-    pub fn get_servo(&mut self, axis: &str) -> GcsResult<bool> {
+    pub fn get_servo(&mut self, axis: Axis) -> GcsResult<bool> {
         let response = self.device.query(&format!("SVO? {axis}"))?;
         let values = GcsDevice::parse_axis_bools(&response)?;
         values
@@ -420,9 +351,14 @@ impl E727 {
     }
 
     /// Get servo states for all axes.
-    pub fn get_all_servos(&mut self) -> GcsResult<HashMap<String, bool>> {
-        let response = self.device.query("SVO?")?;
-        GcsDevice::parse_axis_bools(&response)
+    pub fn get_all_servos(&mut self) -> GcsResult<HashMap<Axis, bool>> {
+        let mut result = HashMap::new();
+        for axis in [Axis::Axis1, Axis::Axis2, Axis::Axis3, Axis::Axis4] {
+            if let Ok(state) = self.get_servo(axis) {
+                result.insert(axis, state);
+            }
+        }
+        Ok(result)
     }
 
     // ==================== Motion Status ====================
@@ -431,7 +367,7 @@ impl E727 {
     ///
     /// Returns `true` if the axis has reached its commanded position within
     /// the configured settling window.
-    pub fn is_on_target(&mut self, axis: &str) -> GcsResult<bool> {
+    pub fn is_on_target(&mut self, axis: Axis) -> GcsResult<bool> {
         let response = self.device.query(&format!("ONT? {axis}"))?;
         let values = GcsDevice::parse_axis_bools(&response)?;
         values
@@ -441,9 +377,14 @@ impl E727 {
     }
 
     /// Get on-target state for all axes.
-    pub fn all_on_target(&mut self) -> GcsResult<HashMap<String, bool>> {
-        let response = self.device.query("ONT?")?;
-        GcsDevice::parse_axis_bools(&response)
+    pub fn all_on_target(&mut self) -> GcsResult<HashMap<Axis, bool>> {
+        let mut result = HashMap::new();
+        for axis in [Axis::Axis1, Axis::Axis2, Axis::Axis3, Axis::Axis4] {
+            if let Ok(state) = self.is_on_target(axis) {
+                result.insert(axis, state);
+            }
+        }
+        Ok(result)
     }
 
     /// Check if any axis is currently moving (via control byte query).
@@ -489,7 +430,7 @@ impl E727 {
     /// Halt a specific axis.
     ///
     /// Stops motion on the specified axis while leaving other axes unaffected.
-    pub fn halt(&mut self, axis: &str) -> GcsResult<()> {
+    pub fn halt(&mut self, axis: Axis) -> GcsResult<()> {
         self.device.command(&format!("HLT {axis}"))
     }
 
@@ -498,17 +439,7 @@ impl E727 {
     /// Get the travel range limits for an axis.
     ///
     /// Returns `(min, max)` position values in physical units (µrad or µm).
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use hardware::pi::E727;
-    /// # let mut fsm = E727::connect_ip("192.168.15.210")?;
-    /// let (min, max) = fsm.get_travel_range("1")?;
-    /// println!("Axis 1 range: {} to {} µrad", min, max);
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
-    pub fn get_travel_range(&mut self, axis: &str) -> GcsResult<(f64, f64)> {
+    pub fn get_travel_range(&mut self, axis: Axis) -> GcsResult<(f64, f64)> {
         let min_response = self.device.query(&format!("TMN? {axis}"))?;
         let max_response = self.device.query(&format!("TMX? {axis}"))?;
         let min = GcsDevice::parse_single_value(&min_response)?;
@@ -519,7 +450,7 @@ impl E727 {
     /// Get the physical unit for an axis.
     ///
     /// Returns strings like `"µrad"` (microradians) or `"µm"` (micrometers).
-    pub fn get_unit(&mut self, axis: &str) -> GcsResult<String> {
+    pub fn get_unit(&mut self, axis: Axis) -> GcsResult<String> {
         let response = self.device.query(&format!("PUN? {axis}"))?;
         for line in response.lines() {
             if let Some((_axis, value)) = line.split_once('=') {
@@ -530,17 +461,7 @@ impl E727 {
     }
 
     /// Get the center position of an axis (midpoint of travel range).
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use hardware::pi::E727;
-    /// # let mut fsm = E727::connect_ip("192.168.15.210")?;
-    /// let center = fsm.get_center("1")?;
-    /// println!("Axis 1 center: {} µrad", center);
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
-    pub fn get_center(&mut self, axis: &str) -> GcsResult<f64> {
+    pub fn get_center(&mut self, axis: Axis) -> GcsResult<f64> {
         let (min, max) = self.get_travel_range(axis)?;
         Ok((min + max) / 2.0)
     }
@@ -549,9 +470,50 @@ impl E727 {
     ///
     /// Returns `(center_x, center_y)` tuple.
     pub fn get_xy_centers(&mut self) -> GcsResult<(f64, f64)> {
-        let center_x = self.get_center("1")?;
-        let center_y = self.get_center("2")?;
+        let center_x = self.get_center(Axis::Axis1)?;
+        let center_y = self.get_center(Axis::Axis2)?;
         Ok((center_x, center_y))
+    }
+
+    // ==================== Parameter Access (SPA) ====================
+
+    /// Query a parameter value for an axis.
+    ///
+    /// Uses the `SPA?` command to read controller parameters.
+    ///
+    /// # Arguments
+    ///
+    /// * `axis` - The axis to query
+    /// * `param` - The parameter to read
+    ///
+    /// # Returns
+    ///
+    /// The parameter value as a float (some SPA params return scientific notation).
+    pub fn get_param(&mut self, axis: Axis, param: SpaParam) -> GcsResult<f64> {
+        let addr = param.address();
+        let response = self.device.query(&format!("SPA? {axis} 0x{addr:08X}"))?;
+
+        // Parse response like "3 0x09000000=0" or "3 0x09000000=-1.999999955e-02"
+        response
+            .split('=')
+            .nth(1)
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .ok_or_else(|| GcsError::ParseError(format!("Invalid SPA response: {response}")))
+    }
+
+    /// Set a parameter value for an axis.
+    ///
+    /// Uses the `SPA` command to write controller parameters.
+    ///
+    /// # Arguments
+    ///
+    /// * `axis` - The axis to configure
+    /// * `param` - The parameter to write
+    /// * `value` - The value to set
+    pub fn set_param(&mut self, axis: Axis, param: SpaParam, value: f64) -> GcsResult<()> {
+        let addr = param.address();
+        self.device
+            .command(&format!("SPA {axis} 0x{addr:08X} {value}"))
     }
 
     // ==================== Utility Methods ====================
@@ -560,20 +522,6 @@ impl E727 {
     ///
     /// Polls [`all_on_target()`](Self::all_on_target) every 10ms until all axes
     /// report being on target, or the timeout expires.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use hardware::pi::E727;
-    /// use std::time::Duration;
-    ///
-    /// # let mut fsm = E727::connect_ip("192.168.15.210")?;
-    /// fsm.set_all_servos(true)?;
-    /// fsm.move_to("1", 1000.0)?;
-    /// fsm.wait_on_target(Duration::from_secs(5))?;
-    /// println!("Motion complete!");
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
     pub fn wait_on_target(&mut self, timeout: Duration) -> GcsResult<()> {
         let start = std::time::Instant::now();
         loop {
@@ -605,24 +553,12 @@ impl E727 {
 
     /// Query and decode the last error from the controller.
     ///
-    /// Returns `None` if no error (code 0), otherwise returns the decoded error.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use hardware::pi::E727;
-    /// # let mut fsm = E727::connect_ip("192.168.15.210")?;
-    /// if let Some(err) = fsm.last_error_decoded()? {
-    ///     println!("Error {:?}: {}", err, err.description());
-    /// }
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
-    pub fn last_error_decoded(&mut self) -> GcsResult<Option<PiErrorCode>> {
+    /// Returns the decoded `PiErrorCode` enum value, including `NoError` for code 0.
+    /// For unknown error codes, returns the raw code in the error tuple.
+    pub fn last_error_decoded(&mut self) -> GcsResult<(i32, PiErrorCode)> {
         let code = self.last_error()?;
-        if code == 0 {
-            return Ok(None);
-        }
-        Ok(PiErrorCode::from_code(code))
+        let err = PiErrorCode::from_code(code).unwrap_or(PiErrorCode::UnknownError);
+        Ok((code, err))
     }
 
     // ==================== Autozero ====================
@@ -630,28 +566,19 @@ impl E727 {
     /// Check if an axis has been autozeroed.
     ///
     /// Returns `true` if the axis has completed autozero successfully.
-    pub fn is_autozeroed(&mut self, axis: &str) -> GcsResult<bool> {
+    pub fn is_autozeroed(&mut self, axis: Axis) -> GcsResult<bool> {
         let response = self.device.query(&format!("ATZ? {axis}"))?;
         Ok(response.contains("=1"))
     }
 
-    /// Check if all axes have been autozeroed.
-    pub fn all_autozeroed(&mut self) -> GcsResult<bool> {
-        for axis in self.axes.clone() {
-            if !self.is_autozeroed(&axis)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    /// Perform autozero on all axes.
+    /// Perform autozero on specified axes.
     ///
     /// Autozero calibrates the piezo sensors and should be performed after power-on
     /// or when position accuracy degrades. This operation takes several seconds.
     ///
     /// # Arguments
     ///
+    /// * `axes` - Axes to autozero
     /// * `force` - If `true`, always run autozero. If `false`, skip if already done.
     ///
     /// # Returns
@@ -659,38 +586,27 @@ impl E727 {
     /// * `Ok(true)` - Autozero was performed
     /// * `Ok(false)` - Autozero was skipped (already done and force=false)
     /// * `Err(_)` - Autozero failed
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use hardware::pi::E727;
-    /// # let mut fsm = E727::connect_ip("192.168.15.210")?;
-    /// // Only autozero if needed
-    /// if fsm.autozero(false)? {
-    ///     println!("Autozero completed");
-    /// } else {
-    ///     println!("Already autozeroed, skipped");
-    /// }
-    ///
-    /// // Force autozero even if already done
-    /// fsm.autozero(true)?;
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
-    pub fn autozero(&mut self, force: bool) -> GcsResult<bool> {
+    pub fn autozero(&mut self, axes: &[Axis], force: bool) -> GcsResult<bool> {
         // Check if already autozeroed
-        if !force && self.all_autozeroed()? {
+        let mut all_zeroed = true;
+        for &axis in axes {
+            if !self.is_autozeroed(axis)? {
+                all_zeroed = false;
+                break;
+            }
+        }
+        if !force && all_zeroed {
             return Ok(false);
         }
 
         info!("Starting autozero...");
 
-        // Send ATZ command to all axes
-        for axis in self.axes.clone() {
+        for &axis in axes {
             self.device.send(&format!("ATZ {axis} NaN"))?;
 
-            // Poll ATZ? until all axes are autozeroed
+            // Poll ATZ? until axis is autozeroed
             loop {
-                match self.is_autozeroed(&axis) {
+                match self.is_autozeroed(axis) {
                     Ok(true) => {
                         break;
                     }
@@ -710,7 +626,7 @@ impl E727 {
                 std::thread::sleep(Duration::from_millis(1000));
             }
 
-            info!("Axis {} autozeroed", axis);
+            info!("Axis {axis} autozeroed");
         }
 
         info!("Autozero complete");
@@ -726,27 +642,15 @@ impl E727 {
     ///
     /// # Arguments
     ///
-    /// * `axis` - Axis to record (e.g., "1", "2")
+    /// * `axis` - Axis to record
     /// * `duration` - How long to record
     ///
     /// # Returns
     ///
     /// Tuple of (position_errors, positions) vectors, sampled at 50kHz (20µs intervals).
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use hardware::pi::E727;
-    /// use std::time::Duration;
-    ///
-    /// # let mut fsm = E727::connect_ip("192.168.15.210")?;
-    /// let (errors, positions) = fsm.record_position("1", Duration::from_millis(200))?;
-    /// println!("Recorded {} samples", errors.len());
-    /// # Ok::<(), hardware::pi::GcsError>(())
-    /// ```
     pub fn record_position(
         &mut self,
-        axis: &str,
+        axis: Axis,
         duration: Duration,
     ) -> GcsResult<(Vec<f64>, Vec<f64>)> {
         const RECORD_POSITION_ERROR: u8 = 3;
