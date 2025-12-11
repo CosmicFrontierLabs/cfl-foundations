@@ -1,5 +1,14 @@
 //! Message types for Exail Asterix NS gyro
 
+use crate::exail::angle::AngleData;
+use crate::exail::temperature::TemperatureReading;
+use crate::exail::time::{GyroTime, TimeInterpretation};
+
+#[cfg(test)]
+use crate::exail::health_status::HealthStatus;
+#[cfg(test)]
+use crate::exail::temperature::TemperatureSensor;
+
 mod gyro_data_filt;
 mod gyro_data_full;
 mod gyro_data_raw;
@@ -39,7 +48,7 @@ pub trait GyroData {
     fn message_id(&self) -> u8;
 
     /// Access the gyro_time field
-    fn gyro_time(&self) -> &crate::time::GyroTime;
+    fn gyro_time(&self) -> &GyroTime;
 
     /// Get the 5-bit frame ID (message type identifier)
     fn frame_id(&self) -> u8 {
@@ -62,7 +71,7 @@ pub trait GyroData {
     /// Returns:
     /// - `TimeInterpretation::TagAndBase` for BASE variants (17, 19, 21)
     /// - `TimeInterpretation::SingleTag` for regular variants (18, 20, 22)
-    fn time_interpretation(&self) -> crate::time::TimeInterpretation {
+    fn time_interpretation(&self) -> TimeInterpretation {
         self.gyro_time().interpret(self.is_base_variant())
     }
 
@@ -71,15 +80,15 @@ pub trait GyroData {
     /// Get all temperature readings from this message as a Vec
     ///
     /// Each reading includes sensor location, raw value, and decoded Celsius temperature
-    fn temperature_readings(&self) -> Vec<crate::temperature::TemperatureReading>;
+    fn temperature_readings(&self) -> Vec<TemperatureReading>;
 
     // Angle data methods
 
     /// Get raw angle data if available (converted to arcseconds)
-    fn raw_angle_data(&self) -> Option<crate::angle::AngleData>;
+    fn raw_angle_data(&self) -> Option<AngleData>;
 
     /// Get filtered angle data if available (converted to arcseconds)
-    fn filtered_angle_data(&self) -> Option<crate::angle::AngleData>;
+    fn filtered_angle_data(&self) -> Option<AngleData>;
 }
 
 #[cfg(test)]
@@ -91,12 +100,12 @@ mod tests {
         let raw = RawGyroInertialData {
             start_word: 0,
             message_id: 0x80 | frame_id::RAW_GYRO_BASE,
-            gyro_time: crate::time::GyroTime::from_bytes([0; 4]),
+            gyro_time: GyroTime::from_bytes([0; 4]),
             angle_x: 0,
             angle_y: 0,
             angle_z: 0,
             sia_fil_temp: 0,
-            health_status: crate::health_status::HealthStatus::empty(),
+            health_status: HealthStatus::empty(),
             checksum: 0,
         };
         assert_eq!(raw.frame_id(), frame_id::RAW_GYRO_BASE);
@@ -107,12 +116,12 @@ mod tests {
         let raw_base = RawGyroInertialData {
             start_word: 0,
             message_id: frame_id::RAW_GYRO_BASE,
-            gyro_time: crate::time::GyroTime::from_bytes([0; 4]),
+            gyro_time: GyroTime::from_bytes([0; 4]),
             angle_x: 0,
             angle_y: 0,
             angle_z: 0,
             sia_fil_temp: 0,
-            health_status: crate::health_status::HealthStatus::empty(),
+            health_status: HealthStatus::empty(),
             checksum: 0,
         };
         assert!(raw_base.is_base_variant());
@@ -120,12 +129,12 @@ mod tests {
         let raw_regular = RawGyroInertialData {
             start_word: 0,
             message_id: frame_id::RAW_GYRO,
-            gyro_time: crate::time::GyroTime::from_bytes([0; 4]),
+            gyro_time: GyroTime::from_bytes([0; 4]),
             angle_x: 0,
             angle_y: 0,
             angle_z: 0,
             sia_fil_temp: 0,
-            health_status: crate::health_status::HealthStatus::empty(),
+            health_status: HealthStatus::empty(),
             checksum: 0,
         };
         assert!(!raw_regular.is_base_variant());
@@ -136,31 +145,31 @@ mod tests {
         let raw = RawGyroInertialData {
             start_word: 0,
             message_id: frame_id::RAW_GYRO,
-            gyro_time: crate::time::GyroTime::from_bytes([0; 4]),
+            gyro_time: GyroTime::from_bytes([0; 4]),
             angle_x: 0,
             angle_y: 0,
             angle_z: 0,
             sia_fil_temp: 0,
-            health_status: crate::health_status::HealthStatus::empty(),
+            health_status: HealthStatus::empty(),
             checksum: 0,
         };
 
         let filtered = FilteredGyroInertialData {
             start_word: 0,
             message_id: frame_id::FILTERED_GYRO,
-            gyro_time: crate::time::GyroTime::from_bytes([0; 4]),
+            gyro_time: GyroTime::from_bytes([0; 4]),
             angle_x: 0,
             angle_y: 0,
             angle_z: 0,
             sia_fil_temp: 0,
-            health_status: crate::health_status::HealthStatus::empty(),
+            health_status: HealthStatus::empty(),
             checksum: 0,
         };
 
         let full = FullGyroData {
             start_word: 0,
             message_id: frame_id::FULL_GYRO,
-            gyro_time: crate::time::GyroTime::from_bytes([0; 4]),
+            gyro_time: GyroTime::from_bytes([0; 4]),
             raw_ang_x: 0,
             raw_ang_y: 0,
             raw_ang_z: 0,
@@ -182,7 +191,7 @@ mod tests {
             sia_fil_temp: 0,
             org_fil_temp: 0,
             inter_temp: 0,
-            health_status: crate::health_status::HealthStatus::empty(),
+            health_status: HealthStatus::empty(),
             checksum: 0,
         };
 
@@ -196,18 +205,18 @@ mod tests {
         let raw_base = RawGyroInertialData {
             start_word: 0,
             message_id: frame_id::RAW_GYRO_BASE,
-            gyro_time: crate::time::GyroTime::from_bytes([0x12, 0x34, 0x56, 0x78]),
+            gyro_time: GyroTime::from_bytes([0x12, 0x34, 0x56, 0x78]),
             angle_x: 0,
             angle_y: 0,
             angle_z: 0,
             sia_fil_temp: 0,
-            health_status: crate::health_status::HealthStatus::empty(),
+            health_status: HealthStatus::empty(),
             checksum: 0,
         };
 
         let interp = raw_base.time_interpretation();
         match interp {
-            crate::time::TimeInterpretation::TagAndBase {
+            TimeInterpretation::TagAndBase {
                 gyro_time_tag,
                 time_base,
             } => {
@@ -223,18 +232,18 @@ mod tests {
         let raw_regular = RawGyroInertialData {
             start_word: 0,
             message_id: frame_id::RAW_GYRO,
-            gyro_time: crate::time::GyroTime::from_bytes([0x12, 0x34, 0x56, 0x78]),
+            gyro_time: GyroTime::from_bytes([0x12, 0x34, 0x56, 0x78]),
             angle_x: 0,
             angle_y: 0,
             angle_z: 0,
             sia_fil_temp: 0,
-            health_status: crate::health_status::HealthStatus::empty(),
+            health_status: HealthStatus::empty(),
             checksum: 0,
         };
 
         let interp = raw_regular.time_interpretation();
         match interp {
-            crate::time::TimeInterpretation::SingleTag(tag) => {
+            TimeInterpretation::SingleTag(tag) => {
                 assert_eq!(tag, 0x78563412);
             }
             _ => panic!("Expected SingleTag for regular variant"),
@@ -248,31 +257,31 @@ mod tests {
         let raw = RawGyroInertialData {
             start_word: 0,
             message_id: frame_id::RAW_GYRO_BASE,
-            gyro_time: crate::time::GyroTime::from_bytes(time_bytes),
+            gyro_time: GyroTime::from_bytes(time_bytes),
             angle_x: 0,
             angle_y: 0,
             angle_z: 0,
             sia_fil_temp: 0,
-            health_status: crate::health_status::HealthStatus::empty(),
+            health_status: HealthStatus::empty(),
             checksum: 0,
         };
 
         let filtered = FilteredGyroInertialData {
             start_word: 0,
             message_id: frame_id::FILTERED_GYRO_BASE,
-            gyro_time: crate::time::GyroTime::from_bytes(time_bytes),
+            gyro_time: GyroTime::from_bytes(time_bytes),
             angle_x: 0,
             angle_y: 0,
             angle_z: 0,
             sia_fil_temp: 0,
-            health_status: crate::health_status::HealthStatus::empty(),
+            health_status: HealthStatus::empty(),
             checksum: 0,
         };
 
         let full = FullGyroData {
             start_word: 0,
             message_id: frame_id::FULL_GYRO_BASE,
-            gyro_time: crate::time::GyroTime::from_bytes(time_bytes),
+            gyro_time: GyroTime::from_bytes(time_bytes),
             raw_ang_x: 0,
             raw_ang_y: 0,
             raw_ang_z: 0,
@@ -294,21 +303,21 @@ mod tests {
             sia_fil_temp: 0,
             org_fil_temp: 0,
             inter_temp: 0,
-            health_status: crate::health_status::HealthStatus::empty(),
+            health_status: HealthStatus::empty(),
             checksum: 0,
         };
 
         assert!(matches!(
             raw.time_interpretation(),
-            crate::time::TimeInterpretation::TagAndBase { .. }
+            TimeInterpretation::TagAndBase { .. }
         ));
         assert!(matches!(
             filtered.time_interpretation(),
-            crate::time::TimeInterpretation::TagAndBase { .. }
+            TimeInterpretation::TagAndBase { .. }
         ));
         assert!(matches!(
             full.time_interpretation(),
-            crate::time::TimeInterpretation::TagAndBase { .. }
+            TimeInterpretation::TagAndBase { .. }
         ));
     }
 
@@ -317,21 +326,18 @@ mod tests {
         let raw = RawGyroInertialData {
             start_word: 0,
             message_id: frame_id::RAW_GYRO,
-            gyro_time: crate::time::GyroTime::from_bytes([0; 4]),
+            gyro_time: GyroTime::from_bytes([0; 4]),
             angle_x: 0,
             angle_y: 0,
             angle_z: 0,
             sia_fil_temp: 16384,
-            health_status: crate::health_status::HealthStatus::empty(),
+            health_status: HealthStatus::empty(),
             checksum: 0,
         };
 
         let readings = raw.temperature_readings();
         assert_eq!(readings.len(), 1);
-        assert_eq!(
-            readings[0].sensor,
-            crate::temperature::TemperatureSensor::SiaFilter
-        );
+        assert_eq!(readings[0].sensor, TemperatureSensor::SiaFilter);
         assert_eq!(readings[0].raw, 16384);
         assert!(readings[0].celsius.is_some());
     }
@@ -341,21 +347,18 @@ mod tests {
         let filtered = FilteredGyroInertialData {
             start_word: 0,
             message_id: frame_id::FILTERED_GYRO,
-            gyro_time: crate::time::GyroTime::from_bytes([0; 4]),
+            gyro_time: GyroTime::from_bytes([0; 4]),
             angle_x: 0,
             angle_y: 0,
             angle_z: 0,
             sia_fil_temp: 16384,
-            health_status: crate::health_status::HealthStatus::empty(),
+            health_status: HealthStatus::empty(),
             checksum: 0,
         };
 
         let readings = filtered.temperature_readings();
         assert_eq!(readings.len(), 1);
-        assert_eq!(
-            readings[0].sensor,
-            crate::temperature::TemperatureSensor::SiaFilter
-        );
+        assert_eq!(readings[0].sensor, TemperatureSensor::SiaFilter);
     }
 
     #[test]
@@ -363,7 +366,7 @@ mod tests {
         let full = FullGyroData {
             start_word: 0,
             message_id: frame_id::FULL_GYRO,
-            gyro_time: crate::time::GyroTime::from_bytes([0; 4]),
+            gyro_time: GyroTime::from_bytes([0; 4]),
             raw_ang_x: 0,
             raw_ang_y: 0,
             raw_ang_z: 0,
@@ -385,29 +388,17 @@ mod tests {
             sia_fil_temp: 16384,
             org_fil_temp: 16384,
             inter_temp: 16384,
-            health_status: crate::health_status::HealthStatus::empty(),
+            health_status: HealthStatus::empty(),
             checksum: 0,
         };
 
         let readings = full.temperature_readings();
         assert_eq!(readings.len(), 4);
 
-        assert_eq!(
-            readings[0].sensor,
-            crate::temperature::TemperatureSensor::Board
-        );
-        assert_eq!(
-            readings[1].sensor,
-            crate::temperature::TemperatureSensor::SiaFilter
-        );
-        assert_eq!(
-            readings[2].sensor,
-            crate::temperature::TemperatureSensor::Organizer
-        );
-        assert_eq!(
-            readings[3].sensor,
-            crate::temperature::TemperatureSensor::Interface
-        );
+        assert_eq!(readings[0].sensor, TemperatureSensor::Board);
+        assert_eq!(readings[1].sensor, TemperatureSensor::SiaFilter);
+        assert_eq!(readings[2].sensor, TemperatureSensor::Organizer);
+        assert_eq!(readings[3].sensor, TemperatureSensor::Interface);
 
         for reading in &readings {
             assert!(reading.celsius.is_some());

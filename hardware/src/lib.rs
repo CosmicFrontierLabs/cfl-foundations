@@ -1,3 +1,4 @@
+pub mod exail;
 pub mod exolambda;
 pub mod nsv455;
 pub mod pi;

@@ -2,7 +2,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufWriter, Read, Write};
 
-use exail::{verify_checksum, FullGyroData, GyroData, TemperatureSensor};
+use hardware::exail::{verify_checksum, FullGyroData, GyroData, TemperatureSensor};
 use log::{error, info, warn};
 
 const MSG_SIZE: usize = 66;

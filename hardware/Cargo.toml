@@ -23,12 +23,17 @@ path = "src/bin/v4l2_stride_test.rs"
 name = "print_roi_constraints"
 path = "src/bin/print_roi_constraints.rs"
 
+[[bin]]
+name = "parse_dump"
+path = "src/exail/bin/parse_dump.rs"
+
 [dependencies]
 anyhow = "1.0"
 async-stream = "0.3.6"
 axum = "0.8.7"
 base64 = "0.22.1"
-bytemuck = "1.24.0"
+bitflags = "2.10.0"
+bytemuck = { version = "1.24.0", features = ["derive"] }
 bytes = "1.11.0"
 clap = { version = "4.5.53", features = ["derive"] }
 crc = "3.3.0"

@@ -3,13 +3,13 @@
 //! This module provides structures and parsing for raw data packets
 //! from the Exail Asterix NS inertial measurement unit.
 
-mod angle;
-mod checksum;
-mod health_status;
+pub mod angle;
+pub mod checksum;
+pub mod health_status;
 pub mod messages;
-mod parser;
-mod temperature;
-mod time;
+pub mod parser;
+pub mod temperature;
+pub mod time;
 
 pub use angle::{AngleData, ARCSECONDS_PER_LSB};
 pub use checksum::{compute_checksum, verify_checksum};

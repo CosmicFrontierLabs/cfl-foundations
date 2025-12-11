@@ -3,10 +3,10 @@
 use bytemuck::{Pod, Zeroable};
 
 use super::GyroData;
-use crate::angle::AngleData;
-use crate::health_status::HealthStatus;
-use crate::temperature::{TemperatureReading, TemperatureSensor};
-use crate::time::GyroTime;
+use crate::exail::angle::AngleData;
+use crate::exail::health_status::HealthStatus;
+use crate::exail::temperature::{TemperatureReading, TemperatureSensor};
+use crate::exail::time::GyroTime;
 
 /// Full Gyro Data packet from Exail Asterix NS
 ///
@@ -103,7 +103,7 @@ impl GyroData for FullGyroData {
         self.message_id
     }
 
-    fn gyro_time(&self) -> &crate::time::GyroTime {
+    fn gyro_time(&self) -> &GyroTime {
         &self.gyro_time
     }
 

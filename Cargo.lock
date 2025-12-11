@@ -1170,17 +1170,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "exail"
-version = "0.1.0"
-dependencies = [
- "bitflags 2.10.0",
- "bytemuck",
- "env_logger",
- "log",
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "exr"
 version = "1.74.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2106,6 +2095,7 @@ dependencies = [
  "async-stream",
  "axum 0.8.7",
  "base64 0.22.1",
+ "bitflags 2.10.0",
  "bytemuck",
  "bytes",
  "clap",

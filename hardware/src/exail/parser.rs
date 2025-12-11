@@ -2,7 +2,7 @@
 
 use bytemuck::from_bytes;
 
-use crate::messages::{
+use super::messages::{
     frame_id, FilteredGyroInertialData, FullGyroData, RawGyroInertialData, FRAME_ID_MASK,
 };
 
