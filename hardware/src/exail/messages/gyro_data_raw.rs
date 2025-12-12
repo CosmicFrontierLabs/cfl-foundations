@@ -81,6 +81,8 @@ unsafe impl Pod for RawGyroInertialData {}
 // SAFETY: RawGyroInertialData is repr(C, packed) and all fields are Zeroable
 unsafe impl Zeroable for RawGyroInertialData {}
 
+impl crate::exail::checksum::Checksummed for RawGyroInertialData {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

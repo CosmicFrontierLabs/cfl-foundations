@@ -12,7 +12,7 @@ pub mod temperature;
 pub mod time;
 
 pub use angle::{AngleData, ARCSECONDS_PER_LSB};
-pub use checksum::{compute_checksum, verify_checksum};
+pub use checksum::{compute_checksum, verify_checksum_bytes, Checksummed};
 pub use health_status::HealthStatus;
 pub use messages::{
     frame_id, FilteredGyroInertialData, FullGyroData, GyroData, RawGyroInertialData, FRAME_ID_MASK,

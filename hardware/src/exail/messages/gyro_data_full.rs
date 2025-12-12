@@ -138,6 +138,8 @@ unsafe impl Pod for FullGyroData {}
 // SAFETY: FullGyroData is repr(C, packed) and all fields are Zeroable
 unsafe impl Zeroable for FullGyroData {}
 
+impl crate::exail::checksum::Checksummed for FullGyroData {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

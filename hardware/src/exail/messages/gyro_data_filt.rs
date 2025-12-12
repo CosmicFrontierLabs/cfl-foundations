@@ -81,6 +81,8 @@ unsafe impl Pod for FilteredGyroInertialData {}
 // SAFETY: FilteredGyroInertialData is repr(C, packed) and all fields are Zeroable
 unsafe impl Zeroable for FilteredGyroInertialData {}
 
+impl crate::exail::checksum::Checksummed for FilteredGyroInertialData {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

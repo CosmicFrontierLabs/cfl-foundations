@@ -2,7 +2,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufWriter, Read, Write};
 
-use hardware::exail::{verify_checksum, FullGyroData, GyroData, TemperatureSensor};
+use hardware::exail::{verify_checksum_bytes, FullGyroData, GyroData, TemperatureSensor};
 use log::{error, info, warn};
 
 const MSG_SIZE: usize = 66;
@@ -115,7 +115,7 @@ fn main() {
     while pos + MSG_SIZE <= data.len() {
         let msg_data = &data[pos..pos + MSG_SIZE];
 
-        if !verify_checksum(msg_data) {
+        if !verify_checksum_bytes(msg_data) {
             // If there's already a pending skip, log it now with no next timetag (back-to-back skips)
             if let Some(prev_skip) = pending_skip.take() {
                 log_skipped(&prev_skip, None, corrupted_segment_number);
