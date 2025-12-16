@@ -90,6 +90,6 @@ tokio-test = "0.4"
 
 [features]
 default = []
-playerone = []
+playerone = ["hardware/playerone"]
 nsv455 = []
 sdl2 = ["dep:sdl2"]

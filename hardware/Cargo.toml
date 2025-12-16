@@ -51,7 +51,7 @@ log = "0.4.29"
 sysinfo = "0.32"
 ndarray = { version = "0.16", features = ["rayon"] }
 once_cell = "1.21.3"
-playerone-sdk = "0.2.2"
+playerone-sdk = { version = "0.2.2", optional = true }
 prometheus = "0.14.0"
 rust-embed = "8.9.0"
 rustyline = "17.0.2"
@@ -72,3 +72,4 @@ tokio-test = "0.4"
 [features]
 default = []
 hardware-tests = []
+playerone = ["dep:playerone-sdk"]

@@ -52,6 +52,18 @@ pub struct ZoomCoords {
     pub y: usize,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ZoomQueryParams {
+    pub x: usize,
+    pub y: usize,
+    #[serde(default = "default_zoom_size")]
+    pub size: usize,
+}
+
+fn default_zoom_size() -> usize {
+    64
+}
+
 pub struct AppState<C: CameraInterface> {
     pub camera: Arc<Mutex<C>>,
     pub stats: Arc<Mutex<FrameStats>>,
@@ -566,19 +578,18 @@ async fn set_zoom_endpoint<C: CameraInterface + 'static>(
 
 async fn get_zoom_endpoint<C: CameraInterface + 'static>(
     State(state): State<Arc<AppState<C>>>,
+    axum::extract::Query(params): axum::extract::Query<ZoomQueryParams>,
 ) -> Response {
-    state.zoom_notify.notified().await;
-
-    let zoom_opt = {
-        let zoom = state.zoom_region.read().await;
-        zoom.clone()
+    let frame_data = {
+        let latest = state.latest_frame.read().await;
+        latest.clone()
     };
 
-    match zoom_opt {
-        Some(zoom_region) => {
-            let patch = &zoom_region.patch;
+    match frame_data {
+        Some((frame, metadata, _timestamp)) => {
+            let patch = extract_patch(&frame, params.x, params.y, params.size);
             let scale_factor = 4;
-            let scaled_size = 64 * scale_factor;
+            let scaled_size = params.size * scale_factor;
 
             let max_val = *patch.iter().max().unwrap_or(&1) as f32;
             let scale = if max_val > 0.0 { 255.0 / max_val } else { 1.0 };
@@ -588,9 +599,13 @@ async fn get_zoom_endpoint<C: CameraInterface + 'static>(
                 let src_y = y / scale_factor;
                 for x in 0..scaled_size {
                     let src_x = x / scale_factor;
-                    let val = patch[[src_y, src_x]];
-                    let scaled_val = ((val as f32) * scale) as u8;
-                    scaled_patch.push(scaled_val);
+                    if src_y < patch.nrows() && src_x < patch.ncols() {
+                        let val = patch[[src_y, src_x]];
+                        let scaled_val = ((val as f32) * scale) as u8;
+                        scaled_patch.push(scaled_val);
+                    } else {
+                        scaled_patch.push(0);
+                    }
                 }
             }
 
@@ -621,15 +636,15 @@ async fn get_zoom_endpoint<C: CameraInterface + 'static>(
 
             Response::builder()
                 .header(header::CONTENT_TYPE, "image/jpeg")
-                .header("X-Center-X", zoom_region.center.0.to_string())
-                .header("X-Center-Y", zoom_region.center.1.to_string())
-                .header("X-Frame-Number", zoom_region.frame_number.to_string())
+                .header("X-Center-X", params.x.to_string())
+                .header("X-Center-Y", params.y.to_string())
+                .header("X-Frame-Number", metadata.frame_number.to_string())
                 .body(Body::from(jpeg_bytes))
                 .unwrap()
         }
         None => Response::builder()
             .status(StatusCode::SERVICE_UNAVAILABLE)
-            .body(Body::from("No zoom region set"))
+            .body(Body::from("No frame available yet"))
             .unwrap(),
     }
 }

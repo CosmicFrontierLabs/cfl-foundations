@@ -33,6 +33,9 @@ pub struct CameraFrontend {
     image_failure_count: u32,
     stats_failure_count: u32,
     is_loading_image: bool,
+    // Zoom state
+    zoom_center: Option<(u32, u32)>,
+    zoom_auto_update: bool,
 }
 
 pub enum Msg {
@@ -46,6 +49,10 @@ pub enum Msg {
     StatsError,
     ResetImageInterval,
     ResetStatsInterval,
+    // Zoom messages
+    ImageClicked(i32, i32),
+    ClearZoom,
+    ToggleZoomAutoUpdate,
 }
 
 impl Component for CameraFrontend {
@@ -74,6 +81,8 @@ impl Component for CameraFrontend {
             image_failure_count: 0,
             stats_failure_count: 0,
             is_loading_image: false,
+            zoom_center: None,
+            zoom_auto_update: true,
         }
     }
 
@@ -170,11 +179,67 @@ impl Component for CameraFrontend {
                     }));
                 false
             }
+            Msg::ImageClicked(x, y) => {
+                if let Some(window) = web_sys::window() {
+                    if let Some(document) = window.document() {
+                        if let Some(img) = document.get_element_by_id("camera-frame") {
+                            if let Some(img) = img.dyn_ref::<web_sys::HtmlImageElement>() {
+                                // Use naturalWidth/Height - the actual image dimensions
+                                // not props which may be wrong if camera negotiated different resolution
+                                let natural_width = img.natural_width() as f64;
+                                let natural_height = img.natural_height() as f64;
+                                let display_width = img.client_width() as f64;
+                                let display_height = img.client_height() as f64;
+
+                                if natural_width > 0.0 && display_width > 0.0 {
+                                    let scale_x = natural_width / display_width;
+                                    let scale_y = natural_height / display_height;
+                                    let real_x = (x as f64 * scale_x) as u32;
+                                    let real_y = (y as f64 * scale_y) as u32;
+                                    self.zoom_center = Some((real_x, real_y));
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+                false
+            }
+            Msg::ClearZoom => {
+                self.zoom_center = None;
+                true
+            }
+            Msg::ToggleZoomAutoUpdate => {
+                self.zoom_auto_update = !self.zoom_auto_update;
+                true
+            }
         }
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
         let props = ctx.props();
+
+        let onclick = ctx.link().callback(|e: MouseEvent| {
+            let target = e.target().unwrap();
+            let element = target.dyn_ref::<web_sys::Element>().unwrap();
+            let rect = element.get_bounding_client_rect();
+            let x = e.client_x() - rect.left() as i32;
+            let y = e.client_y() - rect.top() as i32;
+            Msg::ImageClicked(x, y)
+        });
+
+        let ontouchstart = ctx.link().callback(|e: TouchEvent| {
+            e.prevent_default();
+            if let Some(touch) = e.touches().get(0) {
+                let target = e.target().unwrap();
+                let element = target.dyn_ref::<web_sys::Element>().unwrap();
+                let rect = element.get_bounding_client_rect();
+                let x = touch.client_x() - rect.left() as i32;
+                let y = touch.client_y() - rect.top() as i32;
+                return Msg::ImageClicked(x, y);
+            }
+            Msg::ImageClicked(0, 0)
+        });
 
         html! {
             <>
@@ -224,9 +289,13 @@ impl Component for CameraFrontend {
                     </div>
                     <div class="image-container">
                         <img
+                            id="camera-frame"
                             class="image-frame"
                             src={self.image_url.clone()}
                             alt="Camera Frame"
+                            onclick={onclick}
+                            ontouchstart={ontouchstart}
+                            style="cursor: crosshair; touch-action: pinch-zoom;"
                         />
                     </div>
                 </div>
@@ -234,6 +303,9 @@ impl Component for CameraFrontend {
                 <div class="column right-panel">
                     <h2>{"Statistics"}</h2>
                     { self.view_stats() }
+
+                    <h2 style="margin-top: 30px;">{"Zoom Region"}</h2>
+                    { self.view_zoom(ctx) }
 
                     <h2 style="margin-top: 30px;">{"Histogram"}</h2>
                     <div class="metadata-item">
@@ -394,6 +466,61 @@ impl CameraFrontend {
                     <div>{"Temperature: --°C"}</div>
                 </div>
             }
+        }
+    }
+
+    fn view_zoom(&self, ctx: &Context<Self>) -> Html {
+        let zoom_size = 128;
+        let zoom_url = if let Some((x, y)) = self.zoom_center {
+            if self.zoom_auto_update {
+                format!(
+                    "/zoom?x={}&y={}&size={}&t={}",
+                    x,
+                    y,
+                    zoom_size,
+                    js_sys::Date::now()
+                )
+            } else {
+                format!("/zoom?x={x}&y={y}&size={zoom_size}")
+            }
+        } else {
+            String::new()
+        };
+
+        html! {
+            <div id="zoom-container">
+                if let Some((x, y)) = self.zoom_center {
+                    <img
+                        id="zoom-canvas"
+                        src={zoom_url}
+                        alt="Zoomed Region"
+                        style="width: 100%; border: 1px solid #00ff00; background: #111; image-rendering: pixelated;"
+                    />
+                    <div id="zoom-info" style="font-size: 0.7em; color: #00aa00; margin-top: 5px;">
+                        {format!("Center: ({}, {})", x, y)}
+                    </div>
+                    <div id="zoom-controls" style="margin-top: 10px;">
+                        <button
+                            onclick={ctx.link().callback(|_| Msg::ClearZoom)}
+                            style="background: #111; color: #00ff00; border: 1px solid #00ff00; padding: 5px 10px; cursor: pointer; font-family: 'Courier New', monospace;"
+                        >
+                            {"Clear Zoom"}
+                        </button>
+                        <label style="font-size: 0.8em; margin-left: 10px; cursor: pointer;">
+                            <input
+                                type="checkbox"
+                                checked={self.zoom_auto_update}
+                                onchange={ctx.link().callback(|_| Msg::ToggleZoomAutoUpdate)}
+                            />
+                            {" Auto-update"}
+                        </label>
+                    </div>
+                } else {
+                    <div style="width: 100%; height: 150px; border: 1px solid #333; background: #111; display: flex; align-items: center; justify-content: center;">
+                        <span style="color: #666;">{"Click on image to zoom"}</span>
+                    </div>
+                }
+            </div>
         }
     }
 }

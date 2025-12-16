@@ -66,7 +66,7 @@ pub fn initialize_camera(args: &CameraArgs) -> anyhow::Result<Box<dyn CameraInte
         #[cfg(feature = "playerone")]
         CameraType::Poa => {
             tracing::info!("Initializing PlayerOne camera with ID {}", args.camera_id);
-            use crate::poa::camera::PlayerOneCamera;
+            use hardware::poa::camera::PlayerOneCamera;
             let camera = PlayerOneCamera::new(args.camera_id)
                 .map_err(|e| anyhow::anyhow!("Failed to initialize POA camera: {e}"))?;
             Ok(Box::new(camera))
