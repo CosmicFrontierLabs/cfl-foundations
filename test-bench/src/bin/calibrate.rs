@@ -639,14 +639,14 @@ fn main() -> Result<()> {
         let zmq_endpoint = args.zmq_sub.as_deref().ok_or_else(|| {
             anyhow::anyhow!("--zmq-sub is required for optical-calibration pattern")
         })?;
-        let zmq_subscriber = shared::zmq::TypedZmqSubscriber::connect(zmq_endpoint)
+        let collector = shared::tracking_collector::TrackingCollector::connect(zmq_endpoint)
             .map_err(|e| anyhow::anyhow!("Failed to connect ZMQ subscriber: {e}"))?;
         println!("ZMQ SUB connected to {zmq_endpoint}");
 
         let pattern_size =
             PixelShape::with_width_height(pattern_width as usize, pattern_height as usize);
         let optical_cal_state = patterns::optical_calibration::CalibrationRunner::for_grid(
-            zmq_subscriber,
+            collector,
             args.calibration_grid_size,
             args.calibration_grid_spacing,
             pattern_size,

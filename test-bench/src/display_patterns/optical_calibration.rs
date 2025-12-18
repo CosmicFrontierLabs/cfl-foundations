@@ -9,8 +9,7 @@ use std::time::{Duration, Instant};
 
 use shared::image_size::PixelShape;
 use shared::optical_alignment::{estimate_affine_transform, OpticalAlignment, PointCorrespondence};
-use shared::tracking_message::TrackingMessage;
-use shared::zmq::TypedZmqSubscriber;
+use shared::tracking_collector::TrackingCollector;
 
 use super::shared::{compute_normalization_factor, render_gaussian_spot, BlendMode};
 
@@ -83,8 +82,8 @@ fn generate_centered_grid(
 /// Runs an optical calibration sequence by displaying spots at known positions
 /// and collecting sensor feedback to estimate the display-to-sensor affine transform.
 pub struct CalibrationRunner {
-    /// ZMQ subscriber receiving tracking measurements from the sensor
-    zmq_subscriber: TypedZmqSubscriber<TrackingMessage>,
+    /// Tracking collector receiving measurements from the sensor
+    collector: TrackingCollector,
     /// Collected display→sensor point correspondences used for transform estimation
     calibration_points: Vec<PointCorrespondence>,
     /// Sensor measurements collected at the current display position (averaged before use)
@@ -105,14 +104,14 @@ impl CalibrationRunner {
     /// Create a calibration runner with a centered grid pattern.
     ///
     /// # Arguments
-    /// * `zmq_subscriber` - Connected ZMQ subscriber for tracking messages
+    /// * `collector` - TrackingCollector for receiving tracking messages
     /// * `grid_size` - Number of points per axis (e.g., 5 gives 25 points)
     /// * `grid_spacing` - Distance in pixels between adjacent grid points
     /// * `display_size` - Display dimensions in pixels
     /// * `spot_fwhm_pixels` - FWHM of the spot in pixels
     /// * `settle_duration` - Time to wait after each position change before accepting measurements
     pub fn for_grid(
-        zmq_subscriber: TypedZmqSubscriber<TrackingMessage>,
+        collector: TrackingCollector,
         grid_size: usize,
         grid_spacing: f64,
         display_size: PixelShape,
@@ -120,20 +119,20 @@ impl CalibrationRunner {
         settle_duration: Duration,
     ) -> Self {
         let spots = generate_centered_grid(grid_size, grid_spacing, display_size, spot_fwhm_pixels);
-        Self::from_spots(zmq_subscriber, spots, settle_duration)
+        Self::from_spots(collector, spots, settle_duration)
     }
 
     /// Create a calibration runner with points arranged in a circle.
     ///
     /// # Arguments
-    /// * `zmq_subscriber` - Connected ZMQ subscriber for tracking messages
+    /// * `collector` - TrackingCollector for receiving tracking messages
     /// * `num_points` - Number of points around the circle
     /// * `radius_pixels` - Radius of the circle in pixels from display center
     /// * `display_size` - Display dimensions in pixels
     /// * `spot_fwhm_pixels` - FWHM of the spot in pixels
     /// * `settle_duration` - Time to wait after each position change before accepting measurements
     pub fn for_circle(
-        zmq_subscriber: TypedZmqSubscriber<TrackingMessage>,
+        collector: TrackingCollector,
         num_points: usize,
         radius_pixels: f64,
         display_size: PixelShape,
@@ -141,18 +140,18 @@ impl CalibrationRunner {
         settle_duration: Duration,
     ) -> Self {
         let spots = generate_circle(num_points, radius_pixels, display_size, spot_fwhm_pixels);
-        Self::from_spots(zmq_subscriber, spots, settle_duration)
+        Self::from_spots(collector, spots, settle_duration)
     }
 
     /// Create a calibration runner from a pre-computed spot sequence.
     fn from_spots(
-        zmq_subscriber: TypedZmqSubscriber<TrackingMessage>,
+        collector: TrackingCollector,
         spots: Vec<SpotParams>,
         settle_duration: Duration,
     ) -> Self {
         let num_spots = spots.len();
         Self {
-            zmq_subscriber,
+            collector,
             calibration_points: Vec::with_capacity(num_spots),
             current_position_measurements: Vec::with_capacity(DEFAULT_MEASUREMENTS_PER_POSITION),
             measurements_per_position: DEFAULT_MEASUREMENTS_PER_POSITION,
@@ -178,7 +177,7 @@ impl CalibrationRunner {
     /// Only accepts measurements when position is stable.
     /// Collects measurements, averages them, and advances to next position.
     pub fn poll_tracking_messages(&mut self) {
-        let messages = self.zmq_subscriber.drain();
+        let messages = self.collector.poll();
 
         if !self.is_settled() {
             return;
@@ -271,7 +270,8 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
     use shared::camera_interface::Timestamp;
-    use shared::zmq::TypedZmqPublisher;
+    use shared::tracking_message::TrackingMessage;
+    use shared::zmq::{TypedZmqPublisher, TypedZmqSubscriber};
 
     #[test]
     fn test_generate_centered_grid() {
@@ -376,11 +376,12 @@ mod tests {
         let endpoint = pub_socket.get_last_endpoint().unwrap().unwrap();
         let publisher = TypedZmqPublisher::<TrackingMessage>::new(pub_socket);
 
-        // Create and connect subscriber
+        // Create and connect subscriber wrapped in TrackingCollector
         let sub_socket = ctx.socket(zmq::SUB).unwrap();
         sub_socket.connect(&endpoint).unwrap();
         sub_socket.set_subscribe(b"").unwrap();
         let subscriber = TypedZmqSubscriber::<TrackingMessage>::new(sub_socket);
+        let collector = TrackingCollector::new(subscriber);
 
         // Wait for ZMQ slow joiner
         std::thread::sleep(Duration::from_millis(100));
@@ -391,7 +392,7 @@ mod tests {
             height: 1024,
         };
         let mut state = CalibrationRunner::for_grid(
-            subscriber,
+            collector,
             3,     // 3x3 = 9 points
             200.0, // grid spacing in pixels
             display_size,
