@@ -4,13 +4,13 @@ set -euo pipefail
 # Build Rust projects directly on remote ARM devices
 # This script syncs source code to remote host and builds natively, avoiding cross-compilation issues
 #
-# Camera Hardware Configuration:
-# - Neutralino (--neut): NSV455 camera (V4L2-based)
-#   * Binaries like cam_serve_nsv do NOT require the "playerone" feature flag
-#   * V4L2 libraries are incompatible with PlayerOne SDK in the same binary
+# Supported Devices:
 # - Orin Nano (--orin): PlayerOne astronomy cameras
-#   * Binaries like cam_serve_poa REQUIRE the "playerone" feature flag
-#   * Build with: cargo build --release --features playerone --bin cam_serve_poa
+#   * Auto-enables 'playerone' feature flag
+# - Neutralino (--neut): NSV455 camera (V4L2-based)
+#   * Auto-enables 'nsv455' feature flag
+# - Test Bench (--test-bench): CFL test bench x86 machine
+# - Test Bench Pi (--test-bench-pi): Raspberry Pi with OLED display for HIL testing
 
 # Configuration
 REMOTE_HOST=""
@@ -30,6 +30,8 @@ NEUT_HOST="cosmicfrontiers@orin-416.tail944341.ts.net"
 NEUT_DEVICE_NAME="neutralino"
 TEST_BENCH_HOST="meawoppl@cfl-test-bench.tail944341.ts.net"
 TEST_BENCH_DEVICE_NAME="cfl-test-bench"
+TEST_BENCH_PI_HOST="meawoppl@test-bench-pi.tail944341.ts.net"
+TEST_BENCH_PI_DEVICE_NAME="test-bench-pi"
 
 # Apt dependencies management
 # The semaphore file caches apt package verification to speed up repeated builds.
@@ -53,7 +55,7 @@ print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 usage() {
-    echo "Usage: $0 --package PACKAGE [--orin|--neut|--test-bench] [OPTIONS]"
+    echo "Usage: $0 --package PACKAGE [--orin|--neut|--test-bench|--test-bench-pi] [OPTIONS]"
     echo ""
     echo "Required:"
     echo "  --package PKG        Package to build (e.g., test-bench)"
@@ -62,6 +64,7 @@ usage() {
     echo "  --orin               Build on Jetson Orin Nano (${ORIN_HOST})"
     echo "  --neut               Build on Neutralino computer (${NEUT_HOST})"
     echo "  --test-bench         Build on CFL test bench (${TEST_BENCH_HOST})"
+    echo "  --test-bench-pi      Build on test bench Raspberry Pi (${TEST_BENCH_PI_HOST})"
     echo ""
     echo "Options:"
     echo "  --binary BIN         Specific binary to build (e.g., camera_server)"
@@ -99,6 +102,12 @@ while [[ $# -gt 0 ]]; do
             TAILSCALE_DEVICE_NAME="$TEST_BENCH_DEVICE_NAME"
             shift
             ;;
+        --test-bench-pi)
+            DEVICE_TYPE="test-bench-pi"
+            REMOTE_HOST="$TEST_BENCH_PI_HOST"
+            TAILSCALE_DEVICE_NAME="$TEST_BENCH_PI_DEVICE_NAME"
+            shift
+            ;;
         --package)
             PACKAGE_NAME="$2"
             shift 2
@@ -132,7 +141,7 @@ if [ -z "$PACKAGE_NAME" ]; then
 fi
 
 if [ -z "$DEVICE_TYPE" ]; then
-    print_error "Device type is required. Use --orin, --neut, or --test-bench"
+    print_error "Device type is required. Use --orin, --neut, --test-bench, or --test-bench-pi"
     usage
 fi
 
@@ -156,7 +165,7 @@ print_info "Building $PACKAGE_NAME on ${DEVICE_TYPE} at $REMOTE_HOST"
 print_info "Remote build directory: ~/$REMOTE_BUILD_DIR/$PROJECT_NAME"
 
 # Step 0: Check Tailscale connectivity (for Tailscale-connected devices)
-if [ "$DEVICE_TYPE" = "orin" ] || [ "$DEVICE_TYPE" = "test-bench" ]; then
+if [ "$DEVICE_TYPE" = "orin" ] || [ "$DEVICE_TYPE" = "test-bench" ] || [ "$DEVICE_TYPE" = "test-bench-pi" ]; then
     print_info "Checking Tailscale connectivity..."
     if ! command -v tailscale &> /dev/null; then
         print_error "Tailscale is not installed on this machine"
