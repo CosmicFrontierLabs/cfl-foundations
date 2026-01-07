@@ -73,7 +73,19 @@ impl TrackingCollector {
 mod tests {
     use super::*;
     use crate::camera_interface::Timestamp;
+    use crate::image_proc::centroid::SpotShape;
     use crate::zmq::TypedZmqPublisher;
+
+    fn test_shape() -> SpotShape {
+        SpotShape {
+            flux: 1000.0,
+            m_xx: 2.0,
+            m_yy: 2.0,
+            m_xy: 0.0,
+            aspect_ratio: 1.0,
+            diameter: 4.0,
+        }
+    }
 
     /// Create a connected publisher/collector pair for testing.
     /// Handles ZMQ slow joiner problem with internal sleep.
@@ -108,8 +120,13 @@ mod tests {
         let (publisher, collector) = create_test_pair();
 
         for i in 0..5 {
-            let msg =
-                TrackingMessage::new(1, i as f64 * 10.0, i as f64 * 20.0, Timestamp::new(i, 0));
+            let msg = TrackingMessage::new(
+                1,
+                i as f64 * 10.0,
+                i as f64 * 20.0,
+                Timestamp::new(i, 0),
+                test_shape(),
+            );
             publisher.send(&msg).unwrap();
         }
         std::thread::sleep(Duration::from_millis(50));
@@ -126,7 +143,8 @@ mod tests {
 
         let pub_handle = std::thread::spawn(move || {
             for i in 0..10 {
-                let msg = TrackingMessage::new(1, i as f64, 0.0, Timestamp::new(i, 0));
+                let msg =
+                    TrackingMessage::new(1, i as f64, 0.0, Timestamp::new(i, 0), test_shape());
                 publisher.send(&msg).unwrap();
                 std::thread::sleep(Duration::from_millis(10));
             }

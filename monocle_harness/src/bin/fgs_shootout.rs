@@ -402,7 +402,7 @@ fn run_single_experiment(
                 x_error_pixels: update.x - actual_x,
                 y_error_pixels: update.y - actual_y,
                 magnitude,
-                flux: update.flux,
+                flux: update.shape.flux,
             };
 
             tracking_points.push(point);

@@ -227,15 +227,8 @@ fn test_full_tracking_lifecycle() {
                     track_id, position.x, position.y
                 );
             }
-            FgsCallbackEvent::TrackingLost {
-                track_id,
-                last_position,
-                reason,
-            } => {
-                println!(
-                    "TrackingLost: track_id={}, last_position=({:.1}, {:.1}), reason={:?}",
-                    track_id, last_position.x, last_position.y, reason
-                );
+            FgsCallbackEvent::TrackingLost { track_id, reason } => {
+                println!("TrackingLost: track_id={}, reason={:?}", track_id, reason);
             }
             FgsCallbackEvent::FrameSizeMismatch {
                 expected_width,

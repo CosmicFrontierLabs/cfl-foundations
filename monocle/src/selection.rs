@@ -294,10 +294,9 @@ pub fn detect_and_select_guides(
             id: 0,
             x: star.x,
             y: star.y,
-            flux: star.flux,
             snr,
             roi: AABB::from_coords(min_row, min_col, max_row, max_col),
-            diameter: star.diameter,
+            shape: star.to_shape(),
         })
     });
 

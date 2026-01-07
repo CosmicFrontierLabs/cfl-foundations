@@ -120,6 +120,16 @@
   - Note: Requires storing additional sensor parameters in CameraInterface implementations
 
 ### Shared - Image Processing
+- [ ] Consolidate spot shape types into SpotShape
+  - Location: `shared/src/image_proc/centroid.rs` (SpotShape struct)
+  - Current: Multiple structs with duplicate flux/diameter/aspect_ratio/moments fields:
+    - `test-bench/src/calibration/psf_pixels.rs:10` - PSFPixel
+    - `shared/src/image_proc/detection/naive.rs:64` - StarDetection
+    - `monocle/src/lib.rs:84` - GuideStar
+  - Needed: Refactor these to embed or derive from SpotShape
+  - Why: Reduces duplication and ensures consistent spot characterization across codebase
+  - Benefit: Single source of truth for spot shape data
+
 - [ ] Cleanup constants in Airy disk gaussian approximation
   - Location: `shared/src/image_proc/airy.rs`
   - Current: Magic constants in gaussian normalization
@@ -237,3 +247,9 @@
   - Example: `shared/src/algo/icp.rs` (squared_distance, find_closest_points)
   - Action: Either add unit tests or change visibility to `pub(crate)` or private
   - Why: All public API functions should have test coverage
+
+- [ ] **Use assert_relative_eq for floating point comparisons**
+  - Pattern: Search for `.abs() <` or subtraction-based float comparisons in tests
+  - Example: `assert!((a - b).abs() < 1e-10)` should be `assert_relative_eq!(a, b, epsilon = 1e-10)`
+  - Action: Replace manual float comparisons with approx crate macros
+  - Why: More readable, better error messages, handles edge cases properly

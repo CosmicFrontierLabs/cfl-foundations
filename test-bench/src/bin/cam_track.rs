@@ -415,25 +415,27 @@ fn main() -> Result<()> {
             }
 
             if let Some(ref publisher) = zmq_publisher_clone {
+                // Shape is always present in TrackingUpdate events
+                let shape = position
+                    .shape
+                    .clone()
+                    .expect("TrackingUpdate should always have shape");
                 let msg = TrackingMessage {
                     track_id: *track_id,
                     x: position.x,
                     y: position.y,
                     timestamp: position.timestamp,
+                    shape,
                 };
                 if let Err(e) = publisher.send(&msg) {
                     warn!("Failed to send ZMQ message: {}", e);
                 }
             }
         }
-        FgsCallbackEvent::TrackingLost {
-            track_id,
-            last_position,
-            reason,
-        } => {
+        FgsCallbackEvent::TrackingLost { track_id, reason } => {
             warn!(
-                "⚠️  TRACKING LOST - track_id: {}, last pixel location: (x={:.2}, y={:.2}), reason: {:?}",
-                track_id, last_position.x, last_position.y, reason
+                "⚠️  TRACKING LOST - track_id: {}, reason: {:?}",
+                track_id, reason
             );
         }
         FgsCallbackEvent::FrameSizeMismatch {

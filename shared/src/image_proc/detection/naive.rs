@@ -29,7 +29,7 @@ use ndarray::{Array2, ArrayView2};
 use std::collections::HashSet;
 
 use crate::algo::icp::Locatable2d;
-use crate::image_proc::centroid::compute_centroid_from_mask;
+use crate::image_proc::centroid::{compute_centroid_from_mask, SpotShape};
 use starfield::image::starfinders::StellarSource;
 
 /// Star detection result with sub-pixel position and shape characterization.
@@ -80,6 +80,21 @@ impl StarDetection {
     /// Returns true if aspect_ratio < 2.5, which allows for some PSF distortion
     pub fn is_valid(&self) -> bool {
         self.aspect_ratio < 2.5
+    }
+
+    /// Extract shape characterization without position.
+    ///
+    /// Use this when passing shape data through a pipeline where position
+    /// is tracked separately.
+    pub fn to_shape(&self) -> SpotShape {
+        SpotShape {
+            flux: self.flux,
+            m_xx: self.m_xx,
+            m_yy: self.m_yy,
+            m_xy: self.m_xy,
+            aspect_ratio: self.aspect_ratio,
+            diameter: self.diameter,
+        }
     }
 }
 

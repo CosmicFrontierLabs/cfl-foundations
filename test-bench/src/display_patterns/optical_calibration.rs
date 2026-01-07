@@ -270,8 +270,20 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
     use shared::camera_interface::Timestamp;
+    use shared::image_proc::centroid::SpotShape;
     use shared::tracking_message::TrackingMessage;
     use shared::zmq::{TypedZmqPublisher, TypedZmqSubscriber};
+
+    fn test_shape() -> SpotShape {
+        SpotShape {
+            flux: 1000.0,
+            m_xx: 2.0,
+            m_yy: 2.0,
+            m_xy: 0.0,
+            aspect_ratio: 1.0,
+            diameter: 4.0,
+        }
+    }
 
     #[test]
     fn test_generate_centered_grid() {
@@ -421,6 +433,7 @@ mod tests {
                     sensor_x + (i as f64 * 0.001), // tiny noise
                     sensor_y + (i as f64 * 0.001),
                     Timestamp::new(iterations as u64, 0),
+                    test_shape(),
                 );
                 publisher.send(&msg).unwrap();
             }

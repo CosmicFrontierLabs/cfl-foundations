@@ -1,5 +1,6 @@
 use ndarray::Array2;
 use shared::camera_interface::Timestamp;
+use shared::image_proc::centroid::SpotShape;
 use std::sync::Arc;
 
 /// Position estimate for tracking callbacks
@@ -11,6 +12,8 @@ pub struct PositionEstimate {
     pub y: f64,
     /// Timestamp from camera frame
     pub timestamp: Timestamp,
+    /// Spot shape characterization (flux, moments, diameter)
+    pub shape: SpotShape,
 }
 
 /// Events emitted for external callbacks
@@ -30,7 +33,6 @@ pub enum FgsCallbackEvent {
     /// Tracking has been lost
     TrackingLost {
         track_id: u32,
-        last_position: PositionEstimate,
         reason: TrackingLostReason,
     },
     /// Frame size doesn't match expected ROI

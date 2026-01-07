@@ -5,6 +5,7 @@
 
 use ndarray::{Array2, ArrayView2};
 use shared::camera_interface::{CameraInterface, Timestamp};
+use shared::image_proc::centroid::SpotShape;
 use shared::image_proc::detection::StarDetection;
 use shared::image_proc::source_snr::calculate_snr_at_position;
 use std::collections::HashMap;
@@ -79,14 +80,12 @@ pub struct GuideStar {
     /// Position in full frame
     pub x: f64,
     pub y: f64,
-    /// Estimated flux
-    pub flux: f64,
     /// Signal-to-noise ratio
     pub snr: f64,
     /// Region of interest for tracking (bounding box in pixel coordinates)
     pub roi: AABB,
-    /// Estimated star diameter in pixels
-    pub diameter: f64,
+    /// Shape characterization (flux, moments, diameter)
+    pub shape: SpotShape,
 }
 
 impl GuideStar {
@@ -105,10 +104,10 @@ pub struct GuidanceUpdate {
     pub x: f64,
     /// Y position in frame coordinates
     pub y: f64,
-    /// Integrated flux of the tracked star
-    pub flux: f64,
     /// Timestamp of update (from camera frame)
     pub timestamp: Timestamp,
+    /// Spot shape characterization (flux, moments, diameter)
+    pub shape: SpotShape,
 }
 
 /// Main Fine Guidance System state machine
@@ -313,7 +312,7 @@ impl FineGuidanceSystem {
                 log::warn!("SNR dropped below threshold, restarting acquisition: {e}");
 
                 // Emit tracking lost event
-                self.emit_tracking_lost_event(TrackingLostReason::SignalTooWeak, timestamp);
+                self.emit_tracking_lost_event(TrackingLostReason::SignalTooWeak);
                 self.clear_acquisition_state();
 
                 return Ok((
@@ -343,7 +342,7 @@ impl FineGuidanceSystem {
                 log::warn!("Lost all guide stars, restarting acquisition");
 
                 // Emit tracking lost event
-                self.emit_tracking_lost_event(TrackingLostReason::SignalTooWeak, timestamp);
+                self.emit_tracking_lost_event(TrackingLostReason::SignalTooWeak);
                 self.clear_acquisition_state();
 
                 Ok((
@@ -403,6 +402,7 @@ impl FineGuidanceSystem {
                     x: guide_star.x,
                     y: guide_star.y,
                     timestamp,
+                    shape: guide_star.shape.clone(),
                 },
                 num_guide_stars: 1,
             });
@@ -411,30 +411,23 @@ impl FineGuidanceSystem {
 
     /// Emit tracking update event
     fn emit_tracking_update_event(&self, update: &GuidanceUpdate) {
-        // NOTE(meawoppl) - the timestamp in this field will need to be chained back to the sensor timestamp
         self.emit_event(&FgsCallbackEvent::TrackingUpdate {
             track_id: self.current_track_id,
             position: PositionEstimate {
                 x: update.x,
                 y: update.y,
                 timestamp: update.timestamp,
+                shape: update.shape.clone(),
             },
         });
     }
 
     /// Emit tracking lost event
-    fn emit_tracking_lost_event(&self, reason: TrackingLostReason, timestamp: Timestamp) {
-        if let Some(guide_star) = &self.guide_star {
-            self.emit_event(&FgsCallbackEvent::TrackingLost {
-                track_id: self.current_track_id,
-                last_position: PositionEstimate {
-                    x: guide_star.x,
-                    y: guide_star.y,
-                    timestamp,
-                },
-                reason,
-            });
-        }
+    fn emit_tracking_lost_event(&self, reason: TrackingLostReason) {
+        self.emit_event(&FgsCallbackEvent::TrackingLost {
+            track_id: self.current_track_id,
+            reason,
+        });
     }
 
     /// Clear guide star and calibration data for fresh acquisition
@@ -529,6 +522,7 @@ impl FineGuidanceSystem {
                         x: update.x,
                         y: update.y,
                         timestamp,
+                        shape: update.shape.clone(),
                     }),
                 )
             } else {
@@ -704,7 +698,7 @@ impl FineGuidanceSystem {
         let centroid_result = compute_centroid_from_mask(&roi_f64.view(), &mask.view());
 
         // Compute SNR to check if star is still trackable
-        let aperture = guide_star.diameter / 2.0;
+        let aperture = guide_star.shape.diameter / 2.0;
         let snr = calculate_snr_at_position(
             centroid_result.x,
             centroid_result.y,
@@ -730,8 +724,8 @@ impl FineGuidanceSystem {
         Ok(Some(GuidanceUpdate {
             x: new_x,
             y: new_y,
-            flux: centroid_result.flux,
             timestamp,
+            shape: centroid_result.to_shape(),
         }))
     }
 
@@ -750,6 +744,17 @@ mod tests {
 
     fn test_timestamp() -> Timestamp {
         Timestamp::from_duration(Duration::from_millis(100))
+    }
+
+    fn test_shape() -> SpotShape {
+        SpotShape {
+            flux: 1000.0,
+            m_xx: 2.0,
+            m_yy: 2.0,
+            m_xy: 0.0,
+            aspect_ratio: 1.0,
+            diameter: 4.0,
+        }
     }
 
     fn test_config() -> FgsConfig {
@@ -881,6 +886,7 @@ mod tests {
                 x: 100.0,
                 y: 200.0,
                 timestamp: test_timestamp(),
+                shape: test_shape(),
             },
             num_guide_stars: 1,
         });
@@ -896,6 +902,7 @@ mod tests {
                 x: 101.0,
                 y: 201.0,
                 timestamp: test_timestamp(),
+                shape: test_shape(),
             },
         });
 
@@ -926,11 +933,6 @@ mod tests {
 
         fgs.emit_event(&FgsCallbackEvent::TrackingLost {
             track_id: 1,
-            last_position: PositionEstimate {
-                x: 100.0,
-                y: 200.0,
-                timestamp: test_timestamp(),
-            },
             reason: TrackingLostReason::SignalTooWeak,
         });
 

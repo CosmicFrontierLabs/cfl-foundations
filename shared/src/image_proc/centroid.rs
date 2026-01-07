@@ -4,12 +4,34 @@
 //! sub-pixel positions of stellar objects from image data and masks.
 
 use ndarray::ArrayView2;
+use serde::{Deserialize, Serialize};
+
+/// Spot shape characterization without position.
+///
+/// Contains flux, shape moments, and size measurements extracted from a centroid
+/// calculation. Used for transmitting shape data separately from position
+/// (e.g., in tracking messages where frame-relative position is stored separately).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotShape {
+    /// Total flux (sum of all pixel intensities)
+    pub flux: f64,
+    /// Second central moment μ₂₀ (variance in x-direction)
+    pub m_xx: f64,
+    /// Second central moment μ₀₂ (variance in y-direction)
+    pub m_yy: f64,
+    /// Second central moment μ₁₁ (covariance between x and y)
+    pub m_xy: f64,
+    /// Aspect ratio (λ₁/λ₂) from eigenvalues of moment matrix
+    pub aspect_ratio: f64,
+    /// Estimated object diameter in pixels
+    pub diameter: f64,
+}
 
 /// Result from centroid calculation containing position and shape properties
 ///
 /// Contains the computed centroid position relative to the input sub-image,
 /// along with flux measurements and shape characterization parameters.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CentroidResult {
     /// Centroid x-coordinate relative to sub-image origin
     pub x: f64,
@@ -29,6 +51,23 @@ pub struct CentroidResult {
     pub diameter: f64,
     /// Saturation tracking: (cutoff value, count of pixels above cutoff)
     pub n_saturated: (f64, u32),
+}
+
+impl CentroidResult {
+    /// Extract shape characterization without position.
+    ///
+    /// Use this when passing shape data through a pipeline where position
+    /// is tracked separately (e.g., frame-relative coordinates).
+    pub fn to_shape(&self) -> SpotShape {
+        SpotShape {
+            flux: self.flux,
+            m_xx: self.m_xx,
+            m_yy: self.m_yy,
+            m_xy: self.m_xy,
+            aspect_ratio: self.aspect_ratio,
+            diameter: self.diameter,
+        }
+    }
 }
 
 /// Calculate centroid and shape moments from image data and binary mask
