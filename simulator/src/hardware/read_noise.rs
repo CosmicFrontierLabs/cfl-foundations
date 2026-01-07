@@ -153,6 +153,7 @@ impl ReadNoiseEstimator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     fn test_hwk4123() -> ReadNoiseEstimator {
         ReadNoiseEstimator::hwk4123()
@@ -232,7 +233,7 @@ mod tests {
             .estimate(0.0, Duration::from_secs_f64(1.0 / 30.0))
             .unwrap();
         let expected = (0.279 + 0.305) / 2.0; // Average at midpoint
-        assert!((result - expected).abs() < 1e-6);
+        assert_relative_eq!(result, expected, epsilon = 1e-6);
     }
 
     #[test]
@@ -250,7 +251,7 @@ mod tests {
             .estimate(-20.0, Duration::from_secs_f64(1.0 / 90.0))
             .unwrap(); // 90 Hz
         let expected = (0.334 + 0.381) / 2.0; // Average of 60Hz and 120Hz values
-        assert!((result - expected).abs() < 0.01);
+        assert_relative_eq!(result, expected, epsilon = 0.01);
     }
 
     #[test]

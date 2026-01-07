@@ -269,6 +269,7 @@ pub fn cubic_spline_interpolate(x: Vec<f64>, y: Vec<f64>, n_points: usize) -> (V
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_linear_interpolation() {
@@ -276,7 +277,7 @@ mod tests {
         let y = vec![0.0, 1.0];
         let spline = CubicSpline::new(x, y);
 
-        assert!((spline.evaluate(0.5) - 0.5).abs() < 1e-10);
+        assert_relative_eq!(spline.evaluate(0.5), 0.5, epsilon = 1e-10);
     }
 
     #[test]
@@ -286,8 +287,8 @@ mod tests {
         let spline = CubicSpline::new(x, y);
 
         // Should pass through original points
-        assert!((spline.evaluate(1.0) - 1.0).abs() < 1e-10);
-        assert!((spline.evaluate(2.0) - 4.0).abs() < 1e-10);
+        assert_relative_eq!(spline.evaluate(1.0), 1.0, epsilon = 1e-10);
+        assert_relative_eq!(spline.evaluate(2.0), 4.0, epsilon = 1e-10);
     }
 
     #[test]
@@ -299,8 +300,8 @@ mod tests {
 
         assert_eq!(x_interp.len(), 5);
         assert_eq!(y_interp.len(), 5);
-        assert!((x_interp[0] - 0.0).abs() < 1e-10);
-        assert!((x_interp[4] - 2.0).abs() < 1e-10);
+        assert_relative_eq!(x_interp[0], 0.0, epsilon = 1e-10);
+        assert_relative_eq!(x_interp[4], 2.0, epsilon = 1e-10);
     }
 
     #[test]
@@ -326,12 +327,12 @@ mod tests {
         let spline = CubicSpline::new(x, y);
 
         // Test values outside the range return boundary values
-        assert!((spline.evaluate(-1.0) - 0.0).abs() < 1e-10);
-        assert!((spline.evaluate(5.0) - 9.0).abs() < 1e-10);
+        assert_relative_eq!(spline.evaluate(-1.0), 0.0, epsilon = 1e-10);
+        assert_relative_eq!(spline.evaluate(5.0), 9.0, epsilon = 1e-10);
 
         // Test exactly at boundaries
-        assert!((spline.evaluate(0.0) - 0.0).abs() < 1e-10);
-        assert!((spline.evaluate(3.0) - 9.0).abs() < 1e-10);
+        assert_relative_eq!(spline.evaluate(0.0), 0.0, epsilon = 1e-10);
+        assert_relative_eq!(spline.evaluate(3.0), 9.0, epsilon = 1e-10);
     }
 
     #[test]
@@ -347,7 +348,7 @@ mod tests {
         // Test continuity by checking nearby points
         let val1 = spline.evaluate(1.999);
         let val2 = spline.evaluate(2.001);
-        assert!((val1 - val2).abs() < 0.1); // Should be nearly continuous
+        assert_relative_eq!(val1, val2, epsilon = 0.1); // Should be nearly continuous
     }
 
     #[test]
@@ -358,7 +359,7 @@ mod tests {
 
         // Should pass through all original points
         for i in 0..x.len() {
-            assert!((spline.evaluate(x[i]) - y[i]).abs() < 1e-10);
+            assert_relative_eq!(spline.evaluate(x[i]), y[i], epsilon = 1e-10);
         }
 
         // Test intermediate values are smooth
@@ -375,9 +376,9 @@ mod tests {
         let spline = CubicSpline::new(x, y);
 
         // Should remain constant everywhere
-        assert!((spline.evaluate(0.5) - 5.0).abs() < 1e-10);
-        assert!((spline.evaluate(1.5) - 5.0).abs() < 1e-10);
-        assert!((spline.evaluate(2.5) - 5.0).abs() < 1e-10);
+        assert_relative_eq!(spline.evaluate(0.5), 5.0, epsilon = 1e-10);
+        assert_relative_eq!(spline.evaluate(1.5), 5.0, epsilon = 1e-10);
+        assert_relative_eq!(spline.evaluate(2.5), 5.0, epsilon = 1e-10);
     }
 
     #[test]
@@ -387,9 +388,9 @@ mod tests {
         let spline = CubicSpline::new(x, y);
 
         // Should be linear between two points
-        assert!((spline.evaluate(5.0) - 10.0).abs() < 1e-10);
-        assert!((spline.evaluate(2.5) - 7.5).abs() < 1e-10);
-        assert!((spline.evaluate(7.5) - 12.5).abs() < 1e-10);
+        assert_relative_eq!(spline.evaluate(5.0), 10.0, epsilon = 1e-10);
+        assert_relative_eq!(spline.evaluate(2.5), 7.5, epsilon = 1e-10);
+        assert_relative_eq!(spline.evaluate(7.5), 12.5, epsilon = 1e-10);
     }
 
     #[test]
@@ -403,10 +404,10 @@ mod tests {
         assert_eq!(y_out.len(), 10);
 
         // First and last points should match original boundaries
-        assert!((x_out[0] - 0.0).abs() < 1e-10);
-        assert!((x_out[9] - 2.0).abs() < 1e-10);
-        assert!((y_out[0] - 0.0).abs() < 1e-10);
-        assert!((y_out[9] - 4.0).abs() < 1e-10);
+        assert_relative_eq!(x_out[0], 0.0, epsilon = 1e-10);
+        assert_relative_eq!(x_out[9], 2.0, epsilon = 1e-10);
+        assert_relative_eq!(y_out[0], 0.0, epsilon = 1e-10);
+        assert_relative_eq!(y_out[9], 4.0, epsilon = 1e-10);
     }
 
     #[test]
@@ -421,7 +422,7 @@ mod tests {
         let expected_spacing = 1.0; // (4.0 - 0.0) / (5 - 1)
         for i in 1..x_out.len() {
             let spacing = x_out[i] - x_out[i - 1];
-            assert!((spacing - expected_spacing).abs() < 1e-10);
+            assert_relative_eq!(spacing, expected_spacing, epsilon = 1e-10);
         }
     }
 
@@ -432,10 +433,10 @@ mod tests {
         let spline = CubicSpline::new(x, y);
 
         // Test that segment finding works correctly
-        assert!((spline.evaluate(0.5) - spline.evaluate(0.5)).abs() < 1e-10); // Consistency check
-        assert!((spline.evaluate(2.0) - spline.evaluate(2.0)).abs() < 1e-10);
-        assert!((spline.evaluate(4.5) - spline.evaluate(4.5)).abs() < 1e-10);
-        assert!((spline.evaluate(8.0) - spline.evaluate(8.0)).abs() < 1e-10);
+        assert_relative_eq!(spline.evaluate(0.5), spline.evaluate(0.5), epsilon = 1e-10); // Consistency check
+        assert_relative_eq!(spline.evaluate(2.0), spline.evaluate(2.0), epsilon = 1e-10);
+        assert_relative_eq!(spline.evaluate(4.5), spline.evaluate(4.5), epsilon = 1e-10);
+        assert_relative_eq!(spline.evaluate(8.0), spline.evaluate(8.0), epsilon = 1e-10);
     }
 
     #[test]
@@ -453,7 +454,7 @@ mod tests {
         let test_x = 0.75;
         let expected = test_x * test_x * test_x - 2.0 * test_x * test_x + test_x + 1.0;
         let actual = spline.evaluate(test_x);
-        assert!((actual - expected).abs() < 0.1); // Allow some tolerance for spline approximation
+        assert_relative_eq!(actual, expected, epsilon = 0.1); // Allow some tolerance for spline approximation
     }
 
     #[test]
@@ -480,8 +481,8 @@ mod tests {
         let (x_direct, y_direct) = spline.interpolate(7);
 
         for i in 0..7 {
-            assert!((x_interp[i] - x_direct[i]).abs() < 1e-10);
-            assert!((y_interp[i] - y_direct[i]).abs() < 1e-10);
+            assert_relative_eq!(x_interp[i], x_direct[i], epsilon = 1e-10);
+            assert_relative_eq!(y_interp[i], y_direct[i], epsilon = 1e-10);
         }
     }
 
@@ -495,7 +496,7 @@ mod tests {
         let (value, _, second_deriv) = spline.evaluate_with_derivatives(1.5);
 
         // Value should match regular evaluate
-        assert!((value - spline.evaluate(1.5)).abs() < 1e-10);
+        assert_relative_eq!(value, spline.evaluate(1.5), epsilon = 1e-10);
 
         // For quadratic data, second derivative should be approximately constant
         assert!(second_deriv.abs() > 0.0); // Should have some curvature
@@ -528,7 +529,7 @@ mod tests {
         let (_, first_deriv, second_deriv) = spline.evaluate_with_derivatives(1.5);
 
         // For linear function, first derivative should be constant (~3)
-        assert!((first_deriv - 3.0).abs() < 0.1);
+        assert_relative_eq!(first_deriv, 3.0, epsilon = 0.1);
 
         // Second derivative should be near zero for linear function
         assert!(second_deriv.abs() < 0.1);
@@ -545,7 +546,7 @@ mod tests {
             let (value, _first_deriv, _second_deriv) = spline.evaluate_with_derivatives(test_x);
 
             // Value should match regular evaluate method
-            assert!((value - spline.evaluate(test_x)).abs() < 1e-10);
+            assert_relative_eq!(value, spline.evaluate(test_x), epsilon = 1e-10);
         }
     }
 }

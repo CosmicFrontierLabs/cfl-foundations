@@ -301,8 +301,8 @@ mod tests {
         assert_relative_eq!(bg_100, background_level, epsilon = 10.0);
 
         // Should be roughly similar to each other
-        assert!((bg_1 - bg_10).abs() < 10.0);
-        assert!((bg_10 - bg_100).abs() < 15.0);
+        assert_relative_eq!(bg_1, bg_10, epsilon = 10.0);
+        assert_relative_eq!(bg_10, bg_100, epsilon = 15.0);
     }
 
     #[test]

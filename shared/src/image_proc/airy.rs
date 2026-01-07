@@ -574,7 +574,7 @@ mod tests {
         let r_small = disk.first_zero * 0.1;
         let exact = disk.intensity(r_small);
         let approx = disk.gaussian_approximation(r_small);
-        assert!((exact - approx).abs() < 0.05);
+        assert_relative_eq!(exact, approx, epsilon = 0.05);
     }
 
     #[test]
@@ -724,9 +724,9 @@ mod tests {
         ];
 
         // Should be symmetric
-        assert!((fluxes[0] - fluxes[1]).abs() < 1e-10);
-        assert!((fluxes[0] - fluxes[2]).abs() < 1e-10);
-        assert!((fluxes[0] - fluxes[3]).abs() < 1e-10);
+        assert_relative_eq!(fluxes[0], fluxes[1], epsilon = 1e-10);
+        assert_relative_eq!(fluxes[0], fluxes[2], epsilon = 1e-10);
+        assert_relative_eq!(fluxes[0], fluxes[3], epsilon = 1e-10);
 
         // Each pixel should get significant flux
         for f in &fluxes {

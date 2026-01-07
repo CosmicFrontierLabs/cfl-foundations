@@ -202,6 +202,7 @@ impl RangeArg {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_range_parsing() {
@@ -316,11 +317,11 @@ mod tests {
         let range = RangeArg(0.1, 0.5, 0.1);
         let values = range.to_vec().unwrap();
         assert_eq!(values.len(), 5);
-        assert!((values[0] - 0.1).abs() < 1e-10);
-        assert!((values[1] - 0.2).abs() < 1e-10);
-        assert!((values[2] - 0.3).abs() < 1e-10);
-        assert!((values[3] - 0.4).abs() < 1e-10);
-        assert!((values[4] - 0.5).abs() < 1e-10);
+        assert_relative_eq!(values[0], 0.1, epsilon = 1e-10);
+        assert_relative_eq!(values[1], 0.2, epsilon = 1e-10);
+        assert_relative_eq!(values[2], 0.3, epsilon = 1e-10);
+        assert_relative_eq!(values[3], 0.4, epsilon = 1e-10);
+        assert_relative_eq!(values[4], 0.5, epsilon = 1e-10);
     }
 
     #[test]

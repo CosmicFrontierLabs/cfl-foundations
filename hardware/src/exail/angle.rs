@@ -50,22 +50,23 @@ impl AngleData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_angle_conversion() {
         let angles = AngleData::from_raw_counts(1000, 2000, 3000);
-        assert!((angles.x - 1.53).abs() < 1e-10);
-        assert!((angles.y - 3.06).abs() < 1e-10);
-        assert!((angles.z - 4.59).abs() < 1e-10);
+        assert_relative_eq!(angles.x, 1.53, epsilon = 1e-10);
+        assert_relative_eq!(angles.y, 3.06, epsilon = 1e-10);
+        assert_relative_eq!(angles.z, 4.59, epsilon = 1e-10);
     }
 
     #[test]
     fn test_to_degrees() {
         let angles = AngleData::from_raw_counts(3600000, 7200000, 10800000);
         let (x_deg, y_deg, z_deg) = angles.to_degrees();
-        assert!((x_deg - 1.53).abs() < 1e-6);
-        assert!((y_deg - 3.06).abs() < 1e-6);
-        assert!((z_deg - 4.59).abs() < 1e-6);
+        assert_relative_eq!(x_deg, 1.53, epsilon = 1e-6);
+        assert_relative_eq!(y_deg, 3.06, epsilon = 1e-6);
+        assert_relative_eq!(z_deg, 4.59, epsilon = 1e-6);
     }
 
     #[test]

@@ -210,6 +210,7 @@ pub static SPENCER_ARRAY_PLAN: Lazy<SensorArray> = Lazy::new(|| {
 mod tests {
     use super::*;
     use crate::hardware::sensor::models::GSENSE4040BSI;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_single_sensor_array() {
@@ -225,10 +226,10 @@ mod tests {
         let half_width_mm = width.as_millimeters() / 2.0;
         let half_height_mm = height.as_millimeters() / 2.0;
 
-        assert!((aabb.0 + half_width_mm).abs() < 1e-6);
-        assert!((aabb.1 + half_height_mm).abs() < 1e-6);
-        assert!((aabb.2 - half_width_mm).abs() < 1e-6);
-        assert!((aabb.3 - half_height_mm).abs() < 1e-6);
+        assert_relative_eq!(aabb.0, -half_width_mm, epsilon = 1e-6);
+        assert_relative_eq!(aabb.1, -half_height_mm, epsilon = 1e-6);
+        assert_relative_eq!(aabb.2, half_width_mm, epsilon = 1e-6);
+        assert_relative_eq!(aabb.3, half_height_mm, epsilon = 1e-6);
     }
 
     #[test]
@@ -278,8 +279,8 @@ mod tests {
         let (px, py, idx) = result.unwrap();
         assert_eq!(idx, 0);
         let (width, height) = sensor.dimensions.get_pixel_width_height();
-        assert!((px - width as f64 / 2.0).abs() < 1.0);
-        assert!((py - height as f64 / 2.0).abs() < 1.0);
+        assert_relative_eq!(px, width as f64 / 2.0, epsilon = 1.0);
+        assert_relative_eq!(py, height as f64 / 2.0, epsilon = 1.0);
 
         // Point far outside should return None
         let result = array.mm_to_pixel(1000.0, 1000.0);

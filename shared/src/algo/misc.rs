@@ -159,6 +159,7 @@ pub fn dec_dms_to_deg(degrees: f64, minutes: f64, seconds: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_exact_match() {
@@ -246,18 +247,18 @@ mod tests {
     fn test_ra_hms_to_deg() {
         // Test Andromeda Galaxy coordinates: 0h 42m 44.3s
         let ra_deg = ra_hms_to_deg(0.0, 42.0, 44.3);
-        assert!((ra_deg - 10.6845833).abs() < 0.0001);
+        assert_relative_eq!(ra_deg, 10.6845833, epsilon = 0.0001);
     }
 
     #[test]
     fn test_dec_dms_to_deg() {
         // Test Andromeda Galaxy coordinates: +41° 16' 9"
         let dec_deg = dec_dms_to_deg(41.0, 16.0, 9.0);
-        assert!((dec_deg - 41.2691667).abs() < 0.0001);
+        assert_relative_eq!(dec_deg, 41.2691667, epsilon = 0.0001);
 
         // Test negative declination
         let neg_dec_deg = dec_dms_to_deg(-30.0, 15.0, 30.0);
-        assert!((neg_dec_deg - (-30.2583333)).abs() < 0.0001);
+        assert_relative_eq!(neg_dec_deg, -30.2583333, epsilon = 0.0001);
     }
 
     #[test]

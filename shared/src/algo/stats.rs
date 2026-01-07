@@ -145,14 +145,15 @@ pub fn pearson_correlation(x: &[f64], y: &[f64]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_erf_basic_values() {
         // Test known values of error function
-        assert!((erf(0.0) - 0.0).abs() < 1e-6);
-        assert!((erf(1.0) - 0.8427007929).abs() < 1e-6);
-        assert!((erf(-1.0) - (-0.8427007929)).abs() < 1e-6);
-        assert!((erf(2.0) - 0.9953222650).abs() < 1e-6);
+        assert_relative_eq!(erf(0.0), 0.0, epsilon = 1e-6);
+        assert_relative_eq!(erf(1.0), 0.8427007929, epsilon = 1e-6);
+        assert_relative_eq!(erf(-1.0), -0.8427007929, epsilon = 1e-6);
+        assert_relative_eq!(erf(2.0), 0.9953222650, epsilon = 1e-6);
 
         // Test limits
         assert!(erf(5.0) > 0.9999);
@@ -162,11 +163,11 @@ mod tests {
     #[test]
     fn test_normal_cdf() {
         // Test standard normal CDF at known points
-        assert!((normal_cdf(0.0) - 0.5).abs() < 1e-6);
-        assert!((normal_cdf(1.0) - 0.8413447461).abs() < 1e-6);
-        assert!((normal_cdf(-1.0) - 0.1586552539).abs() < 1e-6);
-        assert!((normal_cdf(1.96) - 0.975).abs() < 0.001);
-        assert!((normal_cdf(-1.96) - 0.025).abs() < 0.001);
+        assert_relative_eq!(normal_cdf(0.0), 0.5, epsilon = 1e-6);
+        assert_relative_eq!(normal_cdf(1.0), 0.8413447461, epsilon = 1e-6);
+        assert_relative_eq!(normal_cdf(-1.0), 0.1586552539, epsilon = 1e-6);
+        assert_relative_eq!(normal_cdf(1.96), 0.975, epsilon = 0.001);
+        assert_relative_eq!(normal_cdf(-1.96), 0.025, epsilon = 0.001);
     }
 
     #[test]
@@ -242,9 +243,9 @@ mod tests {
     #[test]
     fn test_ks_critical_values() {
         // Test known critical values
-        assert!((ks_critical_value(100, 0.05) - 0.136).abs() < 0.001);
-        assert!((ks_critical_value(100, 0.01) - 0.163).abs() < 0.001);
-        assert!((ks_critical_value(1000, 0.05) - 0.043).abs() < 0.001);
+        assert_relative_eq!(ks_critical_value(100, 0.05), 0.136, epsilon = 0.001);
+        assert_relative_eq!(ks_critical_value(100, 0.01), 0.163, epsilon = 0.001);
+        assert_relative_eq!(ks_critical_value(1000, 0.05), 0.043, epsilon = 0.001);
     }
 
     #[test]

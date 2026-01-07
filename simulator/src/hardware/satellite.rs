@@ -225,6 +225,7 @@ impl SatelliteConfig {
 mod tests {
     use super::*;
     use crate::units::{AreaExt, TemperatureExt};
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_satellite_config_creation() {
@@ -294,11 +295,19 @@ mod tests {
         let actual_arcsec_per_pixel = satellite.plate_scale_arcsec_per_pixel();
 
         // Check radians per pixel (should be 9e-6 radians)
-        assert!((actual_rad_per_pixel - expected_rad_per_pixel).abs() < 1e-12);
+        assert_relative_eq!(
+            actual_rad_per_pixel,
+            expected_rad_per_pixel,
+            epsilon = 1e-12
+        );
 
         // Check arcseconds per pixel (should be ~1.86 arcsec/pixel)
-        assert!((actual_arcsec_per_pixel - expected_arcsec_per_pixel).abs() < 0.01);
-        assert!((actual_arcsec_per_pixel - 1.855).abs() < 0.01); // Precise value
+        assert_relative_eq!(
+            actual_arcsec_per_pixel,
+            expected_arcsec_per_pixel,
+            epsilon = 0.01
+        );
+        assert_relative_eq!(actual_arcsec_per_pixel, 1.855, epsilon = 0.01); // Precise value
     }
 
     #[test]
@@ -327,8 +336,8 @@ mod tests {
         let actual_height_rad = actual_height.as_radians();
 
         // They should match exactly
-        assert!((actual_width_rad - expected_width_rad).abs() < 1e-10);
-        assert!((actual_height_rad - expected_height_rad).abs() < 1e-10);
+        assert_relative_eq!(actual_width_rad, expected_width_rad, epsilon = 1e-10);
+        assert_relative_eq!(actual_height_rad, expected_height_rad, epsilon = 1e-10);
     }
 
     #[test]
@@ -371,7 +380,7 @@ mod tests {
 
         // Check that new sampling ratio matches target
         let new_sampling = resampled.fwhm_sampling_ratio();
-        assert!((new_sampling - target_sampling).abs() < 1e-10);
+        assert_relative_eq!(new_sampling, target_sampling, epsilon = 1e-10);
 
         // Check that other parameters remain unchanged
         assert_eq!(resampled.sensor.name, satellite.sensor.name);
@@ -385,7 +394,7 @@ mod tests {
         let expected_ratio = target_sampling / original_sampling;
         let actual_ratio = resampled.telescope.focal_length.as_meters()
             / satellite.telescope.focal_length.as_meters();
-        assert!((actual_ratio - expected_ratio).abs() < 1e-10);
+        assert_relative_eq!(actual_ratio, expected_ratio, epsilon = 1e-10);
     }
 
     #[test]
@@ -411,7 +420,7 @@ mod tests {
 
         // Should match manual calculation
         let expected = telescope.fwhm_image_spot() / sensor.pixel_size().as_micrometers();
-        assert!((sampling - expected).abs() < 1e-10);
+        assert_relative_eq!(sampling, expected, epsilon = 1e-10);
     }
 
     #[test]
@@ -435,14 +444,14 @@ mod tests {
 
         // The FWHM should match the current sampling ratio
         let expected_fwhm = satellite.fwhm_sampling_ratio();
-        assert!((airy_disk.fwhm() - expected_fwhm).abs() < 1e-10);
+        assert_relative_eq!(airy_disk.fwhm(), expected_fwhm, epsilon = 1e-10);
 
         // Test consistency: if we create a new satellite with different sampling,
         // the airy disk FWHM should change accordingly
         let resampled_satellite = satellite.with_fwhm_sampling(3.0);
         let resampled_airy = resampled_satellite.airy_disk_fwhm_sampled();
 
-        assert!((resampled_airy.fwhm() - 3.0).abs() < 1e-10);
+        assert_relative_eq!(resampled_airy.fwhm(), 3.0, epsilon = 1e-10);
 
         // Verify that the FWHM is different from the original
         assert!((airy_disk.fwhm() - resampled_airy.fwhm()).abs() > 1e-6);

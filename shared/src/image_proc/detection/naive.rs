@@ -312,6 +312,7 @@ pub fn get_centroids(stars: &[StarDetection]) -> Vec<(f64, f64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
     use ndarray::Array2;
 
     #[test]
@@ -337,14 +338,14 @@ mod tests {
         let star = calculate_star_centroid(&image.view(), &labeled.view(), 1, bbox, 0);
 
         // Star centroid should be at (2.0, 2.0)
-        assert!((star.x - 2.0).abs() < 1e-10);
-        assert!((star.y - 2.0).abs() < 1e-10);
+        assert_relative_eq!(star.x, 2.0, epsilon = 1e-10);
+        assert_relative_eq!(star.y, 2.0, epsilon = 1e-10);
 
         // Star should be valid (circular)
         assert!(star.is_valid());
 
         // Moments should indicate a circular object
-        assert!((star.aspect_ratio - 1.0).abs() < 0.1);
+        assert_relative_eq!(star.aspect_ratio, 1.0, epsilon = 0.1);
     }
 
     /// Run a centroid accuracy test on a grid of sub-pixel positions

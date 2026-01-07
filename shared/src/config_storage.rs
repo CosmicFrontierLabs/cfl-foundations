@@ -189,6 +189,7 @@ impl Default for ConfigStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn create_test_storage() -> ConfigStorage {
@@ -306,9 +307,9 @@ mod tests {
             .expect("Alignment should exist")
             .expect("Alignment should load successfully");
 
-        assert!((loaded.a - 1.0).abs() < 1e-10);
-        assert!((loaded.b - 0.1).abs() < 1e-10);
-        assert!((loaded.tx - 100.0).abs() < 1e-10);
+        assert_relative_eq!(loaded.a, 1.0, epsilon = 1e-10);
+        assert_relative_eq!(loaded.b, 0.1, epsilon = 1e-10);
+        assert_relative_eq!(loaded.tx, 100.0, epsilon = 1e-10);
         assert_eq!(loaded.num_points, 500);
 
         std::fs::remove_dir_all(storage.root_path()).ok();

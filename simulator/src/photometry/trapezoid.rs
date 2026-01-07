@@ -62,6 +62,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_trap_integrate() {
@@ -72,7 +73,7 @@ mod tests {
         let corners = vec![0.0, 1.0, 2.0, 3.0];
         let result = trap_integrate(corners, |x| x * x).unwrap();
 
-        assert!((result - 9.5).abs() < 1e-5);
+        assert_relative_eq!(result, 9.5, epsilon = 1e-5);
     }
 
     #[test]

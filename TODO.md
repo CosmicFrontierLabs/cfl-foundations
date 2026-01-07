@@ -247,9 +247,3 @@
   - Example: `shared/src/algo/icp.rs` (squared_distance, find_closest_points)
   - Action: Either add unit tests or change visibility to `pub(crate)` or private
   - Why: All public API functions should have test coverage
-
-- [ ] **Use assert_relative_eq for floating point comparisons**
-  - Pattern: Search for `.abs() <` or subtraction-based float comparisons in tests
-  - Example: `assert!((a - b).abs() < 1e-10)` should be `assert_relative_eq!(a, b, epsilon = 1e-10)`
-  - Action: Replace manual float comparisons with approx crate macros
-  - Why: More readable, better error messages, handles edge cases properly

@@ -524,6 +524,7 @@ impl DarkFrameAnalysis {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_dark_frame_basic() {
@@ -540,7 +541,7 @@ mod tests {
         analysis.finalize();
 
         assert_eq!(analysis.num_frames(), 3);
-        assert!((analysis.global_mean() - 100.0).abs() < 0.1);
+        assert_relative_eq!(analysis.global_mean(), 100.0, epsilon = 0.1);
     }
 
     #[test]

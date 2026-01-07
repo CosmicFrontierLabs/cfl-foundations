@@ -287,8 +287,8 @@ mod tests {
         );
         let (width, height) = sensor.dimensions.get_width_height();
 
-        assert!((width.as_micrometers() - 1024.0 * 5.5).abs() < 1e-10);
-        assert!((height.as_micrometers() - 768.0 * 5.5).abs() < 1e-10);
+        assert_relative_eq!(width.as_micrometers(), 1024.0 * 5.5, epsilon = 1e-10);
+        assert_relative_eq!(height.as_micrometers(), 768.0 * 5.5, epsilon = 1e-10);
     }
 
     #[test]
@@ -427,8 +427,8 @@ mod tests {
 
         // Check dimensions in microns
         let (width, height) = resized.dimensions.get_width_height();
-        assert!((width.as_micrometers() - 2048.0 * 5.5).abs() < 1e-10);
-        assert!((height.as_micrometers() - 1536.0 * 5.5).abs() < 1e-10);
+        assert_relative_eq!(width.as_micrometers(), 2048.0 * 5.5, epsilon = 1e-10);
+        assert_relative_eq!(height.as_micrometers(), 1536.0 * 5.5, epsilon = 1e-10);
 
         // Verify other properties remain the same
         assert_eq!(resized.name, original.name);
@@ -802,7 +802,7 @@ mod model_tests {
             .read_noise_estimator
             .estimate(20.0, Duration::from_secs_f64(1.0 / 5.0))
             .unwrap();
-        assert!((hwk_read_noise - 0.301).abs() < 0.01);
+        assert_relative_eq!(hwk_read_noise, 0.301, epsilon = 0.01);
         assert_relative_eq!(
             models::HWK4123.dark_current_at_temperature(Temperature::from_celsius(0.0)),
             0.1,

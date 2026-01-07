@@ -739,6 +739,7 @@ impl FineGuidanceSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
     use ndarray::Array2;
     use std::time::Duration;
 
@@ -845,7 +846,7 @@ mod tests {
             .get_averaged_frame()
             .expect("Should have accumulated frame");
         let expected_avg = (100.0 + 200.0 + 300.0) / 3.0;
-        assert!((averaged[[0, 0]] - expected_avg).abs() < 1e-10);
+        assert_relative_eq!(averaged[[0, 0]], expected_avg, epsilon = 1e-10);
     }
 
     #[test]

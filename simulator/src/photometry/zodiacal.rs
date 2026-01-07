@@ -766,7 +766,7 @@ mod tests {
         // 45° elongation, 60° latitude should give 91.0 S10 (after transposing data)
         let coords = SolarAngularCoordinates::new(45.0, 60.0).unwrap();
         let brightness = zodiacal.get_brightness(&coords).unwrap();
-        assert!((brightness - 91.0).abs() < 1e-10);
+        assert_relative_eq!(brightness, 91.0, epsilon = 1e-10);
 
         // Test interpolation between grid points
         // Between 30° and 45° elongation, between 45° and 60° latitude

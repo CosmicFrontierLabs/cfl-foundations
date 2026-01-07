@@ -199,21 +199,22 @@ pub fn estimate_affine_transform(points: &[PointCorrespondence]) -> Option<Optic
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_identity_transform() {
         let align = OpticalAlignment::default();
         let (sx, sy) = align.display_to_sensor(100.0, 200.0);
-        assert!((sx - 100.0).abs() < 1e-10);
-        assert!((sy - 200.0).abs() < 1e-10);
+        assert_relative_eq!(sx, 100.0, epsilon = 1e-10);
+        assert_relative_eq!(sy, 200.0, epsilon = 1e-10);
     }
 
     #[test]
     fn test_scale() {
         let align = OpticalAlignment::new(2.0, 0.0, 0.0, 2.0, 0.0, 0.0, 100);
         let (scale_x, scale_y) = align.scale();
-        assert!((scale_x - 2.0).abs() < 1e-10);
-        assert!((scale_y - 2.0).abs() < 1e-10);
+        assert_relative_eq!(scale_x, 2.0, epsilon = 1e-10);
+        assert_relative_eq!(scale_y, 2.0, epsilon = 1e-10);
     }
 
     #[test]
@@ -221,7 +222,7 @@ mod tests {
         // 90 degree rotation: a=0, b=-1, c=1, d=0
         let align = OpticalAlignment::new(0.0, -1.0, 1.0, 0.0, 0.0, 0.0, 100);
         let rot_deg = align.rotation_degrees();
-        assert!((rot_deg - 90.0).abs() < 1e-10);
+        assert_relative_eq!(rot_deg, 90.0, epsilon = 1e-10);
     }
 
     #[test]
@@ -237,12 +238,12 @@ mod tests {
         let align = estimate_affine_transform(&points).unwrap();
 
         // Should be ~identity with offset
-        assert!((align.a - 1.0).abs() < 1e-10);
-        assert!((align.d - 1.0).abs() < 1e-10);
+        assert_relative_eq!(align.a, 1.0, epsilon = 1e-10);
+        assert_relative_eq!(align.d, 1.0, epsilon = 1e-10);
         assert!(align.b.abs() < 1e-10);
         assert!(align.c.abs() < 1e-10);
-        assert!((align.tx - 10.0).abs() < 1e-10);
-        assert!((align.ty - 20.0).abs() < 1e-10);
+        assert_relative_eq!(align.tx, 10.0, epsilon = 1e-10);
+        assert_relative_eq!(align.ty, 20.0, epsilon = 1e-10);
 
         // RMS error should be ~0
         assert!(align.rms_error.unwrap() < 1e-10);
@@ -261,8 +262,8 @@ mod tests {
         let align = estimate_affine_transform(&points).unwrap();
 
         let (scale_x, scale_y) = align.scale();
-        assert!((scale_x - 2.0).abs() < 1e-10);
-        assert!((scale_y - 2.0).abs() < 1e-10);
+        assert_relative_eq!(scale_x, 2.0, epsilon = 1e-10);
+        assert_relative_eq!(scale_y, 2.0, epsilon = 1e-10);
     }
 
     #[test]

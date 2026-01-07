@@ -204,6 +204,7 @@ pub fn compute_centroid_from_mask_with_saturation(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
     use ndarray::Array2;
 
     #[test]
@@ -217,9 +218,9 @@ mod tests {
 
         let result = compute_centroid_from_mask(&image_mut.view(), &mask.view());
 
-        assert!((result.x - 1.0).abs() < 1e-10);
-        assert!((result.y - 1.0).abs() < 1e-10);
-        assert!((result.flux - 100.0).abs() < 1e-10);
+        assert_relative_eq!(result.x, 1.0, epsilon = 1e-10);
+        assert_relative_eq!(result.y, 1.0, epsilon = 1e-10);
+        assert_relative_eq!(result.flux, 100.0, epsilon = 1e-10);
     }
 
     #[test]
@@ -241,9 +242,9 @@ mod tests {
 
         let result = compute_centroid_from_mask(&image.view(), &mask.view());
 
-        assert!((result.x - 2.0).abs() < 1e-10);
-        assert!((result.y - 2.0).abs() < 1e-10);
-        assert!((result.flux - 300.0).abs() < 1e-10);
+        assert_relative_eq!(result.x, 2.0, epsilon = 1e-10);
+        assert_relative_eq!(result.y, 2.0, epsilon = 1e-10);
+        assert_relative_eq!(result.flux, 300.0, epsilon = 1e-10);
     }
 
     #[test]

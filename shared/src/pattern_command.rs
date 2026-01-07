@@ -91,6 +91,7 @@ impl PatternCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_pattern_command_serialization() {
@@ -111,10 +112,10 @@ mod tests {
                 fwhm,
                 intensity,
             } => {
-                assert!((x - 100.5).abs() < 1e-10);
-                assert!((y - 200.5).abs() < 1e-10);
-                assert!((fwhm - 5.0).abs() < 1e-10);
-                assert!((intensity - 0.8).abs() < 1e-10);
+                assert_relative_eq!(x, 100.5, epsilon = 1e-10);
+                assert_relative_eq!(y, 200.5, epsilon = 1e-10);
+                assert_relative_eq!(fwhm, 5.0, epsilon = 1e-10);
+                assert_relative_eq!(intensity, 0.8, epsilon = 1e-10);
             }
             _ => panic!("Expected Spot variant"),
         }
@@ -138,9 +139,9 @@ mod tests {
                 intensity,
             } => {
                 assert_eq!(positions.len(), 2);
-                assert!((positions[0].0 - 10.0).abs() < 1e-10);
-                assert!((fwhm - 3.0).abs() < 1e-10);
-                assert!((intensity - 1.0).abs() < 1e-10);
+                assert_relative_eq!(positions[0].0, 10.0, epsilon = 1e-10);
+                assert_relative_eq!(fwhm, 3.0, epsilon = 1e-10);
+                assert_relative_eq!(intensity, 1.0, epsilon = 1e-10);
             }
             _ => panic!("Expected SpotGrid variant"),
         }
@@ -179,10 +180,10 @@ mod tests {
                 fwhm,
                 intensity,
             } => {
-                assert!((x - 500.0).abs() < 1e-10);
-                assert!((y - 400.0).abs() < 1e-10);
-                assert!((fwhm - 5.0).abs() < 1e-10);
-                assert!((intensity - 0.9).abs() < 1e-10);
+                assert_relative_eq!(x, 500.0, epsilon = 1e-10);
+                assert_relative_eq!(y, 400.0, epsilon = 1e-10);
+                assert_relative_eq!(fwhm, 5.0, epsilon = 1e-10);
+                assert_relative_eq!(intensity, 0.9, epsilon = 1e-10);
             }
             _ => panic!("Expected Spot variant"),
         }
@@ -200,14 +201,14 @@ mod tests {
                 assert_eq!(positions.len(), 9);
                 // Center should be at (500, 500)
                 // Grid should span from (400, 400) to (600, 600)
-                assert!((positions[0].0 - 400.0).abs() < 1e-10); // top-left x
-                assert!((positions[0].1 - 400.0).abs() < 1e-10); // top-left y
-                assert!((positions[4].0 - 500.0).abs() < 1e-10); // center x
-                assert!((positions[4].1 - 500.0).abs() < 1e-10); // center y
-                assert!((positions[8].0 - 600.0).abs() < 1e-10); // bottom-right x
-                assert!((positions[8].1 - 600.0).abs() < 1e-10); // bottom-right y
-                assert!((fwhm - 5.0).abs() < 1e-10);
-                assert!((intensity - 1.0).abs() < 1e-10);
+                assert_relative_eq!(positions[0].0, 400.0, epsilon = 1e-10); // top-left x
+                assert_relative_eq!(positions[0].1, 400.0, epsilon = 1e-10); // top-left y
+                assert_relative_eq!(positions[4].0, 500.0, epsilon = 1e-10); // center x
+                assert_relative_eq!(positions[4].1, 500.0, epsilon = 1e-10); // center y
+                assert_relative_eq!(positions[8].0, 600.0, epsilon = 1e-10); // bottom-right x
+                assert_relative_eq!(positions[8].1, 600.0, epsilon = 1e-10); // bottom-right y
+                assert_relative_eq!(fwhm, 5.0, epsilon = 1e-10);
+                assert_relative_eq!(intensity, 1.0, epsilon = 1e-10);
             }
             _ => panic!("Expected SpotGrid variant"),
         }

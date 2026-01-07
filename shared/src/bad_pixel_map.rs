@@ -108,6 +108,7 @@ impl BadPixelMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_bad_pixel_map_creation() {
@@ -142,7 +143,11 @@ mod tests {
         map.add_pixel(100, 100);
 
         assert_eq!(map.distance_to_nearest_bad_pixel(10, 10), Some(0.0));
-        assert!((map.distance_to_nearest_bad_pixel(13, 14).unwrap() - 5.0).abs() < 0.01);
+        assert_relative_eq!(
+            map.distance_to_nearest_bad_pixel(13, 14).unwrap(),
+            5.0,
+            epsilon = 0.01
+        );
 
         let empty_map = BadPixelMap::new("TestCam".to_string(), "12345".to_string(), 1704067200);
         assert_eq!(empty_map.distance_to_nearest_bad_pixel(10, 10), None);

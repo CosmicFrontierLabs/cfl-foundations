@@ -249,6 +249,7 @@ pub fn gaussian_kernel(size: usize, sigma: f64) -> Array2<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
     use ndarray::{array, Array2, Axis};
 
     #[test]
@@ -287,7 +288,7 @@ mod tests {
 
         // For a 3x3 image with 2x2 kernel in SAME mode, corners should involve fewer elements
         // Top-left corner only has one value contributing (itself)
-        assert!((result[[0, 0]] - 0.25 * image[[0, 0]]).abs() < 1e-10);
+        assert_relative_eq!(result[[0, 0]], 0.25 * image[[0, 0]], epsilon = 1e-10);
     }
 
     #[test]
@@ -296,7 +297,7 @@ mod tests {
 
         // Sum should be close to 1.0
         let sum: f64 = kernel.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-10);
+        assert_relative_eq!(sum, 1.0, epsilon = 1e-10);
 
         // Center should have highest value
         assert!(kernel[[1, 1]] > kernel[[0, 0]]);

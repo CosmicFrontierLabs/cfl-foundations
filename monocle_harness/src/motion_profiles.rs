@@ -361,6 +361,7 @@ impl TestMotions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_static_pointing() {
@@ -381,7 +382,7 @@ mod tests {
         let p_half = motion.get_pointing(Duration::from_secs(5)); // Half period
 
         // At t=0, sin(0) = 0, so should be at base
-        assert!((p0.ra.to_degrees() - 100.0).abs() < 0.001);
+        assert_relative_eq!(p0.ra.to_degrees(), 100.0, epsilon = 0.001);
 
         // At quarter period, should be at maximum offset
         // The implementation should give us amplitude/cos(dec) in RA
@@ -389,10 +390,10 @@ mod tests {
         let ra_offset_arcsec = ra_offset_deg * 3600.0;
         // But we're getting 10 arcsec, which means cos(dec) factor might not be applied correctly
         // For now accept the actual behavior
-        assert!((ra_offset_arcsec - 10.0).abs() < 0.5);
+        assert_relative_eq!(ra_offset_arcsec, 10.0, epsilon = 0.5);
 
         // At half period, should be back at base
-        assert!((p_half.ra.to_degrees() - 100.0).abs() < 0.001);
+        assert_relative_eq!(p_half.ra.to_degrees(), 100.0, epsilon = 0.001);
     }
 
     #[test]
@@ -405,14 +406,18 @@ mod tests {
         let p_full = motion.get_pointing(Duration::from_secs(8));
 
         // Should return to start after one period
-        assert!((p0.ra.to_degrees() - p_full.ra.to_degrees()).abs() < 0.001);
-        assert!((p0.dec.to_degrees() - p_full.dec.to_degrees()).abs() < 0.001);
+        assert_relative_eq!(p0.ra.to_degrees(), p_full.ra.to_degrees(), epsilon = 0.001);
+        assert_relative_eq!(
+            p0.dec.to_degrees(),
+            p_full.dec.to_degrees(),
+            epsilon = 0.001
+        );
 
         // Quarter period should be 90 degrees rotated
         // At t=0: offset = (radius, 0)
         // At t=T/4: offset = (0, radius)
         let dec_offset_quarter = (p_quarter.dec.to_degrees() - 30.0) * 3600.0;
-        assert!((dec_offset_quarter - 10.0).abs() < 0.1);
+        assert_relative_eq!(dec_offset_quarter, 10.0, epsilon = 0.1);
     }
 
     #[test]
@@ -421,8 +426,8 @@ mod tests {
 
         // Should start near base
         let p0 = motion.get_pointing(Duration::from_secs(0));
-        assert!((p0.ra.to_degrees() - 100.0).abs() < 0.1);
-        assert!((p0.dec.to_degrees() - 30.0).abs() < 0.1);
+        assert_relative_eq!(p0.ra.to_degrees(), 100.0, epsilon = 0.1);
+        assert_relative_eq!(p0.dec.to_degrees(), 30.0, epsilon = 0.1);
 
         // Motion should stay within bounds
         for i in 0..50 {

@@ -328,7 +328,7 @@ mod tests {
         let exact_value = 2.3_f64.exp();
 
         // The approximation should be very close to the exact value
-        assert!((approx_value - exact_value).abs() < 1e-6);
+        assert_relative_eq!(approx_value, exact_value, epsilon = 1e-6);
 
         // Test additional values to ensure good interpolation
         for test_x in [-2.0, -1.0, 0.0, 1.0, 3.0] {
