@@ -895,8 +895,8 @@ pub static GAIA_PASSBAND: Lazy<QuantumEfficiency> = Lazy::new(|| {
     ];
 
     // Create the QuantumEfficiency model from the wavelength and efficiency tables
-    // We unwrap here because we trust the data is correctly formatted
-    QuantumEfficiency::from_table(wavelengths, qe).unwrap()
+    QuantumEfficiency::from_table(wavelengths, qe)
+        .expect("hardcoded Gaia passband data should be valid")
 });
 
 #[cfg(test)]

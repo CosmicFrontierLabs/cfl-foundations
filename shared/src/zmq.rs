@@ -42,7 +42,10 @@ impl<T: Serialize> TypedZmqPublisher<T> {
     /// Thread-safe: acquires internal mutex.
     pub fn send(&self, msg: &T) -> Result<(), ZmqError> {
         let json = serde_json::to_string(msg)?;
-        let socket = self.socket.lock().unwrap();
+        let socket = self
+            .socket
+            .lock()
+            .expect("ZMQ socket mutex should not be poisoned");
         socket.send(&json, 0)?;
         Ok(())
     }

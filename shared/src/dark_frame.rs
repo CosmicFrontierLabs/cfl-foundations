@@ -278,13 +278,17 @@ impl DarkFrameAnalysis {
 
     /// Calculate global mean of all pixel means.
     pub fn global_mean(&self) -> f64 {
-        self.mean().mean().unwrap()
+        self.mean()
+            .mean()
+            .expect("mean array should contain valid values for averaging")
     }
 
     /// Calculate global standard deviation of pixel means.
     pub fn global_std_of_means(&self) -> f64 {
         let mean_array = self.mean();
-        let mean = mean_array.mean().unwrap();
+        let mean = mean_array
+            .mean()
+            .expect("mean array should contain valid values for averaging");
         let variance = mean_array.iter().map(|&x| (x - mean).powi(2)).sum::<f64>()
             / (mean_array.len() - 1) as f64;
         variance.sqrt()
@@ -298,13 +302,18 @@ impl DarkFrameAnalysis {
     pub fn median_read_noise(&self) -> f64 {
         let std_dev = self.std_dev();
         let mut values: Vec<f64> = std_dev.iter().copied().collect();
-        values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        values.sort_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("standard deviation values should be valid numbers for comparison")
+        });
         values[values.len() / 2]
     }
 
     /// Estimate read noise as the mean of per-pixel standard deviations.
     pub fn mean_read_noise(&self) -> f64 {
-        self.std_dev().mean().unwrap()
+        self.std_dev()
+            .mean()
+            .expect("standard deviation array should contain valid values for averaging")
     }
 
     /// Identify hot pixels as those with mean significantly above population.
@@ -313,7 +322,9 @@ impl DarkFrameAnalysis {
     /// bright pixels in dark frames. Detected as pixels with mean > global_mean + threshold*sigma.
     fn hot_pixels(&self, threshold_sigma: f64) -> Vec<PixelInfo> {
         let mean_array = self.mean();
-        let global_mean = mean_array.mean().unwrap();
+        let global_mean = mean_array
+            .mean()
+            .expect("mean array should contain valid values for averaging");
         let global_std = self.global_std_of_means();
         let threshold = global_mean + threshold_sigma * global_std;
         let std_dev = self.std_dev();
@@ -335,7 +346,7 @@ impl DarkFrameAnalysis {
         hot_pixels.sort_by(|a, b| {
             b.sigma_from_population
                 .partial_cmp(&a.sigma_from_population)
-                .unwrap()
+                .expect("sigma values should be valid numbers for comparison")
         });
         hot_pixels
     }
@@ -370,7 +381,9 @@ impl DarkFrameAnalysis {
         let mean_array = self.mean();
         let variance = self.variance();
         let std_dev = self.std_dev();
-        let global_mean = mean_array.mean().unwrap();
+        let global_mean = mean_array
+            .mean()
+            .expect("mean array should contain valid values for averaging");
         let global_std = self.global_std_of_means();
 
         let mut stuck = Vec::new();
@@ -391,7 +404,7 @@ impl DarkFrameAnalysis {
         stuck.sort_by(|a, b| {
             b.sigma_from_population
                 .partial_cmp(&a.sigma_from_population)
-                .unwrap()
+                .expect("sigma values should be valid numbers for comparison")
         });
         stuck
     }

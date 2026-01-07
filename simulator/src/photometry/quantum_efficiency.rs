@@ -217,7 +217,12 @@ impl QuantumEfficiency {
     pub fn at(&self, wavelength: Wavelength) -> f64 {
         let wavelength_nm = wavelength.as_nanometers();
         // Return 0.0 if outside the range
-        if wavelength_nm < self.wavelengths[0] || wavelength_nm > *self.wavelengths.last().unwrap()
+        if wavelength_nm < self.wavelengths[0]
+            || wavelength_nm
+                > *self
+                    .wavelengths
+                    .last()
+                    .expect("wavelengths array should have at least one element")
         {
             return 0.0;
         }
@@ -245,7 +250,10 @@ impl QuantumEfficiency {
     pub fn band(&self) -> Band {
         Band {
             lower_nm: self.wavelengths[0],
-            upper_nm: *self.wavelengths.last().unwrap(),
+            upper_nm: *self
+                .wavelengths
+                .last()
+                .expect("wavelengths array should have at least one element"),
         }
     }
 
@@ -322,7 +330,10 @@ impl QuantumEfficiency {
         }
 
         // Sort wavelengths
-        wavelengths.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        wavelengths.sort_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("wavelength values should be valid numbers for comparison")
+        });
 
         // Compute efficiencies as the product at each wavelength
         let efficiencies: Vec<f64> = wavelengths

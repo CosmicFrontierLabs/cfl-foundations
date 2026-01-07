@@ -37,13 +37,19 @@ pub fn calculate_detection_stats(detections: &[StarDetection]) -> Option<StarDet
     let brightest_flux = detections
         .iter()
         .map(|s| s.flux)
-        .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .max_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("flux values should be valid numbers for comparison")
+        })
+        .expect("detections should have at least one element after empty check");
     let dimmest_flux = detections
         .iter()
         .map(|s| s.flux)
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .min_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("flux values should be valid numbers for comparison")
+        })
+        .expect("detections should have at least one element after empty check");
     let mean_flux = detections.iter().map(|s| s.flux).sum::<f64>() / count as f64;
 
     Some(StarDetectionStats {
@@ -241,7 +247,11 @@ pub fn detect_and_select_guides(
 
     // Sort by flux descending
     let mut candidates = after_snr_filter;
-    candidates.sort_by(|a, b| b.flux.partial_cmp(&a.flux).unwrap());
+    candidates.sort_by(|a, b| {
+        b.flux
+            .partial_cmp(&a.flux)
+            .expect("flux values should be valid numbers for comparison")
+    });
 
     if let Some(stats) = calculate_detection_stats(&candidates) {
         stats.log("Final candidates (sorted by flux)");
@@ -292,7 +302,11 @@ pub fn detect_and_select_guides(
     });
 
     let mut detected_stars = detections;
-    detected_stars.sort_by(|a, b| b.flux.partial_cmp(&a.flux).unwrap());
+    detected_stars.sort_by(|a, b| {
+        b.flux
+            .partial_cmp(&a.flux)
+            .expect("flux values should be valid numbers for comparison")
+    });
 
     log::info!(
         "Selected {} guide star for tracking",

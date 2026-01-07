@@ -10,18 +10,22 @@ license.workspace = true
 [[bin]]
 name = "fsm_tool"
 path = "src/bin/fsm_tool.rs"
+required-features = ["linux-bins"]
 
 [[bin]]
 name = "pi_fsm_test"
 path = "src/bin/pi_fsm_test.rs"
+required-features = ["linux-bins"]
 
 [[bin]]
 name = "v4l2_stride_test"
 path = "src/bin/v4l2_stride_test.rs"
+required-features = ["linux-bins"]
 
 [[bin]]
 name = "print_roi_constraints"
 path = "src/bin/print_roi_constraints.rs"
+required-features = ["linux-bins"]
 
 [[bin]]
 name = "mock_gyro"
@@ -43,7 +47,6 @@ clap = { version = "4.5.53", features = ["derive"] }
 crc = "3.3.0"
 env_logger = "0.11.8"
 glob = "0.3"
-gpiod = "0.3.0"
 image = "0.25.9"
 libc = "0.2.178"
 libftd2xx = "0.33.1"
@@ -57,12 +60,16 @@ rust-embed = "8.9.0"
 rustyline = "17.0.2"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
+serialport = "4.6"
 shared = { version = "0.1.0", path = "../shared" }
 strum = { version = "0.27.2", features = ["derive"] }
 thiserror = "2.0"
 tokio = { version = "1.48.0", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gpiod = "0.3.0"
 v4l = "0.14.0"
 v4l2-sys-mit = "0.3.0"
 
@@ -72,4 +79,5 @@ tokio-test = "0.4"
 [features]
 default = []
 hardware-tests = []
+linux-bins = []
 playerone = ["dep:playerone-sdk"]

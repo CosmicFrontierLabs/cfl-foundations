@@ -264,8 +264,14 @@ impl STISZodiacalSpectrum {
     /// data with out-of-bounds verification for spectrum range validation.
     pub fn wavelength_bounds(&self) -> (f64, f64) {
         (
-            *self.wavelengths.first().unwrap(),
-            *self.wavelengths.last().unwrap(),
+            *self
+                .wavelengths
+                .first()
+                .expect("wavelengths array should have at least one element"),
+            *self
+                .wavelengths
+                .last()
+                .expect("wavelengths array should have at least one element"),
         )
     }
 }
@@ -318,12 +324,21 @@ impl Spectrum for STISZodiacalSpectrum {
     /// with linear interpolation and out-of-range boundary checking.
     fn spectral_irradiance(&self, wavelength: Wavelength) -> f64 {
         let wavelength_nm = wavelength.as_nanometers();
-        if wavelength_nm < *self.wavelengths.first().unwrap()
-            || wavelength_nm > *self.wavelengths.last().unwrap()
+        if wavelength_nm
+            < *self
+                .wavelengths
+                .first()
+                .expect("wavelengths array should have at least one element")
+            || wavelength_nm
+                > *self
+                    .wavelengths
+                    .last()
+                    .expect("wavelengths array should have at least one element")
         {
             return 0.0; // Outside the bounds of the spectrum
         }
-        interp(wavelength_nm, &self.wavelengths, &self.spectral_irradiance).unwrap()
+        interp(wavelength_nm, &self.wavelengths, &self.spectral_irradiance)
+            .expect("interpolation should succeed for wavelength within bounds")
     }
 
     /// Integrate zodiacal light irradiance over specified wavelength band.

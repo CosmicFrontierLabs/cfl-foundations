@@ -95,8 +95,11 @@ impl BadPixelMap {
                 let dy = y as f64 - *bad_y as f64;
                 (dx * dx + dy * dy).sqrt()
             })
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
+            .min_by(|a, b| {
+                a.partial_cmp(b)
+                    .expect("distance values should be valid numbers for comparison")
+            })
+            .expect("iterator should have at least one element after empty check");
 
         Some(min_distance)
     }

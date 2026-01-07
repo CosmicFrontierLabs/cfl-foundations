@@ -10,7 +10,10 @@ pub mod calibrate;
 #[cfg(feature = "sdl2")]
 pub mod display_utils;
 
+#[cfg(target_os = "linux")]
 pub mod gpio;
+
+#[cfg(target_os = "linux")]
 pub mod orin_monitoring;
 
 #[cfg(feature = "playerone")]

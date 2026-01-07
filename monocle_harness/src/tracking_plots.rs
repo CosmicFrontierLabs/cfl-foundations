@@ -416,7 +416,12 @@ impl TrackingPlotter {
                 };
 
                 // When state changes, draw region for previous state
-                let is_last = std::ptr::eq(point, self.data_points.back().unwrap());
+                let is_last = std::ptr::eq(
+                    point,
+                    self.data_points
+                        .back()
+                        .expect("data_points should have at least one element in iteration"),
+                );
                 if current_state != last_state || is_last {
                     let color = match last_state {
                         "acquiring" => RED.mix(0.1), // Red for acquiring/starting to lock

@@ -95,7 +95,7 @@ impl JetsonOrinMonitor {
     pub async fn collect_metrics(&self) -> Result<SystemMetrics, MonitoringError> {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("system time should be after UNIX_EPOCH")
             .as_secs();
 
         let power_rails = self.read_power_rails().await?;

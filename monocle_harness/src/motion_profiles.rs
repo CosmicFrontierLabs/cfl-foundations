@@ -230,8 +230,12 @@ impl ChaoticMotion {
 
         // Random walk with smoothing
         for _ in 1..num_control_points {
-            let prev_ra = *control_points_ra.last().unwrap();
-            let prev_dec = *control_points_dec.last().unwrap();
+            let prev_ra = *control_points_ra
+                .last()
+                .expect("control_points_ra should have at least origin point");
+            let prev_dec = *control_points_dec
+                .last()
+                .expect("control_points_dec should have at least origin point");
 
             // Random step with momentum
             let step_ra = rng.gen_range(-1.0..1.0) * max_deviation_arcsec * 0.3;

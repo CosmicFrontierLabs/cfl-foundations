@@ -157,8 +157,14 @@ impl FineGuidanceSystem {
     where
         F: Fn(&FgsCallbackEvent) + Send + Sync + 'static,
     {
-        let mut callbacks = self.callbacks.lock().unwrap();
-        let mut next_id = self.next_callback_id.lock().unwrap();
+        let mut callbacks = self
+            .callbacks
+            .lock()
+            .expect("callbacks mutex should not be poisoned");
+        let mut next_id = self
+            .next_callback_id
+            .lock()
+            .expect("next_callback_id mutex should not be poisoned");
 
         let callback_id = *next_id;
         *next_id += 1;
@@ -169,18 +175,27 @@ impl FineGuidanceSystem {
 
     /// Deregister a callback
     pub fn deregister_callback(&self, callback_id: CallbackId) -> bool {
-        let mut callbacks = self.callbacks.lock().unwrap();
+        let mut callbacks = self
+            .callbacks
+            .lock()
+            .expect("callbacks mutex should not be poisoned");
         callbacks.remove(&callback_id).is_some()
     }
 
     /// Get the number of registered callbacks
     pub fn callback_count(&self) -> usize {
-        self.callbacks.lock().unwrap().len()
+        self.callbacks
+            .lock()
+            .expect("callbacks mutex should not be poisoned")
+            .len()
     }
 
     /// Emit an event to all registered callbacks
     fn emit_event(&self, event: &FgsCallbackEvent) {
-        let callbacks = self.callbacks.lock().unwrap();
+        let callbacks = self
+            .callbacks
+            .lock()
+            .expect("callbacks mutex should not be poisoned");
         for callback in callbacks.values() {
             callback(event);
         }

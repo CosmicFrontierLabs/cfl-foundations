@@ -39,10 +39,12 @@ required-features = ["playerone"]
 [[bin]]
 name = "led_latency_test"
 path = "src/bin/led_latency_test.rs"
+required-features = ["linux-bins"]
 
 [[bin]]
 name = "orin_monitor"
 path = "src/bin/orin_monitor.rs"
+required-features = ["linux-bins"]
 
 [dependencies]
 anyhow = "1.0"
@@ -54,7 +56,6 @@ bytes = "1.5"
 clap = { version = "4.5", features = ["derive"] }
 crossbeam-channel = "0.5.15"
 csv = "1.4.0"
-gpiod = "0.3.0"
 image = "0.25"
 imageproc = "0.25"
 libc = "0.2.177"
@@ -84,12 +85,16 @@ tracing-subscriber = "0.3"
 usvg = "0.45.0"
 zmq = "0.10.0"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+gpiod = "0.3.0"
+
 [dev-dependencies]
 approx = "0.5.1"
 tokio-test = "0.4"
 
 [features]
 default = []
+linux-bins = []
 playerone = ["hardware/playerone"]
 nsv455 = []
 sdl2 = ["dep:sdl2"]
