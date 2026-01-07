@@ -123,12 +123,6 @@
   - Why: Reduces duplication and ensures consistent spot characterization across codebase
   - Benefit: Single source of truth for spot shape data
 
-- [ ] Cleanup constants in Airy disk gaussian approximation
-  - Location: `shared/src/image_proc/airy.rs`
-  - Current: Magic constants in gaussian normalization
-  - Needed: Extract and document normalization constants
-  - Why: Makes 2D integration and radius scaling explicit and maintainable
-
 ## Code Quality & Clarity Improvements
 
 ### Documentation Patterns

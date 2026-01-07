@@ -46,6 +46,21 @@ use scilib::math::bessel;
 
 use crate::units::Wavelength;
 
+/// Coefficient for the Gaussian approximation to the Airy disk.
+///
+/// The Gaussian approximation uses: I(r) ≈ exp(-k * r² / r₀²)
+/// where k = 3.9 is empirically chosen to match the FWHM of the true Airy disk.
+/// This value provides a good balance between accuracy near the center and
+/// computational efficiency.
+const GAUSSIAN_APPROXIMATION_COEFFICIENT: f64 = 3.9;
+
+/// Approximate location of the first zero of the J₁ Bessel function.
+///
+/// The exact value is approximately 3.8317... This is used as a starting
+/// point for numerical root-finding when calculating the first dark ring
+/// of the Airy disk pattern.
+const BESSEL_J1_FIRST_ZERO_APPROX: f64 = 3.83;
+
 /// Airy disk parameters and approximation functions for diffraction-limited optics.
 ///
 /// The Airy disk is the diffraction pattern resulting from a uniformly
@@ -149,7 +164,9 @@ impl AiryDisk {
     /// ~10x faster than exact Bessel function calculation.
     ///
     pub fn gaussian_approximation(&self, radius: f64) -> f64 {
-        (-3.9 * (radius * radius) / (self.first_zero * self.first_zero)).exp()
+        (-GAUSSIAN_APPROXIMATION_COEFFICIENT * (radius * radius)
+            / (self.first_zero * self.first_zero))
+            .exp()
     }
 
     /// Triangle approximation to the Airy disk function.
@@ -307,7 +324,7 @@ impl AiryDisk {
     /// Uses numerical approximation to find where the Airy disk function
     /// first crosses zero, corresponding to the first dark ring
     fn calculate_first_zero(&self) -> f64 {
-        let mut x = 3.83; // Starting guess close to theoretical value
+        let mut x = BESSEL_J1_FIRST_ZERO_APPROX;
         let mut step = 0.01;
 
         // Use binary search to find the zero crossing
@@ -466,12 +483,12 @@ impl PixelScaledAiryDisk {
     /// # Note
     /// This normalization accounts for the 2D integration and radius scaling.
     pub fn gaussian_approximation_normalized(&self, radius: f64) -> f64 {
-        // See TODO.md: Shared - Image Processing - Cleanup constants in Airy disk
         let gauss_value = self.disk.gaussian_approximation(radius / self.radius_scale);
 
-        // The integral of the base gaussian exp(-3.9 * r²/r₀²) in 2D is π * r₀² / 3.9
+        // The integral of the base gaussian exp(-k * r²/r₀²) in 2D is π * r₀² / k
         let r0_base = self.disk.first_zero;
-        let base_integral = std::f64::consts::PI * r0_base * r0_base / 3.9;
+        let base_integral =
+            std::f64::consts::PI * r0_base * r0_base / GAUSSIAN_APPROXIMATION_COEFFICIENT;
 
         // When we scale by radius_scale, the integral scales by radius_scale²
         // So the normalized function is: gauss_value / (base_integral * radius_scale²)
