@@ -5,6 +5,9 @@ pub mod camera_server;
 pub mod display_patterns;
 
 #[cfg(feature = "sdl2")]
+pub mod calibrate;
+
+#[cfg(feature = "sdl2")]
 pub mod display_utils;
 
 pub mod gpio;

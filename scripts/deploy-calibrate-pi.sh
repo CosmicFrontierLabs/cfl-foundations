@@ -112,6 +112,34 @@ EOF
     ssh "$REMOTE_HOST" "sudo systemctl daemon-reload"
     ssh "$REMOTE_HOST" "sudo systemctl enable ${SERVICE_NAME}.service"
     print_success "Service installed and enabled"
+
+    # Set up port 80 redirect (so we can access via http://host/ instead of :3001)
+    print_info "Setting up port 80 redirect to 3001..."
+    ssh "$REMOTE_HOST" "sudo apt-get install -y iptables-persistent" 2>/dev/null || true
+
+    # Add iptables rules for port 80 -> 3001 redirect
+    ssh "$REMOTE_HOST" "sudo iptables -t nat -C PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 3001 2>/dev/null || sudo iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 3001"
+    ssh "$REMOTE_HOST" "sudo iptables -t nat -C OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 3001 2>/dev/null || sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 3001"
+
+    # Persist iptables rules
+    ssh "$REMOTE_HOST" "sudo netfilter-persistent save" 2>/dev/null || true
+    print_success "Port 80 redirect configured (port 80 -> 3001)"
+
+    # Set up HDMI 4K mode for high pixel clock (needed for 2560x2560@60Hz OLED)
+    print_info "Checking HDMI 4K configuration..."
+    HDMI_CONFIG_NEEDED=false
+    if ! ssh "$REMOTE_HOST" "grep -q 'hdmi_enable_4kp60=1' /boot/firmware/config.txt"; then
+        HDMI_CONFIG_NEEDED=true
+        print_info "Adding hdmi_enable_4kp60=1 to /boot/firmware/config.txt..."
+        ssh "$REMOTE_HOST" "echo 'hdmi_enable_4kp60=1' | sudo tee -a /boot/firmware/config.txt > /dev/null"
+    fi
+
+    if [ "$HDMI_CONFIG_NEEDED" = true ]; then
+        print_warning "HDMI configuration changed - REBOOT REQUIRED for changes to take effect"
+        print_info "Run: ssh $REMOTE_HOST 'sudo reboot'"
+    else
+        print_success "HDMI 4K configuration already present"
+    fi
 fi
 
 # Step 4: Restart the service
@@ -130,6 +158,7 @@ print_success "Deployment complete!"
 if [ "$SETUP_MODE" = true ]; then
     print_info "The calibrate_serve binary will now start automatically on boot"
     print_info "OLED wait mode enabled: will poll until 2560x2560 display is detected"
+    print_info "Port 80 redirect enabled: access via http://test-bench-pi/"
 fi
 print_info ""
 print_info "Useful commands:"

@@ -4,9 +4,12 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::rect::Rect;
 use shared::config_storage::ConfigStorage;
-use shared::image_size::PixelShape;
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use test_bench::calibrate::{
+    create_gyro_walk, create_optical_calibration, load_motion_profile, PatternConfig,
+};
 use test_bench::display_patterns as patterns;
 use test_bench::display_utils::{
     get_display_resolution, list_displays, resolve_display_index, SdlResultExt,
@@ -192,6 +195,157 @@ struct Args {
     output: Option<PathBuf>,
 }
 
+/// Convert CLI arguments to PatternConfig and print pattern info.
+fn args_to_pattern_config(args: &Args, width: u32, height: u32) -> Result<PatternConfig> {
+    match args.pattern {
+        PatternType::Check => {
+            println!("Generating checkerboard pattern");
+            println!("  Checker size: {}px", args.checker_size);
+            Ok(PatternConfig::Check {
+                checker_size: args.checker_size,
+            })
+        }
+        PatternType::Usaf => {
+            println!("Rendering USAF-1951 test target from SVG");
+            Ok(PatternConfig::Usaf)
+        }
+        PatternType::Static => {
+            println!("Generating static pattern");
+            println!("  Block size: {}px", args.static_pixel_size);
+            Ok(PatternConfig::Static {
+                pixel_size: args.static_pixel_size,
+            })
+        }
+        PatternType::Pixel => {
+            println!("Generating center pixel pattern");
+            Ok(PatternConfig::Pixel)
+        }
+        PatternType::April => {
+            println!("Generating AprilTag array pattern");
+            Ok(PatternConfig::April)
+        }
+        PatternType::CirclingPixel => {
+            println!("Generating circling pixel pattern");
+            println!("  Orbit count: {}", args.orbit_count);
+            println!("  Orbit radius: {}% FOV", args.orbit_radius_percent);
+            println!("  Rotation period: 60 seconds");
+            Ok(PatternConfig::CirclingPixel {
+                orbit_count: args.orbit_count,
+                orbit_radius_percent: args.orbit_radius_percent,
+            })
+        }
+        PatternType::Uniform => {
+            println!("Generating uniform screen");
+            println!("  Brightness level: {}", args.uniform_level);
+            Ok(PatternConfig::Uniform {
+                level: args.uniform_level,
+            })
+        }
+        PatternType::WigglingGaussian => {
+            println!("Generating wiggling gaussian pattern");
+            println!("  Gaussian FWHM: {} pixels", args.gaussian_fwhm);
+            println!("  Wiggle radius: {} pixels", args.wiggle_radius_pixels);
+            println!("  Maximum intensity: {}", args.gaussian_intensity);
+            println!("  Rotation period: 10 seconds");
+            Ok(PatternConfig::WigglingGaussian {
+                fwhm: args.gaussian_fwhm,
+                wiggle_radius: args.wiggle_radius_pixels,
+                intensity: args.gaussian_intensity,
+            })
+        }
+        PatternType::PixelGrid => {
+            println!("Generating pixel grid pattern");
+            println!("  Grid spacing: {} pixels", args.grid_spacing);
+            Ok(PatternConfig::PixelGrid {
+                spacing: args.grid_spacing,
+            })
+        }
+        PatternType::SiemensStar => {
+            println!("Generating Siemens star pattern");
+            println!("  Number of spokes: {}", args.siemens_spokes);
+            Ok(PatternConfig::SiemensStar {
+                spokes: args.siemens_spokes,
+            })
+        }
+        PatternType::MotionProfile => {
+            let image_path = args
+                .image_path
+                .as_ref()
+                .context("--image-path required for motion-profile pattern")?;
+            let motion_csv = args
+                .motion_csv
+                .as_ref()
+                .context("--motion-csv required for motion-profile pattern")?;
+
+            println!("Loading motion profile pattern");
+            println!("  Image: {}", image_path.display());
+            println!("  Motion CSV: {}", motion_csv.display());
+            println!("  Motion scale: {}%", args.motion_scale_percent);
+
+            load_motion_profile(
+                image_path,
+                motion_csv,
+                width,
+                height,
+                args.motion_scale_percent / 100.0,
+            )
+        }
+        PatternType::GyroWalk => {
+            let image_path = args
+                .image_path
+                .as_ref()
+                .context("--image-path required for gyro-walk pattern")?;
+
+            println!("Loading gyro-walk pattern");
+            println!("  Image: {}", image_path.display());
+            println!("  Pixel size: {} um", args.gyro_pixel_size_um);
+            println!("  Focal length: {} mm", args.gyro_focal_length_mm);
+            println!("  Frame rate: {} Hz", args.gyro_frame_rate_hz);
+            println!("  Motion scale: {}", args.gyro_motion_scale);
+
+            create_gyro_walk(
+                image_path,
+                width,
+                height,
+                args.gyro_pixel_size_um,
+                args.gyro_focal_length_mm,
+                args.gyro_motion_scale,
+                args.gyro_frame_rate_hz,
+            )
+        }
+        PatternType::OpticalCalibration => {
+            let zmq_endpoint = args
+                .zmq_sub
+                .as_deref()
+                .context("--zmq-sub is required for optical-calibration pattern")?;
+
+            let grid_radius =
+                args.calibration_grid_spacing * (args.calibration_grid_size - 1) as f64 / 2.0;
+            println!("Generating optical calibration pattern");
+            println!(
+                "  Grid: {}x{} points, {} pixel spacing (radius {:.1} pixels)",
+                args.calibration_grid_size,
+                args.calibration_grid_size,
+                args.calibration_grid_spacing,
+                grid_radius
+            );
+            println!("  Spot FWHM: {} pixels", args.spot_fwhm_pixels);
+            println!("  Warmup period: {} seconds", args.warmup_secs);
+            println!("  ZMQ SUB endpoint: {zmq_endpoint}");
+
+            create_optical_calibration(
+                zmq_endpoint,
+                args.calibration_grid_size,
+                args.calibration_grid_spacing,
+                width,
+                height,
+                args.spot_fwhm_pixels,
+                Duration::from_secs_f64(args.warmup_secs),
+            )
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
 
@@ -218,325 +372,27 @@ fn main() -> Result<()> {
     let pattern_width = args.width.unwrap_or(display_width);
     let pattern_height = args.height.unwrap_or(display_height);
 
-    let (mut img, window_title) = match args.pattern {
-        PatternType::Check => {
-            println!("Generating checkerboard pattern");
-            println!("  Checker size: {}px", args.checker_size);
-            println!("  Pattern size: {pattern_width}x{pattern_height}");
-            println!(
-                "  Display {}: {}x{} at ({}, {})",
-                display_index,
-                mode.w,
-                mode.h,
-                bounds.x(),
-                bounds.y()
-            );
-            (
-                patterns::checkerboard::generate(pattern_width, pattern_height, args.checker_size),
-                "Checkerboard Pattern",
-            )
-        }
-        PatternType::Usaf => {
-            println!("Rendering USAF-1951 test target from SVG");
-            println!("  Target size: {pattern_width}x{pattern_height}");
-            println!(
-                "  Display {}: {}x{} at ({}, {})",
-                display_index,
-                mode.w,
-                mode.h,
-                bounds.x(),
-                bounds.y()
-            );
-            (
-                patterns::usaf::generate(pattern_width, pattern_height)?,
-                "USAF-1951 Test Target",
-            )
-        }
-        PatternType::Static => {
-            println!("Generating static pattern");
-            println!("  Pattern size: {pattern_width}x{pattern_height}");
-            println!("  Block size: {}px", args.static_pixel_size);
-            println!(
-                "  Display {}: {}x{} at ({}, {})",
-                display_index,
-                mode.w,
-                mode.h,
-                bounds.x(),
-                bounds.y()
-            );
-            (
-                patterns::static_noise::generate(
-                    pattern_width,
-                    pattern_height,
-                    args.static_pixel_size,
-                ),
-                "Digital Static",
-            )
-        }
-        PatternType::Pixel => {
-            println!("Generating center pixel pattern");
-            println!("  Pattern size: {pattern_width}x{pattern_height}");
-            println!(
-                "  Display {}: {}x{} at ({}, {})",
-                display_index,
-                mode.w,
-                mode.h,
-                bounds.x(),
-                bounds.y()
-            );
-            (
-                patterns::pixel::generate(pattern_width, pattern_height),
-                "Center Pixel",
-            )
-        }
-        PatternType::April => {
-            println!("Generating AprilTag array pattern");
-            println!("  Pattern size: {pattern_width}x{pattern_height}");
-            println!(
-                "  Display {}: {}x{} at ({}, {})",
-                display_index,
-                mode.w,
-                mode.h,
-                bounds.x(),
-                bounds.y()
-            );
-            (
-                patterns::apriltag::generate(pattern_width, pattern_height)?,
-                "AprilTag Array",
-            )
-        }
-        PatternType::CirclingPixel => {
-            println!("Generating circling pixel pattern");
-            println!("  Pattern size: {pattern_width}x{pattern_height}");
-            println!("  Orbit count: {}", args.orbit_count);
-            println!("  Orbit radius: {}% FOV", args.orbit_radius_percent);
-            println!("  Rotation period: 60 seconds");
-            println!(
-                "  Display {}: {}x{} at ({}, {})",
-                display_index,
-                mode.w,
-                mode.h,
-                bounds.x(),
-                bounds.y()
-            );
-            (
-                patterns::circling_pixel::generate(
-                    pattern_width,
-                    pattern_height,
-                    args.orbit_count,
-                    args.orbit_radius_percent,
-                ),
-                "Circling Pixel",
-            )
-        }
-        PatternType::Uniform => {
-            println!("Generating uniform screen");
-            println!("  Pattern size: {pattern_width}x{pattern_height}");
-            println!("  Brightness level: {}", args.uniform_level);
-            println!(
-                "  Display {}: {}x{} at ({}, {})",
-                display_index,
-                mode.w,
-                mode.h,
-                bounds.x(),
-                bounds.y()
-            );
-            (
-                patterns::uniform::generate(pattern_width, pattern_height, args.uniform_level),
-                "Uniform Screen",
-            )
-        }
-        PatternType::WigglingGaussian => {
-            println!("Generating wiggling gaussian pattern");
-            println!("  Pattern size: {pattern_width}x{pattern_height}");
-            println!("  Gaussian FWHM: {} pixels", args.gaussian_fwhm);
-            println!("  Wiggle radius: {} pixels", args.wiggle_radius_pixels);
-            println!("  Maximum intensity: {}", args.gaussian_intensity);
-            println!("  Rotation period: 10 seconds");
-            println!(
-                "  Display {}: {}x{} at ({}, {})",
-                display_index,
-                mode.w,
-                mode.h,
-                bounds.x(),
-                bounds.y()
-            );
-            (
-                patterns::wiggling_gaussian::generate(
-                    pattern_width,
-                    pattern_height,
-                    args.gaussian_fwhm,
-                    args.wiggle_radius_pixels,
-                    args.gaussian_intensity,
-                ),
-                "Wiggling Gaussian",
-            )
-        }
-        PatternType::PixelGrid => {
-            println!("Generating pixel grid pattern");
-            println!("  Pattern size: {pattern_width}x{pattern_height}");
-            println!("  Grid spacing: {} pixels", args.grid_spacing);
-            println!(
-                "  Display {}: {}x{} at ({}, {})",
-                display_index,
-                mode.w,
-                mode.h,
-                bounds.x(),
-                bounds.y()
-            );
-            (
-                patterns::pixel_grid::generate(pattern_width, pattern_height, args.grid_spacing),
-                "Pixel Grid",
-            )
-        }
-        PatternType::SiemensStar => {
-            println!("Generating Siemens star pattern");
-            println!("  Pattern size: {pattern_width}x{pattern_height}");
-            println!("  Number of spokes: {}", args.siemens_spokes);
-            println!(
-                "  Display {}: {}x{} at ({}, {})",
-                display_index,
-                mode.w,
-                mode.h,
-                bounds.x(),
-                bounds.y()
-            );
-            (
-                patterns::siemens_star::generate(
-                    pattern_width,
-                    pattern_height,
-                    args.siemens_spokes,
-                ),
-                "Siemens Star",
-            )
-        }
-        PatternType::MotionProfile => {
-            let image_path = args
-                .image_path
-                .as_ref()
-                .context("--image-path required for motion-profile pattern")?;
-            let motion_csv = args
-                .motion_csv
-                .as_ref()
-                .context("--motion-csv required for motion-profile pattern")?;
+    // Convert CLI args to PatternConfig
+    let pattern_config = args_to_pattern_config(&args, pattern_width, pattern_height)?;
 
-            println!("Loading motion profile pattern");
-            println!("  Image: {}", image_path.display());
-            println!("  Motion CSV: {}", motion_csv.display());
+    println!("  Pattern size: {pattern_width}x{pattern_height}");
+    println!(
+        "  Display {}: {}x{} at ({}, {})",
+        display_index,
+        mode.w,
+        mode.h,
+        bounds.x(),
+        bounds.y()
+    );
 
-            let base_img = patterns::motion_profile::load_and_downsample_image(
-                image_path,
-                pattern_width,
-                pattern_height,
-            )?;
-
-            println!(
-                "  Downsampled image size: {}x{}",
-                base_img.width(),
-                base_img.height()
-            );
-            println!("  Pattern size: {pattern_width}x{pattern_height}");
-            println!(
-                "  Display {}: {}x{} at ({}, {})",
-                display_index,
-                mode.w,
-                mode.h,
-                bounds.x(),
-                bounds.y()
-            );
-
-            let mut img = image::RgbImage::new(pattern_width, pattern_height);
-            for pixel in img.pixels_mut() {
-                *pixel = image::Rgb([0, 0, 0]);
-            }
-
-            (img, "Motion Profile")
-        }
-        PatternType::GyroWalk => {
-            let image_path = args
-                .image_path
-                .as_ref()
-                .context("--image-path required for gyro-walk pattern")?;
-
-            println!("Loading gyro-walk pattern");
-            println!("  Image: {}", image_path.display());
-            println!("  Pixel size: {} μm", args.gyro_pixel_size_um);
-            println!("  Focal length: {} mm", args.gyro_focal_length_mm);
-            println!("  Frame rate: {} Hz", args.gyro_frame_rate_hz);
-
-            let base_img = patterns::motion_profile::load_and_downsample_image(
-                image_path,
-                pattern_width,
-                pattern_height,
-            )?;
-
-            println!(
-                "  Downsampled image size: {}x{}",
-                base_img.width(),
-                base_img.height()
-            );
-            println!("  Pattern size: {pattern_width}x{pattern_height}");
-            println!(
-                "  Display {}: {}x{} at ({}, {})",
-                display_index,
-                mode.w,
-                mode.h,
-                bounds.x(),
-                bounds.y()
-            );
-
-            let mut img = image::RgbImage::new(pattern_width, pattern_height);
-            for pixel in img.pixels_mut() {
-                *pixel = image::Rgb([0, 0, 0]);
-            }
-
-            (img, "Gyro Walk")
-        }
-        PatternType::OpticalCalibration => {
-            let grid_radius =
-                args.calibration_grid_spacing * (args.calibration_grid_size - 1) as f64 / 2.0;
-            println!("Generating optical calibration pattern");
-            println!("  Pattern size: {pattern_width}x{pattern_height}");
-            println!(
-                "  Grid: {}x{} points, {} pixel spacing (radius {:.1} pixels)",
-                args.calibration_grid_size,
-                args.calibration_grid_size,
-                args.calibration_grid_spacing,
-                grid_radius
-            );
-            println!("  Spot FWHM: {} pixels", args.spot_fwhm_pixels);
-            println!("  Warmup period: {} seconds", args.warmup_secs);
-            if let Some(ref endpoint) = args.zmq_sub {
-                println!("  ZMQ SUB endpoint: {endpoint}");
-            } else {
-                println!("  ZMQ SUB: not configured (running without feedback)");
-            }
-            println!(
-                "  Display {}: {}x{} at ({}, {})",
-                display_index,
-                mode.w,
-                mode.h,
-                bounds.x(),
-                bounds.y()
-            );
-
-            let mut img = image::RgbImage::new(pattern_width, pattern_height);
-            for pixel in img.pixels_mut() {
-                *pixel = image::Rgb([0, 0, 0]);
-            }
-
-            (img, "Optical Calibration")
-        }
-    };
+    // Generate initial pattern image
+    let mut img = pattern_config.generate(pattern_width, pattern_height)?;
 
     if args.invert {
-        for pixel in img.pixels_mut() {
-            pixel[0] = 255 - pixel[0];
-            pixel[1] = 255 - pixel[1];
-            pixel[2] = 255 - pixel[2];
-        }
+        PatternConfig::apply_invert(&mut img);
     }
 
+    // Save to file if requested
     if let Some(output_path) = args.output {
         img.save(&output_path)
             .with_context(|| format!("Failed to save image to {}", output_path.display()))?;
@@ -544,6 +400,8 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    // Set up SDL window
+    let window_title = pattern_config.display_name();
     let window = video_subsystem
         .window(window_title, mode.w as u32, mode.h as u32)
         .position(bounds.x(), bounds.y())
@@ -569,6 +427,7 @@ fn main() -> Result<()> {
         .update(None, img.as_raw(), (pattern_width * 3) as usize)
         .map_err(|e| anyhow::anyhow!("Failed to update texture: {e:?}"))?;
 
+    // Calculate scaling for non-square displays
     let window_width = mode.w as u32;
     let window_height = mode.h as u32;
 
@@ -588,79 +447,12 @@ fn main() -> Result<()> {
         .event_pump()
         .map_err(|e| anyhow::anyhow!("Failed to get event pump: {e}"))?;
 
-    let is_animated = matches!(
-        args.pattern,
-        PatternType::Static
-            | PatternType::CirclingPixel
-            | PatternType::WigglingGaussian
-            | PatternType::MotionProfile
-            | PatternType::GyroWalk
-            | PatternType::OpticalCalibration
-    );
-    let mut static_buffer = if is_animated {
+    // Set up animation buffer if needed
+    let mut buffer = if pattern_config.is_animated() {
         Some(vec![0u8; (pattern_width * pattern_height * 3) as usize])
     } else {
         None
     };
-
-    let motion_data = if matches!(args.pattern, PatternType::MotionProfile) {
-        let image_path = args.image_path.as_ref().unwrap();
-        let motion_csv = args.motion_csv.as_ref().unwrap();
-
-        let base_img = image::open(image_path)
-            .with_context(|| format!("Failed to load image: {}", image_path.display()))?
-            .into_rgb8();
-        let motion_profile = patterns::motion_profile::load_motion_profile(motion_csv)?;
-
-        Some((base_img, motion_profile))
-    } else {
-        None
-    };
-
-    let gyro_data = if matches!(args.pattern, PatternType::GyroWalk) {
-        let image_path = args.image_path.as_ref().unwrap();
-
-        let base_img = image::open(image_path)
-            .with_context(|| format!("Failed to load image: {}", image_path.display()))?
-            .into_rgb8();
-
-        let gyro_state = patterns::gyro_walk::GyroWalkState::new(
-            args.gyro_pixel_size_um,
-            args.gyro_focal_length_mm,
-            args.gyro_motion_scale,
-        );
-
-        Some((base_img, std::sync::Mutex::new(gyro_state)))
-    } else {
-        None
-    };
-
-    let optical_cal_data = if matches!(args.pattern, PatternType::OpticalCalibration) {
-        let zmq_endpoint = args.zmq_sub.as_deref().ok_or_else(|| {
-            anyhow::anyhow!("--zmq-sub is required for optical-calibration pattern")
-        })?;
-        let collector = shared::tracking_collector::TrackingCollector::connect(zmq_endpoint)
-            .map_err(|e| anyhow::anyhow!("Failed to connect ZMQ subscriber: {e}"))?;
-        println!("ZMQ SUB connected to {zmq_endpoint}");
-
-        let pattern_size =
-            PixelShape::with_width_height(pattern_width as usize, pattern_height as usize);
-        let optical_cal_state = patterns::optical_calibration::CalibrationRunner::for_grid(
-            collector,
-            args.calibration_grid_size,
-            args.calibration_grid_spacing,
-            pattern_size,
-            args.spot_fwhm_pixels,
-            Duration::from_secs_f64(args.warmup_secs),
-        );
-        Some(std::sync::Mutex::new(optical_cal_state))
-    } else {
-        None
-    };
-
-    // TODO: Clean up and clock rendering rate to SDL advertised display refresh rate
-    // Currently runs unconstrained which can cause excessive CPU usage and inconsistent timing.
-    // Should use mode.refresh_rate to set target frame time and add frame pacing logic.
 
     let mut frame_count = 0u64;
     let mut last_fps_report = std::time::Instant::now();
@@ -678,87 +470,26 @@ fn main() -> Result<()> {
             }
         }
 
-        if let Some(ref mut buffer) = static_buffer {
-            match args.pattern {
-                PatternType::Static => {
-                    patterns::static_noise::generate_into_buffer(
-                        buffer,
-                        pattern_width,
-                        pattern_height,
-                        args.static_pixel_size,
-                    );
-                }
-                PatternType::CirclingPixel => {
-                    patterns::circling_pixel::generate_into_buffer(
-                        buffer,
-                        pattern_width,
-                        pattern_height,
-                        args.orbit_count,
-                        args.orbit_radius_percent,
-                    );
-                }
-                PatternType::WigglingGaussian => {
-                    patterns::wiggling_gaussian::generate_into_buffer(
-                        buffer,
-                        pattern_width,
-                        pattern_height,
-                        args.gaussian_fwhm,
-                        args.wiggle_radius_pixels,
-                        args.gaussian_intensity,
-                    );
-                }
-                PatternType::MotionProfile => {
-                    if let Some((ref base_img, ref motion_profile)) = motion_data {
-                        let elapsed = SystemTime::now()
-                            .duration_since(SystemTime::UNIX_EPOCH)
-                            .unwrap();
-                        patterns::motion_profile::generate_into_buffer(
-                            buffer,
-                            pattern_width,
-                            pattern_height,
-                            base_img,
-                            motion_profile,
-                            elapsed,
-                            args.motion_scale_percent / 100.0,
-                        );
-                    }
-                }
-                PatternType::GyroWalk => {
-                    if let Some((ref base_img, ref gyro_state)) = gyro_data {
-                        let elapsed = SystemTime::now()
-                            .duration_since(SystemTime::UNIX_EPOCH)
-                            .unwrap();
-                        let frame_interval =
-                            std::time::Duration::from_secs_f64(1.0 / args.gyro_frame_rate_hz);
-                        patterns::gyro_walk::generate_into_buffer(
-                            buffer,
-                            pattern_width,
-                            pattern_height,
-                            base_img,
-                            gyro_state,
-                            elapsed,
-                            frame_interval,
-                        );
-                    }
-                }
-                PatternType::OpticalCalibration => {
-                    if let Some(ref optical_cal_state) = optical_cal_data {
-                        let size = PixelShape::with_width_height(
-                            pattern_width as usize,
-                            pattern_height as usize,
-                        );
-                        patterns::optical_calibration::generate_into_buffer(
-                            buffer,
-                            size,
-                            optical_cal_state,
-                        );
-                    }
-                }
-                _ => {}
-            }
+        // Update animated patterns
+        if let Some(ref mut buf) = buffer {
+            pattern_config.generate_into_buffer(buf, pattern_width, pattern_height);
+
+            let buffer_to_use: &[u8] = if args.invert {
+                // Apply inversion to buffer (need temporary storage)
+                buf.iter_mut().for_each(|b| *b = 255 - *b);
+                buf
+            } else {
+                buf
+            };
+
             texture
-                .update(None, buffer, (pattern_width * 3) as usize)
+                .update(None, buffer_to_use, (pattern_width * 3) as usize)
                 .map_err(|e| anyhow::anyhow!("Failed to update texture: {e}"))?;
+
+            // Undo inversion so next frame starts fresh
+            if args.invert {
+                buf.iter_mut().for_each(|b| *b = 255 - *b);
+            }
         }
 
         canvas.set_draw_color(sdl2::pixels::Color::RGB(0, 0, 0));
@@ -778,31 +509,36 @@ fn main() -> Result<()> {
     }
 
     // Save optical calibration on exit
-    if let Some(ref optical_cal_state) = optical_cal_data {
-        let state = optical_cal_state.lock().unwrap();
-        if let Some(alignment) = state.estimate_transform() {
-            let (sx, sy) = alignment.scale();
-            println!(
-                "Calibration: scale=({:.4}, {:.4}), rot={:.2}°, offset=({:.1}, {:.1})",
-                sx,
-                sy,
-                alignment.rotation_degrees(),
-                alignment.tx,
-                alignment.ty
-            );
-            println!("  Points used: {}", alignment.num_points);
-            if let Some(rms) = alignment.rms_error {
-                println!("  RMS error: {rms:.3} pixels");
-            }
-
-            match ConfigStorage::new().and_then(|s| s.save_optical_alignment(&alignment)) {
-                Ok(path) => println!("Saved to: {}", path.display()),
-                Err(e) => eprintln!("Failed to save: {e}"),
-            }
-        } else {
-            println!("No calibration data to save (not enough points collected)");
-        }
+    if let PatternConfig::OpticalCalibration { runner, .. } = &pattern_config {
+        save_optical_calibration(runner);
     }
 
     Ok(())
+}
+
+/// Save optical calibration results on exit.
+fn save_optical_calibration(runner: &Arc<Mutex<patterns::optical_calibration::CalibrationRunner>>) {
+    let state = runner.lock().unwrap();
+    if let Some(alignment) = state.estimate_transform() {
+        let (sx, sy) = alignment.scale();
+        println!(
+            "Calibration: scale=({:.4}, {:.4}), rot={:.2} deg, offset=({:.1}, {:.1})",
+            sx,
+            sy,
+            alignment.rotation_degrees(),
+            alignment.tx,
+            alignment.ty
+        );
+        println!("  Points used: {}", alignment.num_points);
+        if let Some(rms) = alignment.rms_error {
+            println!("  RMS error: {rms:.3} pixels");
+        }
+
+        match ConfigStorage::new().and_then(|s| s.save_optical_alignment(&alignment)) {
+            Ok(path) => println!("Saved to: {}", path.display()),
+            Err(e) => eprintln!("Failed to save: {e}"),
+        }
+    } else {
+        println!("No calibration data to save (not enough points collected)");
+    }
 }
