@@ -24,6 +24,13 @@
   - Current: Takes x, y, fwhm_pixels, normalization_factor as separate arguments
   - Needed: Accept SpotParams struct to reduce argument count and improve type safety
   - Why: SpotParams already bundles these values, passing struct is cleaner
+- [ ] Get proper NSV455 camera serial number from Neutralino
+  - Location: `hardware/src/nsv455/camera/nsv455_camera.rs` (get_serial method)
+  - Current: Hardcoded to "NSV455_UNKNOWN" with warning
+  - Problem: V4L2 doesn't provide standard serial, device path not camera-specific
+  - V4L2 card name shows: `vi-output, imx455 1-0030` (I2C bus/address)
+  - Needed: Ask Neutralino how to query unique camera identifier
+  - Why: Bad pixel maps need unique identifier per physical camera
 
 ### CI/CD
 - [ ] Add ARM64 build verification to CI pipeline

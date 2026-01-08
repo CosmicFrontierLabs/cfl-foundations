@@ -425,6 +425,9 @@ impl CameraInterface for NSV455Camera {
     }
 
     fn get_serial(&self) -> String {
-        self.device_path.clone()
+        // TODO: Get proper serial from Neutralino - awaiting their guidance on how to query it
+        // V4L2 doesn't provide a standard serial, and device path is not camera-specific
+        tracing::warn!("NSV455 serial number is hardcoded - awaiting Neutralino guidance");
+        "NSV455_UNKNOWN".to_string()
     }
 }

@@ -53,7 +53,9 @@ impl ConfigStorage {
         );
 
         let model_safe = model.replace(' ', "_");
-        let filename = format!("{model_safe}-{serial}.json");
+        // Sanitize serial for filesystem safety (replace / with _)
+        let serial_safe = serial.replace('/', "_");
+        let filename = format!("{model_safe}-{serial_safe}.json");
         self.bad_pixel_maps_dir().join(filename)
     }
 
