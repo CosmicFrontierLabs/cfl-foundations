@@ -45,6 +45,12 @@ pub enum ControlSpec {
         label: String,
         default: bool,
     },
+    Text {
+        id: String,
+        label: String,
+        default: String,
+        placeholder: String,
+    },
 }
 
 impl ControlSpec {
@@ -53,6 +59,7 @@ impl ControlSpec {
             ControlSpec::IntRange { id, .. } => id,
             ControlSpec::FloatRange { id, .. } => id,
             ControlSpec::Bool { id, .. } => id,
+            ControlSpec::Text { id, .. } => id,
         }
     }
 
@@ -61,6 +68,7 @@ impl ControlSpec {
             ControlSpec::IntRange { default, .. } => ControlValue::Int(*default),
             ControlSpec::FloatRange { default, .. } => ControlValue::Float(*default),
             ControlSpec::Bool { default, .. } => ControlValue::Bool(*default),
+            ControlSpec::Text { default, .. } => ControlValue::Text(default.clone()),
         }
     }
 }
@@ -70,6 +78,7 @@ pub enum ControlValue {
     Int(i64),
     Float(f64),
     Bool(bool),
+    Text(String),
 }
 
 impl ControlValue {
@@ -78,6 +87,7 @@ impl ControlValue {
             ControlValue::Int(v) => serde_json::json!(v),
             ControlValue::Float(v) => serde_json::json!(v),
             ControlValue::Bool(v) => serde_json::json!(v),
+            ControlValue::Text(v) => serde_json::json!(v),
         }
     }
 }
@@ -112,7 +122,8 @@ pub struct CalibrateFrontend {
     control_values: HashMap<String, ControlValue>,
     invert: bool,
     image_url: String,
-    image_refresh_handle: Option<gloo_timers::callback::Interval>,
+    image_refresh_handle: Option<gloo_timers::callback::Timeout>,
+    config_debounce_handle: Option<gloo_timers::callback::Timeout>,
     image_failure_count: u32,
     loading_schema: bool,
 }
@@ -129,7 +140,7 @@ pub enum Msg {
     RefreshImage,
     ImageLoaded,
     ImageError,
-    ResetImageInterval,
+    ScheduleNextRefresh,
 }
 
 impl Component for CalibrateFrontend {
@@ -137,11 +148,8 @@ impl Component for CalibrateFrontend {
     type Properties = CalibrateFrontendProps;
 
     fn create(ctx: &Context<Self>) -> Self {
-        // Start image refresh timer
-        let link = ctx.link().clone();
-        let handle = gloo_timers::callback::Interval::new(100, move || {
-            link.send_message(Msg::RefreshImage);
-        });
+        // Trigger first image load immediately
+        ctx.link().send_message(Msg::RefreshImage);
 
         // Fetch schema on load
         let link = ctx.link().clone();
@@ -184,7 +192,8 @@ impl Component for CalibrateFrontend {
             control_values: HashMap::new(),
             invert: false,
             image_url: format!("/jpeg?t={}", js_sys::Date::now()),
-            image_refresh_handle: Some(handle),
+            image_refresh_handle: None,
+            config_debounce_handle: None,
             image_failure_count: 0,
             loading_schema: true,
         }
@@ -208,10 +217,7 @@ impl Component for CalibrateFrontend {
                 self.display_info = Some(info);
                 true
             }
-            Msg::DisplayInfoError => {
-                // Keep display_info as None, will fall back to props
-                true
-            }
+            Msg::DisplayInfoError => true,
             Msg::SelectPattern(pattern_id) => {
                 self.selected_pattern_id = pattern_id;
                 self.init_pattern_defaults();
@@ -220,11 +226,18 @@ impl Component for CalibrateFrontend {
             }
             Msg::UpdateControl(id, value) => {
                 self.control_values.insert(id, value);
-                ctx.link().send_message(Msg::ApplyPattern);
+                // Debounce: cancel existing timeout and start new one
+                self.config_debounce_handle = None;
+                let link = ctx.link().clone();
+                self.config_debounce_handle =
+                    Some(gloo_timers::callback::Timeout::new(150, move || {
+                        link.send_message(Msg::ApplyPattern);
+                    }));
                 true
             }
             Msg::ToggleInvert => {
                 self.invert = !self.invert;
+                // Immediate apply for checkboxes (no dragging)
                 ctx.link().send_message(Msg::ApplyPattern);
                 true
             }
@@ -250,38 +263,27 @@ impl Component for CalibrateFrontend {
                 true
             }
             Msg::RefreshImage => {
-                let link = ctx.link().clone();
-                let url = format!("/jpeg?t={}", js_sys::Date::now());
-                let url_clone = url.clone();
-                wasm_bindgen_futures::spawn_local(async move {
-                    match Request::get(&url_clone).send().await {
-                        Ok(response) if response.ok() => {
-                            link.send_message(Msg::ImageLoaded);
-                        }
-                        _ => {
-                            link.send_message(Msg::ImageError);
-                        }
-                    }
-                });
-                self.image_url = url;
-                false
+                // Just update URL - img element's onload/onerror handles success/failure
+                self.image_url = format!("/jpeg?t={}", js_sys::Date::now());
+                true
             }
             Msg::ImageLoaded => {
                 self.image_failure_count = 0;
-                ctx.link().send_message(Msg::ResetImageInterval);
+                ctx.link().send_message(Msg::ScheduleNextRefresh);
                 false
             }
             Msg::ImageError => {
                 self.image_failure_count += 1;
-                ctx.link().send_message(Msg::ResetImageInterval);
+                ctx.link().send_message(Msg::ScheduleNextRefresh);
                 false
             }
-            Msg::ResetImageInterval => {
-                let delay = Self::calculate_backoff_delay(self.image_failure_count, 100, 10000);
+            Msg::ScheduleNextRefresh => {
+                // Serial refresh: wait for delay, then trigger next image load
+                let delay = Self::calculate_backoff_delay(self.image_failure_count, 500, 10000);
                 let link = ctx.link().clone();
                 self.image_refresh_handle = None;
                 self.image_refresh_handle =
-                    Some(gloo_timers::callback::Interval::new(delay, move || {
+                    Some(gloo_timers::callback::Timeout::new(delay, move || {
                         link.send_message(Msg::RefreshImage);
                     }));
                 false
@@ -290,8 +292,6 @@ impl Component for CalibrateFrontend {
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
-        let props = ctx.props();
-
         if self.loading_schema {
             return html! {
                 <div class="loading">{"Loading schema..."}</div>
@@ -327,13 +327,15 @@ impl Component for CalibrateFrontend {
                             class="image-frame"
                             src={self.image_url.clone()}
                             alt="Calibration Pattern"
+                            onload={ctx.link().callback(|_| Msg::ImageLoaded)}
+                            onerror={ctx.link().callback(|_| Msg::ImageError)}
                         />
                     </div>
                 </div>
 
                 <div class="column right-panel">
                     <h2>{"Display Info"}</h2>
-                    { self.view_display_info(props) }
+                    { self.view_display_info() }
 
                     <h2 style="margin-top: 20px;">{"Current Pattern"}</h2>
                     <div class="info-item">
@@ -548,10 +550,44 @@ impl CalibrateFrontend {
                     </div>
                 }
             }
+            ControlSpec::Text {
+                id,
+                label,
+                default,
+                placeholder,
+            } => {
+                let current_value = self
+                    .control_values
+                    .get(id)
+                    .and_then(|v| match v {
+                        ControlValue::Text(s) => Some(s.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| default.clone());
+
+                let id_clone = id.clone();
+                let oninput = ctx.link().callback(move |e: InputEvent| {
+                    let target: HtmlInputElement = e.target_unchecked_into();
+                    Msg::UpdateControl(id_clone.clone(), ControlValue::Text(target.value()))
+                });
+
+                html! {
+                    <div class="control-group">
+                        <label class="control-label">{label}{":"}</label>
+                        <input
+                            type="text"
+                            value={current_value}
+                            placeholder={placeholder.clone()}
+                            {oninput}
+                            style="width: 100%; padding: 5px; background: #333; color: #0f0; border: 1px solid #0f0; font-family: monospace;"
+                        />
+                    </div>
+                }
+            }
         }
     }
 
-    fn view_display_info(&self, props: &CalibrateFrontendProps) -> Html {
+    fn view_display_info(&self) -> Html {
         match &self.display_info {
             Some(info) => {
                 let pixel_pitch_text = match info.pixel_pitch_um {
@@ -577,13 +613,9 @@ impl CalibrateFrontend {
                 }
             }
             None => {
-                // Fallback to props if /info not loaded yet
                 html! {
-                    <div class="info-item">
-                        <span class="info-label">{"Resolution:"}</span><br/>
-                        {format!("{}x{}", props.width, props.height)}
-                        <br/>
-                        <span style="color: #888; font-size: 0.8em;">{"(loading display info...)"}</span>
+                    <div class="info-item" style="color: #888;">
+                        {"Loading..."}
                     </div>
                 }
             }

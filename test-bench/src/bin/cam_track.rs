@@ -422,6 +422,7 @@ fn main() -> Result<()> {
                     y: position.y,
                     timestamp: position.timestamp,
                     shape: position.shape.clone(),
+                    sensor_info: None,
                 };
                 if let Err(e) = publisher.send(&msg) {
                     warn!("Failed to send ZMQ message: {}", e);
