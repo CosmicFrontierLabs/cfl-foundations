@@ -18,6 +18,7 @@ pub mod optical_alignment;
 pub mod pattern_command;
 pub mod range_arg;
 pub mod star_projector;
+pub mod system_info;
 pub mod test_util;
 pub mod tracking_collector;
 pub mod tracking_message;

@@ -18,7 +18,8 @@ use test_bench::calibrate::{
 };
 use test_bench::display_patterns::remote_controlled::RemotePatternState;
 use test_bench::display_utils::{
-    get_display_resolution, list_displays, resolve_display_index, wait_for_oled_display,
+    estimate_pixel_pitch_um, get_display_resolution, list_displays, resolve_display_index,
+    wait_for_oled_display, OLED_HEIGHT, OLED_PIXEL_PITCH_UM, OLED_WIDTH,
 };
 use tokio::sync::RwLock;
 
@@ -72,6 +73,10 @@ struct AppState {
     idle_timeout: std::time::Duration,
     /// Shared remote pattern state for ZMQ-commanded patterns
     remote_state: Arc<Mutex<RemotePatternState>>,
+    /// Display name from SDL
+    display_name: String,
+    /// Display index for DPI queries
+    display_index: u32,
 }
 
 async fn pattern_page(State(state): State<Arc<AppState>>) -> Html<String> {
@@ -138,6 +143,61 @@ async fn jpeg_pattern_endpoint(State(state): State<Arc<AppState>>) -> Response {
 
 async fn get_schema() -> Json<SchemaResponse> {
     Json(get_pattern_schemas())
+}
+
+/// Get display info for auto-discovery.
+///
+/// Returns DisplayInfo with dimensions and pixel pitch.
+/// For OLED displays (2560x2560), pixel pitch is hardcoded to 7.0um
+/// because the firmware misreports it. For other displays, attempts
+/// to estimate from DPI. Returns None for pixel_pitch_um if unavailable.
+async fn get_display_info(
+    State(state): State<Arc<AppState>>,
+) -> Json<shared::system_info::DisplayInfo> {
+    let is_oled = state.width == OLED_WIDTH && state.height == OLED_HEIGHT;
+
+    let pixel_pitch_um = estimate_pixel_pitch_um(state.width, state.height, state.display_index);
+
+    // Log what we found
+    match (pixel_pitch_um, is_oled) {
+        (Some(_), true) => {
+            tracing::warn!(
+                "OLED display detected ({}x{}): Using hardcoded pixel pitch of {}um \
+                (firmware misreports this value)",
+                state.width,
+                state.height,
+                OLED_PIXEL_PITCH_UM
+            );
+        }
+        (Some(pitch), false) => {
+            tracing::info!(
+                "Display ({}x{}): Estimated pixel pitch {:.2}um from DPI",
+                state.width,
+                state.height,
+                pitch
+            );
+        }
+        (None, _) => {
+            tracing::warn!(
+                "Display ({}x{}): Could not determine pixel pitch (DPI unavailable)",
+                state.width,
+                state.height
+            );
+        }
+    }
+
+    let name = if is_oled {
+        format!("OLED {}x{}", state.width, state.height)
+    } else {
+        state.display_name.clone()
+    };
+
+    Json(shared::system_info::DisplayInfo {
+        width: state.width,
+        height: state.height,
+        pixel_pitch_um,
+        name,
+    })
 }
 
 async fn get_pattern_config(State(state): State<Arc<AppState>>) -> Response {
@@ -219,6 +279,7 @@ async fn run_web_server(state: Arc<AppState>, port: u16, bind_address: String) -
 
     let app = Router::new()
         .route("/", get(pattern_page))
+        .route("/info", get(get_display_info))
         .route("/schema", get(get_schema))
         .route("/jpeg", get(jpeg_pattern_endpoint))
         .route("/config", get(get_pattern_config))
@@ -275,12 +336,15 @@ fn main() -> Result<()> {
     check_frontend_files()?;
 
     // Either wait for OLED or initialize SDL normally
-    let (sdl_context, display_index, width, height) = if args.wait_for_oled {
+    let (sdl_context, display_index, width, height, display_name) = if args.wait_for_oled {
         let poll_interval = std::time::Duration::from_secs(args.poll_interval);
         let (sdl_context, video_subsystem, display_index) = wait_for_oled_display(poll_interval)?;
         let (width, height) = get_display_resolution(&video_subsystem, display_index)?;
+        let display_name = video_subsystem
+            .display_name(display_index as i32)
+            .unwrap_or_else(|_| format!("Display {display_index}"));
         drop(video_subsystem);
-        (sdl_context, display_index, width, height)
+        (sdl_context, display_index, width, height, display_name)
     } else {
         let sdl_context = sdl2::init().map_err(|e| anyhow::anyhow!("SDL init failed: {e}"))?;
         let video_subsystem = sdl_context
@@ -293,8 +357,11 @@ fn main() -> Result<()> {
 
         let display_index = resolve_display_index(&video_subsystem, args.display)?;
         let (width, height) = get_display_resolution(&video_subsystem, display_index)?;
+        let display_name = video_subsystem
+            .display_name(display_index as i32)
+            .unwrap_or_else(|_| format!("Display {display_index}"));
         drop(video_subsystem);
-        (sdl_context, display_index, width, height)
+        (sdl_context, display_index, width, height, display_name)
     };
 
     tracing::info!("Using display {display_index}: {}x{}", width, height);
@@ -370,6 +437,8 @@ fn main() -> Result<()> {
         display_update_tx: Some(display_update_tx),
         idle_timeout: std::time::Duration::from_secs(args.idle_timeout),
         remote_state,
+        display_name,
+        display_index,
     });
 
     let state_clone = state.clone();

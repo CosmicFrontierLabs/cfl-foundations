@@ -5,6 +5,12 @@ use std::time::Duration;
 pub const OLED_WIDTH: u32 = 2560;
 pub const OLED_HEIGHT: u32 = 2560;
 
+/// OLED pixel pitch in microns (firmware misreports this, so we hardcode it)
+pub const OLED_PIXEL_PITCH_UM: f64 = 7.0;
+
+/// Microns per inch for DPI to pixel pitch conversion
+const MICRONS_PER_INCH: f64 = 25400.0;
+
 pub trait SdlResultExt<T> {
     fn sdl_context(self, msg: &str) -> Result<T>;
 }
@@ -47,10 +53,7 @@ pub fn resolve_display_index(
 
     // Try to find OLED by resolution
     if let Some(oled_idx) = find_oled_display(video_subsystem)? {
-        println!(
-            "Autodetected OLED display at index {oled_idx} ({}x{})",
-            OLED_WIDTH, OLED_HEIGHT
-        );
+        println!("Autodetected OLED display at index {oled_idx} ({OLED_WIDTH}x{OLED_HEIGHT})");
         return Ok(oled_idx);
     }
 
@@ -110,10 +113,7 @@ pub fn get_display_resolution(
 pub fn wait_for_oled_display(
     poll_interval: Duration,
 ) -> Result<(sdl2::Sdl, sdl2::VideoSubsystem, u32)> {
-    println!(
-        "Waiting for OLED display ({}x{}) to become available...",
-        OLED_WIDTH, OLED_HEIGHT
-    );
+    println!("Waiting for OLED display ({OLED_WIDTH}x{OLED_HEIGHT}) to become available...");
 
     loop {
         // Initialize SDL fresh each time to detect new displays
@@ -124,10 +124,7 @@ pub fn wait_for_oled_display(
 
         match find_oled_display(&video_subsystem)? {
             Some(oled_idx) => {
-                println!(
-                    "OLED display detected at index {oled_idx} ({}x{})",
-                    OLED_WIDTH, OLED_HEIGHT
-                );
+                println!("OLED display detected at index {oled_idx} ({OLED_WIDTH}x{OLED_HEIGHT})");
                 return Ok((sdl_context, video_subsystem, oled_idx));
             }
             None => {
@@ -146,4 +143,53 @@ pub fn wait_for_oled_display(
             }
         }
     }
+}
+
+/// Get the DPI (dots per inch) for a display using SDL2's raw FFI.
+///
+/// Returns (horizontal_dpi, vertical_dpi) if available, None otherwise.
+/// Note: Hardware-reported DPI is not always reliable.
+pub fn get_display_dpi(display_index: u32) -> Option<(f32, f32)> {
+    let mut hdpi: f32 = 0.0;
+    let mut vdpi: f32 = 0.0;
+
+    // SAFETY: SDL_GetDisplayDPI is safe to call with valid pointers.
+    // We pass null for ddpi since we only need horizontal/vertical.
+    let result = unsafe {
+        sdl2::sys::SDL_GetDisplayDPI(
+            display_index as i32,
+            std::ptr::null_mut(), // ddpi (diagonal) - not needed
+            &mut hdpi,
+            &mut vdpi,
+        )
+    };
+
+    if result == 0 && hdpi > 0.0 && vdpi > 0.0 {
+        Some((hdpi, vdpi))
+    } else {
+        None
+    }
+}
+
+/// Estimate pixel pitch in microns for a display.
+///
+/// For OLED displays (2560x2560), returns the hardcoded value since firmware
+/// misreports DPI. For other displays, attempts to calculate from DPI.
+///
+/// Returns None if pixel pitch cannot be determined.
+pub fn estimate_pixel_pitch_um(width: u32, height: u32, display_index: u32) -> Option<f64> {
+    // OLED displays have known pixel pitch - firmware lies about DPI
+    if width == OLED_WIDTH && height == OLED_HEIGHT {
+        return Some(OLED_PIXEL_PITCH_UM);
+    }
+
+    // Try to get DPI from SDL
+    if let Some((hdpi, vdpi)) = get_display_dpi(display_index) {
+        // Use average of horizontal and vertical DPI
+        let avg_dpi = (hdpi + vdpi) / 2.0;
+        let pixel_pitch = MICRONS_PER_INCH / avg_dpi as f64;
+        return Some(pixel_pitch);
+    }
+
+    None
 }

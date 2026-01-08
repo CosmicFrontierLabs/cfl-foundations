@@ -5,6 +5,19 @@ use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
 // ============================================================================
+// Display Info - Match backend shared::system_info::DisplayInfo
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DisplayInfo {
+    pub width: u32,
+    pub height: u32,
+    #[serde(default)]
+    pub pixel_pitch_um: Option<f64>,
+    pub name: String,
+}
+
+// ============================================================================
 // Schema Types - Match backend definitions
 // ============================================================================
 
@@ -94,6 +107,7 @@ pub struct CalibrateFrontendProps {
 
 pub struct CalibrateFrontend {
     schema: Option<SchemaResponse>,
+    display_info: Option<DisplayInfo>,
     selected_pattern_id: String,
     control_values: HashMap<String, ControlValue>,
     invert: bool,
@@ -106,6 +120,8 @@ pub struct CalibrateFrontend {
 pub enum Msg {
     SchemaLoaded(SchemaResponse),
     SchemaError,
+    DisplayInfoLoaded(DisplayInfo),
+    DisplayInfoError,
     SelectPattern(String),
     UpdateControl(String, ControlValue),
     ToggleInvert,
@@ -144,8 +160,26 @@ impl Component for CalibrateFrontend {
             }
         });
 
+        // Fetch display info on load
+        let link = ctx.link().clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            match Request::get("/info").send().await {
+                Ok(response) => {
+                    if let Ok(info) = response.json::<DisplayInfo>().await {
+                        link.send_message(Msg::DisplayInfoLoaded(info));
+                    } else {
+                        link.send_message(Msg::DisplayInfoError);
+                    }
+                }
+                Err(_) => {
+                    link.send_message(Msg::DisplayInfoError);
+                }
+            }
+        });
+
         Self {
             schema: None,
+            display_info: None,
             selected_pattern_id: "April".to_string(),
             control_values: HashMap::new(),
             invert: false,
@@ -168,6 +202,14 @@ impl Component for CalibrateFrontend {
             }
             Msg::SchemaError => {
                 self.loading_schema = false;
+                true
+            }
+            Msg::DisplayInfoLoaded(info) => {
+                self.display_info = Some(info);
+                true
+            }
+            Msg::DisplayInfoError => {
+                // Keep display_info as None, will fall back to props
                 true
             }
             Msg::SelectPattern(pattern_id) => {
@@ -290,13 +332,11 @@ impl Component for CalibrateFrontend {
                 </div>
 
                 <div class="column right-panel">
-                    <h2>{"Pattern Info"}</h2>
+                    <h2>{"Display Info"}</h2>
+                    { self.view_display_info(props) }
+
+                    <h2 style="margin-top: 20px;">{"Current Pattern"}</h2>
                     <div class="info-item">
-                        <span class="info-label">{"Resolution:"}</span><br/>
-                        {format!("{}x{}", props.width, props.height)}
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">{"Current Pattern:"}</span><br/>
                         <span class="status">{
                             current_pattern.map(|p| p.name.as_str()).unwrap_or("Unknown")
                         }</span>
@@ -306,7 +346,8 @@ impl Component for CalibrateFrontend {
                     <div class="info-item">
                         <a href="/jpeg">{"JPEG Pattern"}</a><br/>
                         <a href="/config">{"Config (JSON)"}</a><br/>
-                        <a href="/schema">{"Schema (JSON)"}</a>
+                        <a href="/schema">{"Schema (JSON)"}</a><br/>
+                        <a href="/info">{"Display Info (JSON)"}</a>
                     </div>
 
                     <h2 style="margin-top: 30px;">{"Info"}</h2>
@@ -504,6 +545,45 @@ impl CalibrateFrontend {
                             />
                             <span style="margin-left: 5px;">{label}</span>
                         </label>
+                    </div>
+                }
+            }
+        }
+    }
+
+    fn view_display_info(&self, props: &CalibrateFrontendProps) -> Html {
+        match &self.display_info {
+            Some(info) => {
+                let pixel_pitch_text = match info.pixel_pitch_um {
+                    Some(pitch) => format!("{pitch:.2} µm"),
+                    None => "Unknown".to_string(),
+                };
+
+                html! {
+                    <>
+                        <div class="info-item">
+                            <span class="info-label">{"Name:"}</span><br/>
+                            {&info.name}
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">{"Resolution:"}</span><br/>
+                            {format!("{}x{}", info.width, info.height)}
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">{"Pixel Pitch:"}</span><br/>
+                            {pixel_pitch_text}
+                        </div>
+                    </>
+                }
+            }
+            None => {
+                // Fallback to props if /info not loaded yet
+                html! {
+                    <div class="info-item">
+                        <span class="info-label">{"Resolution:"}</span><br/>
+                        {format!("{}x{}", props.width, props.height)}
+                        <br/>
+                        <span style="color: #888; font-size: 0.8em;">{"(loading display info...)"}</span>
                     </div>
                 }
             }

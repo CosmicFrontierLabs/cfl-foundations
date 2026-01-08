@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::camera_interface::Timestamp;
 use crate::image_proc::centroid::SpotShape;
+use crate::system_info::SensorInfo;
 
 /// A tracking update message containing the position of a tracked target.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +23,11 @@ pub struct TrackingMessage {
     /// Spot shape characterization (flux, moments, diameter).
     /// Used for defocus mapping, PSF characterization, and radiometric calibration.
     pub shape: SpotShape,
+    /// Sensor info - included on first message and periodically for late joiners.
+    /// Allows clients to auto-discover sensor dimensions without manual config.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub sensor_info: Option<SensorInfo>,
 }
 
 impl TrackingMessage {
@@ -33,6 +39,26 @@ impl TrackingMessage {
             y,
             timestamp,
             shape,
+            sensor_info: None,
+        }
+    }
+
+    /// Create a tracking message with sensor info attached.
+    pub fn with_sensor_info(
+        track_id: u32,
+        x: f64,
+        y: f64,
+        timestamp: Timestamp,
+        shape: SpotShape,
+        sensor_info: SensorInfo,
+    ) -> Self {
+        Self {
+            track_id,
+            x,
+            y,
+            timestamp,
+            shape,
+            sensor_info: Some(sensor_info),
         }
     }
 }
@@ -64,15 +90,53 @@ mod tests {
         assert_eq!(msg.timestamp.seconds, 12345);
         assert_relative_eq!(msg.shape.flux, 42000.0);
         assert_relative_eq!(msg.shape.diameter, 5.0);
+        assert!(msg.sensor_info.is_none());
 
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("shape"));
         assert!(json.contains("flux"));
         assert!(json.contains("diameter"));
+        // sensor_info should be skipped when None
+        assert!(!json.contains("sensor_info"));
 
         let parsed: TrackingMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.track_id, 1);
         assert_relative_eq!(parsed.shape.flux, 42000.0);
         assert_relative_eq!(parsed.shape.diameter, 5.0);
+        assert!(parsed.sensor_info.is_none());
+    }
+
+    #[test]
+    fn test_tracking_message_with_sensor_info() {
+        let shape = make_test_shape();
+        let sensor_info = SensorInfo {
+            width: 9576,
+            height: 6388,
+            pixel_pitch_um: 3.76,
+            name: "IMX455".to_string(),
+        };
+        let msg = TrackingMessage::with_sensor_info(
+            1,
+            100.5,
+            200.5,
+            Timestamp::new(12345, 6789),
+            shape,
+            sensor_info,
+        );
+
+        assert!(msg.sensor_info.is_some());
+        let info = msg.sensor_info.as_ref().unwrap();
+        assert_eq!(info.width, 9576);
+        assert_eq!(info.height, 6388);
+
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("sensor_info"));
+        assert!(json.contains("pixel_pitch_um"));
+
+        let parsed: TrackingMessage = serde_json::from_str(&json).unwrap();
+        assert!(parsed.sensor_info.is_some());
+        let parsed_info = parsed.sensor_info.unwrap();
+        assert_eq!(parsed_info.width, 9576);
+        assert_eq!(parsed_info.name, "IMX455");
     }
 }
