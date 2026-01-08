@@ -229,7 +229,7 @@ fn run_tracking_stream(
 
 fn save_frame_metadata(metadata: &FrameMetadata, export_dir: &PathBuf) -> Result<()> {
     let base_name = format!("frame_{:06}", metadata.frame_number);
-    let json_path = export_dir.join(format!("{}.json", base_name));
+    let json_path = export_dir.join(format!("{base_name}.json"));
     let json_data =
         serde_json::to_string_pretty(metadata).context("Failed to serialize frame metadata")?;
     std::fs::create_dir_all(export_dir)
@@ -239,6 +239,7 @@ fn save_frame_metadata(metadata: &FrameMetadata, export_dir: &PathBuf) -> Result
     Ok(())
 }
 
+#[allow(clippy::type_complexity)]
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
@@ -318,7 +319,7 @@ fn main() -> Result<()> {
             .has_headers(true)
             .from_writer(file);
         writer
-            .write_record(&["track_id", "x", "y", "timestamp"])
+            .write_record(["track_id", "x", "y", "timestamp"])
             .context("Failed to write CSV header")?;
         Some(Arc::new(Mutex::new(writer)))
     } else {
@@ -400,7 +401,7 @@ fn main() -> Result<()> {
 
             if let Some(ref writer) = csv_writer_clone {
                 if let Ok(mut csv) = writer.lock() {
-                    if let Err(e) = csv.write_record(&[
+                    if let Err(e) = csv.write_record([
                         track_id.to_string(),
                         position.x.to_string(),
                         position.y.to_string(),
@@ -415,17 +416,12 @@ fn main() -> Result<()> {
             }
 
             if let Some(ref publisher) = zmq_publisher_clone {
-                // Shape is always present in TrackingUpdate events
-                let shape = position
-                    .shape
-                    .clone()
-                    .expect("TrackingUpdate should always have shape");
                 let msg = TrackingMessage {
                     track_id: *track_id,
                     x: position.x,
                     y: position.y,
                     timestamp: position.timestamp,
-                    shape,
+                    shape: position.shape.clone(),
                 };
                 if let Err(e) = publisher.send(&msg) {
                     warn!("Failed to send ZMQ message: {}", e);
@@ -472,7 +468,7 @@ fn main() -> Result<()> {
                     warn!("Failed to save metadata for frame {}: {}", frame_number, e);
                 }
 
-                let png_path = export_dir.join(format!("frame_{:06}.png", frame_number));
+                let png_path = export_dir.join(format!("frame_{frame_number:06}.png"));
                 if !writer.write_frame_nonblocking(frame_data, png_path, FrameFormat::Png) {
                     warn!("Frame export queue full, dropping frame {frame_number}");
                 }
