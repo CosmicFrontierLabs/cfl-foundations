@@ -94,7 +94,7 @@ impl std::fmt::Debug for PatternConfig {
 
 impl Default for PatternConfig {
     fn default() -> Self {
-        Self::April
+        Self::Uniform { level: 0 }
     }
 }
 

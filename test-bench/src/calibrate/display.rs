@@ -1,38 +1,157 @@
 use anyhow::{Context, Result};
 use image::{ImageBuffer, Rgb};
-use std::sync::mpsc::Receiver;
-use std::sync::{Arc, RwLock};
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock as AsyncRwLock;
 
 use super::pattern::PatternConfig;
 
+/// Internal state for the watchdog, protected by mutex.
+struct WatchdogInner {
+    /// Time of last activity (pattern change, command, etc.)
+    last_activity: Instant,
+    /// Timeout duration before blanking
+    timeout: Duration,
+    /// Pattern saved when we blanked (to restore on wake)
+    saved_pattern: Option<PatternConfig>,
+    /// Whether display is currently blanked
+    is_blanked: bool,
+}
+
 /// OLED burn-in protection watchdog.
 ///
-/// Tracks activity and triggers screen blanking after idle timeout.
-/// Thread-safe: can be used from both async handlers and sync threads.
+/// Monitors activity and automatically blanks the display after idle timeout.
+/// When activity resumes, restores the previous pattern.
+///
+/// This watchdog OWNS the timeout state - it directly modifies the shared
+/// pattern when blanking/waking, making the logic obviously correct.
+///
+/// Cloning creates a handle to the same watchdog - only one monitoring thread
+/// exists regardless of how many clones are made.
 #[derive(Clone)]
 pub struct OledSafetyWatchdog {
-    last_activity: Arc<RwLock<Instant>>,
-    timeout: Duration,
+    inner: Arc<Mutex<WatchdogInner>>,
+    /// Shared pattern state - watchdog writes to this when blanking/waking
+    pattern: Arc<AsyncRwLock<PatternConfig>>,
+    /// Channel to notify display of updates
+    update_tx: Sender<()>,
 }
 
 impl OledSafetyWatchdog {
-    pub fn new(timeout: Duration) -> Self {
-        Self {
-            last_activity: Arc::new(RwLock::new(Instant::now())),
+    /// Create a new watchdog and spawn its monitoring thread.
+    ///
+    /// The watchdog will:
+    /// - Blank the display after `timeout` of inactivity
+    /// - Restore the previous pattern when `reset()` is called
+    pub fn new(
+        timeout: Duration,
+        pattern: Arc<AsyncRwLock<PatternConfig>>,
+        update_tx: Sender<()>,
+    ) -> Self {
+        let inner = Arc::new(Mutex::new(WatchdogInner {
+            last_activity: Instant::now(),
             timeout,
+            saved_pattern: None,
+            is_blanked: false,
+        }));
+
+        // Spawn watchdog thread
+        let inner_clone = inner.clone();
+        let pattern_clone = pattern.clone();
+        let update_tx_clone = update_tx.clone();
+
+        std::thread::spawn(move || {
+            watchdog_thread(inner_clone, pattern_clone, update_tx_clone);
+        });
+
+        Self {
+            inner,
+            pattern,
+            update_tx,
         }
     }
 
-    /// Reset the watchdog timer (call on any display activity)
+    /// Reset the watchdog timer (call on any display activity).
+    ///
+    /// If the display is currently blanked, this will restore the
+    /// previous pattern and wake the display.
     pub fn reset(&self) {
-        *self.last_activity.write().unwrap() = Instant::now();
+        let mut inner = self.inner.lock().unwrap();
+        inner.last_activity = Instant::now();
+
+        if inner.is_blanked {
+            // Wake up - restore saved pattern
+            if let Some(saved) = inner.saved_pattern.take() {
+                tracing::info!("Watchdog: waking display, restoring pattern");
+
+                // Write to shared pattern state
+                // Use blocking approach since we're in sync context
+                let pattern = self.pattern.blocking_write();
+                *std::ops::DerefMut::deref_mut(&mut { pattern }) = saved;
+
+                inner.is_blanked = false;
+
+                // Notify display to update
+                let _ = self.update_tx.send(());
+            } else {
+                // No saved pattern (shouldn't happen, but handle gracefully)
+                tracing::warn!("Watchdog: waking but no saved pattern");
+                inner.is_blanked = false;
+            }
+        }
     }
 
-    /// Check if display should be blanked due to inactivity
-    pub fn is_timed_out(&self) -> bool {
-        self.last_activity.read().unwrap().elapsed() > self.timeout
+    /// Check if the display is currently blanked due to timeout.
+    pub fn is_blanked(&self) -> bool {
+        self.inner.lock().unwrap().is_blanked
+    }
+}
+
+/// Watchdog monitoring thread.
+///
+/// Checks every second if we've exceeded the idle timeout.
+/// When timeout occurs, saves current pattern and blanks display.
+fn watchdog_thread(
+    inner: Arc<Mutex<WatchdogInner>>,
+    pattern: Arc<AsyncRwLock<PatternConfig>>,
+    update_tx: Sender<()>,
+) {
+    loop {
+        std::thread::sleep(Duration::from_secs(1));
+
+        let should_blank = {
+            let inner = inner.lock().unwrap();
+            !inner.is_blanked && inner.last_activity.elapsed() > inner.timeout
+        };
+
+        if should_blank {
+            // Need to blank - save pattern and set to black
+            let mut inner = inner.lock().unwrap();
+
+            // Double-check after re-acquiring lock
+            if inner.is_blanked || inner.last_activity.elapsed() <= inner.timeout {
+                continue;
+            }
+
+            tracing::info!(
+                "Watchdog: idle timeout ({:.0}s), blanking display",
+                inner.timeout.as_secs_f64()
+            );
+
+            // Save current pattern
+            let current = pattern.blocking_read().clone();
+            inner.saved_pattern = Some(current);
+
+            // Set to black
+            let mut pattern_write = pattern.blocking_write();
+            *pattern_write = PatternConfig::Uniform { level: 0 };
+
+            inner.is_blanked = true;
+
+            // Notify display
+            let _ = update_tx.send(());
+        }
     }
 }
 
@@ -40,11 +159,6 @@ impl OledSafetyWatchdog {
 pub trait PatternSource: Send {
     /// Get the current pattern and invert state.
     fn current(&self) -> (PatternConfig, bool);
-
-    /// Check if the display should be blanked due to timeout.
-    fn should_blank(&self) -> bool {
-        false
-    }
 
     /// Get a receiver for update notifications.
     fn update_receiver(&mut self) -> Option<&mut Receiver<()>> {
@@ -59,7 +173,6 @@ pub trait PatternSource: Send {
 pub struct DynamicPattern {
     pattern: Arc<AsyncRwLock<PatternConfig>>,
     invert: Arc<AsyncRwLock<bool>>,
-    watchdog: OledSafetyWatchdog,
     update_rx: Receiver<()>,
 }
 
@@ -67,13 +180,11 @@ impl DynamicPattern {
     pub fn new(
         pattern: Arc<AsyncRwLock<PatternConfig>>,
         invert: Arc<AsyncRwLock<bool>>,
-        watchdog: OledSafetyWatchdog,
         update_rx: Receiver<()>,
     ) -> Self {
         Self {
             pattern,
             invert,
-            watchdog,
             update_rx,
         }
     }
@@ -84,10 +195,6 @@ impl PatternSource for DynamicPattern {
         let pattern = self.pattern.blocking_read().clone();
         let invert = *self.invert.blocking_read();
         (pattern, invert)
-    }
-
-    fn should_blank(&self) -> bool {
-        self.watchdog.is_timed_out()
     }
 
     fn update_receiver(&mut self) -> Option<&mut Receiver<()>> {
@@ -104,6 +211,10 @@ pub struct DisplayConfig {
 }
 
 /// Run the SDL display loop with the given pattern source.
+///
+/// This loop is intentionally simple - it just renders whatever
+/// `source.current()` returns. All timeout logic is handled by
+/// the watchdog thread, which modifies the shared pattern state.
 pub fn run_display<P: PatternSource>(
     sdl_context: sdl2::Sdl,
     config: DisplayConfig,
@@ -171,10 +282,6 @@ pub fn run_display<P: PatternSource>(
         .map_err(|e| anyhow::anyhow!("Failed to copy texture: {e}"))?;
     canvas.present();
 
-    // State for timeout tracking
-    let mut last_timeout_check = Instant::now();
-    let mut was_timed_out = false;
-
     // FPS tracking
     let mut frame_count = 0u64;
     let mut last_fps_report = Instant::now();
@@ -198,53 +305,44 @@ pub fn run_display<P: PatternSource>(
 
         let mut pattern_changed = false;
 
-        // Check for updates from external source (web API)
+        // Check for updates from external source (web API, watchdog, ZMQ)
         if let Some(rx) = source.update_receiver() {
             if rx.try_recv().is_ok() {
-                (current_pattern, current_invert) = source.current();
-                pattern_changed = true;
-                was_timed_out = false;
+                let (new_pattern, new_invert) = source.current();
 
-                if !current_pattern.is_animated() {
-                    img = render_pattern(&current_pattern, current_invert)?;
-                    texture
-                        .update(None, img.as_raw(), (config.width * 3) as usize)
-                        .map_err(|e| anyhow::anyhow!("Failed to update texture: {e:?}"))?;
+                // Check if pattern actually changed
+                if !patterns_equal(&current_pattern, &new_pattern) || current_invert != new_invert {
+                    current_pattern = new_pattern;
+                    current_invert = new_invert;
+                    pattern_changed = true;
+
+                    if !current_pattern.is_animated() {
+                        img = render_pattern(&current_pattern, current_invert)?;
+                        texture
+                            .update(None, img.as_raw(), (config.width * 3) as usize)
+                            .map_err(|e| anyhow::anyhow!("Failed to update texture: {e:?}"))?;
+                    }
                 }
             }
         }
 
-        // Periodically check idle timeout (every second)
-        if last_timeout_check.elapsed() > Duration::from_secs(1) {
-            last_timeout_check = Instant::now();
-
-            if source.should_blank() && !was_timed_out {
-                tracing::info!("Idle timeout reached, blanking display");
-                current_pattern = PatternConfig::Uniform { level: 0 };
-                img = render_pattern(&current_pattern, current_invert)?;
-                texture
-                    .update(None, img.as_raw(), (config.width * 3) as usize)
-                    .map_err(|e| anyhow::anyhow!("Failed to update texture: {e:?}"))?;
-                pattern_changed = true;
-                was_timed_out = true;
-            }
-        }
-
-        // Handle animated patterns
-        if current_pattern.is_animated() || pattern_changed {
+        // Handle animated patterns (render every frame)
+        if current_pattern.is_animated() {
             current_pattern.generate_into_buffer(&mut buffer, config.width, config.height);
 
-            if current_pattern.is_animated() {
-                let buffer_to_use: Vec<u8> = if current_invert {
-                    buffer.iter().map(|&b| 255 - b).collect()
-                } else {
-                    buffer.clone()
-                };
+            let buffer_to_use: &[u8] = if current_invert {
+                // Invert in place for animated patterns
+                for b in buffer.iter_mut() {
+                    *b = 255 - *b;
+                }
+                &buffer
+            } else {
+                &buffer
+            };
 
-                texture
-                    .update(None, &buffer_to_use, (config.width * 3) as usize)
-                    .map_err(|e| anyhow::anyhow!("Failed to update texture: {e:?}"))?;
-            }
+            texture
+                .update(None, buffer_to_use, (config.width * 3) as usize)
+                .map_err(|e| anyhow::anyhow!("Failed to update texture: {e:?}"))?;
         }
 
         // Render
@@ -269,5 +367,39 @@ pub fn run_display<P: PatternSource>(
         }
 
         std::thread::sleep(Duration::from_millis(16));
+    }
+}
+
+/// Check if two patterns are equal (for change detection).
+/// This is a simple discriminant check - animated patterns always "change".
+fn patterns_equal(a: &PatternConfig, b: &PatternConfig) -> bool {
+    use std::mem::discriminant;
+
+    // Different variants = different patterns
+    if discriminant(a) != discriminant(b) {
+        return false;
+    }
+
+    // Animated patterns are never "equal" - they need continuous updates
+    if a.is_animated() {
+        return false;
+    }
+
+    // For non-animated patterns, compare the actual values
+    match (a, b) {
+        (PatternConfig::April, PatternConfig::April) => true,
+        (PatternConfig::Usaf, PatternConfig::Usaf) => true,
+        (PatternConfig::Pixel, PatternConfig::Pixel) => true,
+        (PatternConfig::Check { checker_size: a }, PatternConfig::Check { checker_size: b }) => {
+            a == b
+        }
+        (PatternConfig::Uniform { level: a }, PatternConfig::Uniform { level: b }) => a == b,
+        (PatternConfig::PixelGrid { spacing: a }, PatternConfig::PixelGrid { spacing: b }) => {
+            a == b
+        }
+        (PatternConfig::SiemensStar { spokes: a }, PatternConfig::SiemensStar { spokes: b }) => {
+            a == b
+        }
+        _ => false,
     }
 }

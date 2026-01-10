@@ -101,11 +101,8 @@ async fn pattern_page(State(state): State<Arc<AppState>>) -> Html<String> {
 }
 
 async fn jpeg_pattern_endpoint(State(state): State<Arc<AppState>>) -> Response {
-    let pattern_config = if state.watchdog.is_timed_out() {
-        PatternConfig::Uniform { level: 0 }
-    } else {
-        state.pattern.read().await.clone()
-    };
+    // Just read the current pattern - watchdog handles blanking by modifying shared state
+    let pattern_config = state.pattern.read().await.clone();
     let invert = *state.invert.read().await;
 
     let mut img = match pattern_config.generate(state.width, state.height) {
@@ -363,11 +360,19 @@ fn main() -> Result<()> {
 
     let (display_update_tx, display_update_rx) = mpsc::channel::<()>();
 
+    // Create shared pattern state (default is Uniform{0} - black for OLED safety)
+    let pattern = Arc::new(RwLock::new(PatternConfig::default()));
+
     // Create shared remote pattern state
     let remote_state = Arc::new(Mutex::new(RemotePatternState::new()));
 
     // Create watchdog for OLED burn-in protection
-    let watchdog = OledSafetyWatchdog::new(std::time::Duration::from_secs(args.idle_timeout));
+    // Watchdog owns references to pattern and update channel so it can blank/restore
+    let watchdog = OledSafetyWatchdog::new(
+        std::time::Duration::from_secs(args.idle_timeout),
+        pattern.clone(),
+        display_update_tx.clone(),
+    );
 
     // Bind ZMQ REP socket for receiving pattern commands
     let zmq_bind = args.zmq_bind.clone();
@@ -430,11 +435,13 @@ fn main() -> Result<()> {
         }
     });
 
+    let invert = Arc::new(RwLock::new(false));
+
     let state = Arc::new(AppState {
-        pattern: Arc::new(RwLock::new(PatternConfig::default())),
+        pattern: pattern.clone(),
         width,
         height,
-        invert: Arc::new(RwLock::new(false)),
+        invert: invert.clone(),
         watchdog: watchdog.clone(),
         display_update_tx: Some(display_update_tx),
         remote_state,
@@ -448,12 +455,7 @@ fn main() -> Result<()> {
 
     let web_thread = std::thread::spawn(move || run_web_server(state_clone, port, bind_address));
 
-    let dynamic_source = DynamicPattern::new(
-        state.pattern.clone(),
-        state.invert.clone(),
-        state.watchdog.clone(),
-        display_update_rx,
-    );
+    let dynamic_source = DynamicPattern::new(pattern, invert, display_update_rx);
 
     let display_config = DisplayConfig {
         width,
