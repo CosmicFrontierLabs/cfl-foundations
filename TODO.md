@@ -37,6 +37,11 @@
   - V4L2 card name shows: `vi-output, imx455 1-0030` (I2C bus/address)
   - Needed: Ask Neutralino how to query unique camera identifier
   - Why: Bad pixel maps need unique identifier per physical camera
+- [ ] Add ability to disable frontend text input widgets
+  - Location: `test-bench-frontend/src/calibrate_app.rs`
+  - Current: Text input widgets (ControlSpec::Text) are always enabled
+  - Needed: Add disabled state support for text inputs, similar to other control types
+  - Why: Some controls should be read-only or disabled based on pattern mode
 
 ### CI/CD
 - [ ] Add ARM64 build verification to CI pipeline
