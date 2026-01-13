@@ -112,16 +112,13 @@ impl NSV455Camera {
             initial_fourcc_bytes
         );
 
-        let requested_width = self
-            .roi
-            .as_ref()
-            .map_or(self.config.size.width, |roi| roi.max_col - roi.min_col + 1)
-            as u32;
-        let requested_height = self
-            .roi
-            .as_ref()
-            .map_or(self.config.size.height, |roi| roi.max_row - roi.min_row + 1)
-            as u32;
+        // When ROI is None, request full sensor dimensions (not config.size which may be stale)
+        let requested_width = self.roi.as_ref().map_or(Self::SENSOR_WIDTH, |roi| {
+            (roi.max_col - roi.min_col + 1) as u32
+        });
+        let requested_height = self.roi.as_ref().map_or(Self::SENSOR_HEIGHT, |roi| {
+            (roi.max_row - roi.min_row + 1) as u32
+        });
 
         format.width = requested_width;
         format.height = requested_height;
