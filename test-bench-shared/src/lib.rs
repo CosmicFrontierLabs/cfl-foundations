@@ -159,6 +159,8 @@ pub struct TrackingPosition {
     pub x: f64,
     /// Y position in pixels
     pub y: f64,
+    /// Signal-to-noise ratio of tracked target
+    pub snr: f64,
     /// Timestamp of position measurement (seconds since epoch)
     pub timestamp_sec: u64,
     /// Nanoseconds component of timestamp

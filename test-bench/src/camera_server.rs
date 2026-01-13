@@ -1530,6 +1530,7 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                                     track_id: *track_id,
                                     x: initial_position.x,
                                     y: initial_position.y,
+                                    snr: initial_position.snr,
                                     timestamp_sec: initial_position.timestamp.seconds,
                                     timestamp_nanos: initial_position.timestamp.nanos,
                                 });
@@ -1551,10 +1552,11 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                             }
                             FgsCallbackEvent::TrackingUpdate { track_id, position } => {
                                 tracing::debug!(
-                                    "📍 Tracking update - track_id: {}, position: ({:.4}, {:.4})",
+                                    "📍 Tracking update - track_id: {}, position: ({:.4}, {:.4}), snr: {:.2}",
                                     track_id,
                                     position.x,
-                                    position.y
+                                    position.y,
+                                    position.snr
                                 );
                                 tracking_cb.total_updates.fetch_add(1, Ordering::SeqCst);
                                 let mut status = tracking_cb.status.blocking_write();
@@ -1562,6 +1564,7 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                                     track_id: *track_id,
                                     x: position.x,
                                     y: position.y,
+                                    snr: position.snr,
                                     timestamp_sec: position.timestamp.seconds,
                                     timestamp_nanos: position.timestamp.nanos,
                                 });

@@ -14,6 +14,8 @@ pub struct PositionEstimate {
     pub timestamp: Timestamp,
     /// Spot shape characterization (flux, moments, diameter)
     pub shape: SpotShape,
+    /// Signal-to-noise ratio of tracked target
+    pub snr: f64,
 }
 
 /// Events emitted for external callbacks

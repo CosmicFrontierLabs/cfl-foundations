@@ -125,6 +125,8 @@ pub struct GuidanceUpdate {
     pub timestamp: Timestamp,
     /// Spot shape characterization (flux, moments, diameter)
     pub shape: SpotShape,
+    /// Signal-to-noise ratio of tracked target
+    pub snr: f64,
 }
 
 /// Main Fine Guidance System state machine
@@ -420,6 +422,7 @@ impl FineGuidanceSystem {
                     y: guide_star.y,
                     timestamp,
                     shape: guide_star.shape.clone(),
+                    snr: guide_star.snr,
                 },
                 num_guide_stars: 1,
             });
@@ -435,6 +438,7 @@ impl FineGuidanceSystem {
                 y: update.y,
                 timestamp: update.timestamp,
                 shape: update.shape.clone(),
+                snr: update.snr,
             },
         });
     }
@@ -540,6 +544,7 @@ impl FineGuidanceSystem {
                         y: update.y,
                         timestamp,
                         shape: update.shape.clone(),
+                        snr: update.snr,
                     }),
                 )
             } else {
@@ -743,6 +748,7 @@ impl FineGuidanceSystem {
             y: new_y,
             timestamp,
             shape: centroid_result.to_shape(),
+            snr,
         }))
     }
 
@@ -907,6 +913,7 @@ mod tests {
                 y: 200.0,
                 timestamp: test_timestamp(),
                 shape: test_shape(),
+                snr: 15.0,
             },
             num_guide_stars: 1,
         });
@@ -923,6 +930,7 @@ mod tests {
                 y: 201.0,
                 timestamp: test_timestamp(),
                 shape: test_shape(),
+                snr: 14.5,
             },
         });
 
