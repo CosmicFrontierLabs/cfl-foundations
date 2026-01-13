@@ -70,6 +70,7 @@ pub struct CalibrateFrontendProps {
 pub struct CalibrateFrontend {
     schema: Option<SchemaResponse>,
     display_info: Option<DisplayInfo>,
+    initial_config: Option<PatternConfigResponse>,
     selected_pattern_id: String,
     control_values: HashMap<String, ControlValue>,
     invert: bool,
@@ -79,6 +80,7 @@ pub struct CalibrateFrontend {
     config_poll_handle: Option<gloo_timers::callback::Interval>,
     image_failure_count: u32,
     loading_schema: bool,
+    loading_config: bool,
 }
 
 pub enum Msg {
@@ -86,6 +88,8 @@ pub enum Msg {
     SchemaError,
     DisplayInfoLoaded(DisplayInfo),
     DisplayInfoError,
+    InitialConfigLoaded(PatternConfigResponse),
+    InitialConfigError,
     SelectPattern(String),
     UpdateControl(String, ControlValue),
     ToggleInvert,
@@ -123,6 +127,23 @@ impl Component for CalibrateFrontend {
             }
         });
 
+        // Fetch current config on load (don't overwrite server state)
+        let link = ctx.link().clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            match Request::get("/config").send().await {
+                Ok(response) => {
+                    if let Ok(config) = response.json::<PatternConfigResponse>().await {
+                        link.send_message(Msg::InitialConfigLoaded(config));
+                    } else {
+                        link.send_message(Msg::InitialConfigError);
+                    }
+                }
+                Err(_) => {
+                    link.send_message(Msg::InitialConfigError);
+                }
+            }
+        });
+
         // Fetch display info on load
         let link = ctx.link().clone();
         wasm_bindgen_futures::spawn_local(async move {
@@ -149,6 +170,7 @@ impl Component for CalibrateFrontend {
         Self {
             schema: None,
             display_info: None,
+            initial_config: None,
             selected_pattern_id: "April".to_string(),
             control_values: HashMap::new(),
             invert: false,
@@ -158,6 +180,7 @@ impl Component for CalibrateFrontend {
             config_poll_handle: Some(config_poll_handle),
             image_failure_count: 0,
             loading_schema: true,
+            loading_config: true,
         }
     }
 
@@ -166,13 +189,31 @@ impl Component for CalibrateFrontend {
             Msg::SchemaLoaded(schema) => {
                 self.schema = Some(schema);
                 self.loading_schema = false;
-                // Initialize with defaults for first pattern
-                self.init_pattern_defaults();
-                ctx.link().send_message(Msg::ApplyPattern);
+                // If we already have initial config from server, use it to init UI
+                if let Some(config) = &self.initial_config {
+                    self.init_from_server_config(config.clone());
+                }
                 true
             }
             Msg::SchemaError => {
                 self.loading_schema = false;
+                true
+            }
+            Msg::InitialConfigLoaded(config) => {
+                self.loading_config = false;
+                self.initial_config = Some(config.clone());
+                // If schema already loaded, use config to init UI
+                if self.schema.is_some() {
+                    self.init_from_server_config(config);
+                }
+                true
+            }
+            Msg::InitialConfigError => {
+                self.loading_config = false;
+                // If config fetch failed and schema is loaded, fall back to defaults
+                if self.schema.is_some() {
+                    self.init_pattern_defaults();
+                }
                 true
             }
             Msg::DisplayInfoLoaded(info) => {
@@ -303,9 +344,9 @@ impl Component for CalibrateFrontend {
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
-        if self.loading_schema {
+        if self.loading_schema || self.loading_config {
             return html! {
-                <div class="loading">{"Loading schema..."}</div>
+                <div class="loading">{"Loading..."}</div>
             };
         }
 
@@ -402,6 +443,32 @@ impl CalibrateFrontend {
                 for control in &pattern.controls {
                     self.control_values
                         .insert(control.id().to_string(), control.default_value());
+                }
+            }
+        }
+    }
+
+    /// Initialize UI state from server's current config (don't overwrite server state on load)
+    fn init_from_server_config(&mut self, config: PatternConfigResponse) {
+        self.selected_pattern_id = config.pattern_id;
+        self.invert = config.invert;
+        self.control_values.clear();
+
+        // Parse control values from server response
+        if let Some(values_map) = config.values.as_object() {
+            for (key, value) in values_map {
+                let control_value = match value {
+                    serde_json::Value::Number(n) => n
+                        .as_i64()
+                        .map(ControlValue::Int)
+                        .or_else(|| n.as_f64().map(ControlValue::Float)),
+                    serde_json::Value::Bool(b) => Some(ControlValue::Bool(*b)),
+                    serde_json::Value::String(s) => Some(ControlValue::Text(s.clone())),
+                    _ => None,
+                };
+
+                if let Some(val) = control_value {
+                    self.control_values.insert(key.clone(), val);
                 }
             }
         }
