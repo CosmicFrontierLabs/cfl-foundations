@@ -240,6 +240,11 @@ async fn update_pattern_config(
 
     match pattern_result {
         Ok(pattern) => {
+            tracing::info!(
+                "HTTP config: pattern={} invert={:?}",
+                req.pattern_id,
+                req.invert
+            );
             *state.pattern.write().await = pattern;
 
             if let Some(invert) = req.invert {
@@ -415,7 +420,36 @@ fn main() -> Result<()> {
             // Parse command
             match serde_json::from_str::<shared::pattern_command::PatternCommand>(&msg) {
                 Ok(cmd) => {
-                    tracing::debug!("Received pattern command: {:?}", cmd);
+                    // Log position changes for pattern commands
+                    use shared::pattern_command::PatternCommand;
+                    match &cmd {
+                        PatternCommand::Spot {
+                            x,
+                            y,
+                            fwhm,
+                            intensity,
+                        } => {
+                            tracing::info!(
+                                "ZMQ Spot: ({x:.0}, {y:.0}) fwhm={fwhm:.1} int={intensity:.2}"
+                            );
+                        }
+                        PatternCommand::SpotGrid {
+                            positions,
+                            fwhm,
+                            intensity,
+                        } => {
+                            tracing::info!(
+                                "ZMQ SpotGrid: {} spots, fwhm={fwhm:.1} int={intensity:.2}",
+                                positions.len()
+                            );
+                        }
+                        PatternCommand::Uniform { level } => {
+                            tracing::info!("ZMQ Uniform: level={level}");
+                        }
+                        PatternCommand::Clear => {
+                            tracing::info!("ZMQ Clear");
+                        }
+                    }
                     remote_state_zmq.lock().unwrap().set_command(cmd);
 
                     // Reset idle timeout so ZMQ commands keep display active
