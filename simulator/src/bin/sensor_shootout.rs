@@ -66,70 +66,176 @@ fn parse_ra_dec_coordinates(s: &str) -> Result<Equatorial, String> {
 /// Command line arguments for telescope view simulation
 #[derive(Parser, Debug)]
 #[command(
-    name = "Telescope View Simulator",
-    about = "Simulates telescope view with star field rendering",
-    long_about = None
+    name = "Sensor Shootout",
+    about = "Compare sensor performance across sky pointings and exposure settings",
+    long_about = "Sensor performance comparison tool for evaluating detection accuracy.\n\n\
+        This tool simulates telescope imaging across multiple sky pointings, exposure \
+        durations, and optical configurations. For each experiment it:\n  \
+        1. Renders a synthetic star field from the Tycho-2 catalog\n  \
+        2. Applies sensor noise model (read noise, dark current, photon noise)\n  \
+        3. Runs star detection algorithm\n  \
+        4. Matches detected stars against known catalog positions via ICP\n  \
+        5. Records detection count, positional errors, and timing to CSV\n\n\
+        Use this to evaluate sensor configurations, detection algorithms, and \
+        exposure strategies before deploying to actual hardware."
 )]
 struct Args {
     #[command(flatten)]
     shared: SharedSimulationArgs,
 
-    /// Number of experiments to run
-    #[arg(long, default_value_t = 100)]
+    #[arg(
+        long,
+        default_value_t = 100,
+        help = "Number of experiments (sky pointings) to run",
+        long_help = "Number of random sky pointings to simulate. Each pointing generates \
+            a unique star field. More experiments provide better statistical coverage \
+            of detection performance across varying star densities and magnitudes. \
+            Use --single-shot-debug for deterministic testing at a fixed position."
+    )]
     experiments: u32,
 
-    /// Single-shot debug mode: specify RA,Dec coordinates in degrees (format: "ra,dec")
-    /// Example: "56.75,24.12" points to the Pleiades cluster for easy visual comparison
-    /// When specified, runs simulation only at this position for all sensors instead of random sampling
-    #[arg(long, value_parser = parse_ra_dec_coordinates)]
+    #[arg(
+        long,
+        value_parser = parse_ra_dec_coordinates,
+        help = "Fixed RA,Dec coordinates for debugging (format: 'ra,dec' in degrees)",
+        long_help = "Run simulation at a single fixed sky position instead of random \
+            sampling. Useful for debugging or comparing sensors at a known location. \
+            Format: 'ra,dec' in degrees, e.g., '56.75,24.12' for the Pleiades cluster. \
+            RA must be in [0, 360), Dec must be in [-90, 90]. When specified, only \
+            one pointing is simulated regardless of --experiments value."
+    )]
     single_shot_debug: Option<Equatorial>,
 
-    /// Output directory for experiment images and data
-    #[arg(long, default_value = "experiment_output")]
+    #[arg(
+        long,
+        default_value = "experiment_output",
+        help = "Directory for output images and data",
+        long_help = "Base directory for experiment outputs. A timestamp suffix is \
+            automatically appended (e.g., experiment_output_20240115_143022/). \
+            Contains PNG images of rendered frames and FITS files if --save-images \
+            is enabled. The directory is created if it doesn't exist."
+    )]
     output_dir: String,
 
-    /// Output CSV file for experiment log
-    #[arg(long, default_value = DEFAULT_CSV_FILENAME)]
+    #[arg(
+        long,
+        default_value = DEFAULT_CSV_FILENAME,
+        help = "CSV file for experiment results",
+        long_help = "Path to CSV file for logging experiment results. If using the \
+            default filename, a timestamp is automatically inserted. Each row contains: \
+            experiment number, sensor name, RA/Dec, exposure, stars detected, \
+            catalog matches, ICP error, read noise, dark current, and timing. \
+            File is written incrementally during execution."
+    )]
     output_csv: String,
 
-    /// Save image outputs (PNG, FITS files). Disabling this speeds up experiments significantly
-    #[arg(long, action)]
+    #[arg(
+        long,
+        action,
+        help = "Disable saving PNG/FITS images (faster execution)",
+        long_help = "Skip saving rendered images to disk. Significantly speeds up \
+            experiments when only CSV metrics are needed. Detection and matching \
+            still run normally; only disk I/O is skipped. Recommended for large \
+            parameter sweeps where images aren't needed for inspection."
+    )]
     no_save_images: bool,
 
-    /// Run experiments serially instead of in parallel
-    #[arg(long, default_value_t = false)]
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Run experiments serially instead of in parallel",
+        long_help = "Execute experiments one at a time instead of using all CPU cores. \
+            Useful for debugging (predictable ordering, cleaner logs) or when memory \
+            is constrained. Parallel mode uses Rayon with work-stealing for optimal \
+            CPU utilization. Serial mode shows accurate per-experiment timing."
+    )]
     serial: bool,
 
-    /// Match FWHM sampling across all sensors using this value (pixels per FWHM).
-    /// If not specified, uses the selected telescope (from --telescope) with each sensor
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Target pixels per FWHM for consistent sampling across sensors",
+        long_help = "Adjust telescope focal length to achieve this many pixels per \
+            PSF full-width at half-maximum for each sensor. This normalizes sampling \
+            across sensors with different pixel sizes, enabling fair comparison. \
+            If not specified, uses the telescope's native focal length with each \
+            sensor. Typical values: 2.0-5.0 pixels/FWHM (Nyquist is ~2.0).",
+        value_name = "PIXELS"
+    )]
     match_pixel_sampling: Option<f64>,
 
-    /// Exposure duration range in milliseconds (start:stop:step format)
-    /// Example: --exposure_range_ms 10000:120000:10000 for 10s to 120s in 10s steps
-    #[arg(long, default_value = "50:1000:50")]
+    #[arg(
+        long,
+        default_value = "50:1000:50",
+        help = "Exposure range in milliseconds (start:stop:step)",
+        long_help = "Range of exposure durations to test, in milliseconds. Format is \
+            'start:stop:step', e.g., '50:1000:50' tests 50ms, 100ms, ..., 1000ms. \
+            Each experiment runs at all exposure values. Longer exposures collect \
+            more photons but increase dark current contribution. For bright stars, \
+            shorter exposures may suffice; for faint detection limits, try longer \
+            exposures up to several seconds.",
+        value_name = "RANGE"
+    )]
     exposure_range_ms: RangeArg,
 
-    /// Maximum iterations for ICP star matching algorithm
-    #[arg(long, default_value_t = 40)]
+    #[arg(
+        long,
+        default_value_t = 40,
+        help = "Maximum iterations for ICP star matching",
+        long_help = "Maximum number of iterations for the Iterative Closest Point (ICP) \
+            algorithm that matches detected stars to catalog positions. ICP refines \
+            the transformation between pixel coordinates and celestial coordinates. \
+            More iterations improve accuracy but increase computation time. The \
+            algorithm terminates early if convergence threshold is met."
+    )]
     icp_max_iterations: usize,
 
-    /// Convergence threshold for ICP star matching algorithm
-    #[arg(long, default_value_t = 0.00001)]
+    #[arg(
+        long,
+        default_value_t = 0.00001,
+        help = "Convergence threshold for ICP matching",
+        long_help = "ICP terminates when the change in mean squared error between \
+            iterations drops below this threshold. Smaller values produce more \
+            precise alignment but require more iterations. The threshold is in \
+            units of squared pixels. Typical range: 1e-6 to 1e-4."
+    )]
     icp_convergence_threshold: f64,
 
-    /// Star detection algorithm to use (dao, iraf, naive)
-    #[arg(long, default_value = "naive")]
+    #[arg(
+        long,
+        default_value = "naive",
+        help = "Star detection algorithm (dao, iraf, naive)",
+        long_help = "Star detection algorithm to use:\n  \
+            - naive: Fast centroid-based detection, good for bright isolated stars\n  \
+            - iraf: IRAF-style detection with iterative background fitting\n  \
+            - dao: DAOPHOT-style PSF fitting, best for crowded fields\n\n\
+            Performance/accuracy trade-offs vary by star density and SNR. \
+            'naive' is fastest and sufficient for most guide star applications."
+    )]
     star_finder: StarFinder,
 
-    /// F-number range to test (format: "start:stop:step" or "start:stop:count#")
-    /// Examples: "8:16:2" tests f/8, f/10, f/12, f/14, f/16
-    ///          "8:16:5#" tests 5 evenly spaced values from f/8 to f/16
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "F-number range to test (format: 'start:stop:step' or 'start:stop:count#')",
+        long_help = "Range of f-numbers (focal ratio) to test. Varying f-number changes \
+            both field-of-view and image scale. Format options:\n  \
+            - 'start:stop:step': e.g., '8:16:2' tests f/8, f/10, f/12, f/14, f/16\n  \
+            - 'start:stop:count#': e.g., '8:16:5#' tests 5 evenly spaced values\n\n\
+            Smaller f-numbers give wider FOV but larger PSF (in pixels). \
+            If not specified, uses the telescope's native f-number only.",
+        value_name = "RANGE"
+    )]
     f_number_range: Option<RangeArg>,
 
-    /// Number of trials to run for each pointing (each trial uses different noise seed)
-    #[arg(long, default_value_t = 1)]
+    #[arg(
+        long,
+        default_value_t = 1,
+        help = "Number of trials per pointing (different noise seeds)",
+        long_help = "Number of times to repeat each experiment with different random \
+            noise seeds. Multiple trials at the same pointing provide statistics on \
+            detection variability due to noise. Each trial uses a deterministic seed \
+            derived from experiment and trial number for reproducibility. \
+            Typical values: 1 for quick surveys, 5-10 for noise characterization."
+    )]
     trials: u32,
 }
 

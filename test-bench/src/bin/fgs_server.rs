@@ -12,7 +12,21 @@ use test_bench::camera_server::{CommonServerArgs, TrackingConfig};
 use tracing::info;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Unified camera server with tracking support")]
+#[command(
+    author,
+    version,
+    about = "Unified camera server with FGS tracking",
+    long_about = "Combined camera server and Fine Guidance System (FGS) tracking.\n\n\
+        This server provides:\n  \
+        - Web UI for camera control and image viewing\n  \
+        - Real-time image streaming to browser\n  \
+        - FGS tracking when enabled via the web interface\n  \
+        - Optional ZMQ publishing of tracking updates\n\n\
+        Prerequisites:\n  \
+        - Run dark_frame_analysis to generate bad pixel map (recommended)\n  \
+        - Build frontends: ./scripts/build-yew-frontends.sh\n\n\
+        The web UI is available at http://localhost:<port> after startup."
+)]
 struct Args {
     #[command(flatten)]
     camera: CameraArgs,
@@ -20,35 +34,79 @@ struct Args {
     #[command(flatten)]
     server: CommonServerArgs,
 
-    #[arg(long, default_value = "5")]
+    #[arg(
+        long,
+        default_value = "5",
+        help = "Number of frames for FGS acquisition phase",
+        long_help = "Number of full-frame images to collect during the FGS acquisition \
+            phase before selecting guide stars. More frames improve detection reliability \
+            but increase time to first lock. Typical range: 3-10 frames."
+    )]
     acquisition_frames: usize,
 
-    #[arg(long, default_value = "128")]
+    #[arg(
+        long,
+        default_value = "128",
+        help = "Size of the tracking ROI in pixels (square)",
+        long_help = "Size of the region-of-interest (ROI) window used for tracking each \
+            guide star, in pixels. The ROI must be large enough to contain the full PSF \
+            plus margin for motion, but small enough to minimize readout time. Must be \
+            compatible with camera ROI alignment constraints. Typical range: 32-256 pixels."
+    )]
     roi_size: usize,
 
-    #[arg(long, default_value = "5.0")]
+    #[arg(
+        long,
+        default_value = "5.0",
+        help = "Sigma threshold for star detection",
+        long_help = "Detection threshold in standard deviations above background noise. \
+            Stars with peak signal exceeding (background + threshold * noise) are detected. \
+            Lower values detect fainter stars but may produce false positives from noise. \
+            Typical range: 3.0-7.0 sigma."
+    )]
     detection_threshold_sigma: f64,
 
-    #[arg(long, default_value = "10.0")]
+    #[arg(
+        long,
+        default_value = "10.0",
+        help = "Minimum signal-to-noise ratio for guide star selection",
+        long_help = "Minimum signal-to-noise ratio (SNR) required for a detected star to be \
+            selected as a guide star. Higher SNR stars provide more precise centroids but \
+            may limit available guide stars. Typical range: 5.0-20.0."
+    )]
     snr_min: f64,
 
     #[arg(
         long,
         default_value = "3.0",
-        help = "SNR threshold below which tracking is lost"
+        help = "SNR threshold below which tracking is lost",
+        long_help = "If the tracked star's SNR drops below this threshold, tracking is \
+            considered lost and reacquisition begins. Should be lower than snr_min to \
+            provide hysteresis. Typical range: 2.0-5.0."
     )]
     snr_dropout_threshold: f64,
 
     #[arg(
         long,
         default_value = "7.0",
-        help = "Expected FWHM of stars in pixels (used for centroiding and SNR calculation)"
+        help = "Expected FWHM of stars in pixels",
+        long_help = "Expected full-width at half-maximum (FWHM) of the point spread function \
+            in pixels. This affects the centroiding aperture size and SNR calculations. \
+            Should match the actual PSF size from your optical system. \
+            Typical range: 2.0-15.0 pixels."
     )]
     fwhm: f64,
 
     #[arg(
         long,
-        help = "ZMQ PUB socket bind address for tracking updates (e.g., tcp://*:5555)"
+        help = "ZMQ PUB socket bind address for tracking updates",
+        long_help = "Bind address for a ZeroMQ PUB socket that streams tracking updates in \
+            real-time. Each tracking update is serialized as a TrackingMessage and published. \
+            Subscribers can connect to receive live centroid data. Example addresses:\n  \
+            - tcp://*:5555 (TCP on all interfaces, port 5555)\n  \
+            - ipc:///tmp/tracking.sock (Unix domain socket)\n  \
+            - tcp://127.0.0.1:5555 (TCP localhost only)",
+        value_name = "ADDR"
     )]
     zmq_pub: Option<String>,
 }

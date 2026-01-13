@@ -23,55 +23,141 @@ use std::time::Duration;
 #[command(
     author,
     version,
-    about = "FGS Tracking Demonstration with Motion Patterns"
+    about = "FGS tracking demonstration with motion patterns",
+    long_about = "Demonstrates FGS tracking performance under various motion patterns.\n\n\
+        This tool runs a simulated FGS tracking session with configurable motion profiles \
+        and generates plots showing tracking accuracy. Useful for:\n  \
+        - Visualizing FGS behavior under different motion types\n  \
+        - Tuning FGS parameters for specific motion amplitudes\n  \
+        - Generating tracking performance plots for documentation\n\n\
+        Output plots are saved to the plots/ directory."
 )]
 struct Args {
-    /// Motion pattern type (stationary, sine_ra, sine_dec, circular, chaotic)
-    #[arg(short, long, default_value = "sine_ra")]
+    #[arg(
+        short,
+        long,
+        default_value = "sine_ra",
+        help = "Motion pattern type",
+        long_help = "Type of motion pattern to simulate. Available patterns:\n  \
+            - stationary: No motion (static pointing)\n  \
+            - sine_ra: Sinusoidal oscillation in right ascension\n  \
+            - sine_dec: Sinusoidal oscillation in declination\n  \
+            - circular: Circular motion combining RA and Dec\n  \
+            - chaotic: Random jitter motion\n\n\
+            Motion amplitude is controlled by --amplitude."
+    )]
     motion: String,
 
-    /// Simulation duration in seconds
-    #[arg(short = 't', long, default_value_t = 10.0)]
+    #[arg(
+        short = 't',
+        long,
+        default_value_t = 10.0,
+        help = "Simulation duration in seconds",
+        long_help = "Total duration of the tracking simulation in seconds. Longer durations \
+            show more motion cycles but increase runtime. The plot x-axis spans from 0 \
+            to this duration. Typical range: 5-60 seconds."
+    )]
     duration: f64,
 
-    /// Output filename for the plot (without path)
-    #[arg(short, long)]
+    #[arg(
+        short,
+        long,
+        help = "Output filename for the plot (without path)",
+        long_help = "Filename for the output plot PNG file. Saved to plots/ directory. \
+            If not specified, defaults to 'tracking_{motion}.png' where {motion} is \
+            the motion pattern name. A residuals plot is also generated with '_residuals' \
+            suffix."
+    )]
     output: Option<String>,
 
-    /// Plot width in pixels
-    #[arg(long, default_value_t = 2400)]
+    #[arg(
+        long,
+        default_value_t = 2400,
+        help = "Plot width in pixels",
+        long_help = "Width of the output plot image in pixels. Higher values produce \
+            sharper plots but larger files. Typical range: 1200-3600 pixels."
+    )]
     width: u32,
 
-    /// Plot height in pixels
-    #[arg(long, default_value_t = 1600)]
+    #[arg(
+        long,
+        default_value_t = 1600,
+        help = "Plot height in pixels",
+        long_help = "Height of the output plot image in pixels. Higher values produce \
+            sharper plots but larger files. Typical range: 800-2400 pixels."
+    )]
     height: u32,
 
-    /// Number of acquisition frames
-    #[arg(long, default_value_t = 3)]
+    #[arg(
+        long,
+        default_value_t = 3,
+        help = "Number of frames for FGS acquisition phase",
+        long_help = "Number of full-frame images captured during the FGS acquisition phase \
+            before selecting a guide star. More frames improve detection reliability \
+            but increase time to first lock. Typical range: 2-5 frames."
+    )]
     acquisition_frames: usize,
 
-    /// Minimum SNR for guide star selection
-    #[arg(long, default_value_t = 10.0)]
+    #[arg(
+        long,
+        default_value_t = 10.0,
+        help = "Minimum SNR for guide star selection",
+        long_help = "Minimum signal-to-noise ratio required for a star to be selected \
+            as a guide star. Higher values ensure more reliable centroids. With the \
+            synthetic star catalog used in this demo, 10.0 is typically sufficient."
+    )]
     min_snr: f64,
 
-    /// ROI size in pixels
-    #[arg(long, default_value_t = 32)]
+    #[arg(
+        long,
+        default_value_t = 32,
+        help = "ROI size in pixels (square)",
+        long_help = "Size of the region-of-interest window used for tracking, in pixels. \
+            Must be large enough to contain the PSF with margin for motion amplitude. \
+            For this demo's typical amplitudes, 32-64 pixels is sufficient."
+    )]
     roi_size: usize,
 
-    /// Centroid radius multiplier (times FWHM)
-    #[arg(long, default_value_t = 5.0)]
+    #[arg(
+        long,
+        default_value_t = 5.0,
+        help = "Centroid aperture radius as multiple of FWHM",
+        long_help = "Radius of the centroiding aperture expressed as a multiple of the \
+            PSF full-width at half-maximum. Larger apertures capture more of the PSF \
+            but include more background noise. Typical range: 3.0-6.0."
+    )]
     centroid_multiplier: f64,
 
-    /// Frame rate in Hz
-    #[arg(long, default_value_t = 10.0)]
+    #[arg(
+        long,
+        default_value_t = 10.0,
+        help = "Simulated frame rate in Hz",
+        long_help = "Frame rate for the simulation in frames per second. Higher rates \
+            produce more data points but increase computation time. Typical rates: \
+            10-30 Hz for guide star tracking, 1-5 Hz for slow motions."
+    )]
     frame_rate: f64,
 
-    /// Amplitude of motion in arcseconds (applies to all motion types)
-    #[arg(short = 'a', long, default_value_t = 10.0)]
+    #[arg(
+        short = 'a',
+        long,
+        default_value_t = 10.0,
+        help = "Motion amplitude in arcseconds",
+        long_help = "Peak amplitude of the motion pattern in arcseconds. For sinusoidal \
+            patterns, this is the peak-to-zero amplitude (full swing is 2x this value). \
+            Larger amplitudes test the FGS ability to track fast-moving targets. \
+            Typical range: 1-100 arcseconds."
+    )]
     amplitude: f64,
 
-    /// Enable verbose output
-    #[arg(short, long)]
+    #[arg(
+        short,
+        long,
+        help = "Enable verbose output",
+        long_help = "Print detailed information during tracking including position updates, \
+            lock status changes, and frame-by-frame progress. Useful for debugging \
+            but produces a lot of output."
+    )]
     verbose: bool,
 }
 

@@ -46,75 +46,202 @@ const DEFAULT_TRACKED_POINTS: usize = 10;
 #[derive(Parser, Debug)]
 #[command(
     name = "FGS Performance Shootout",
-    about = "Tests FGS tracking performance across telescope and exposure configurations",
-    long_about = None
+    about = "Evaluate FGS lock acquisition and tracking accuracy across configurations",
+    long_about = "Fine Guidance System performance evaluation tool.\n\n\
+        This tool runs the monocle FGS against simulated star fields to measure:\n  \
+        - Lock acquisition rate across sky pointings\n  \
+        - Centroiding accuracy after lock (mean and std error)\n  \
+        - Performance vs exposure time and f-number\n\n\
+        For each experiment, the tool:\n  \
+        1. Generates a star field at a random (or fixed) pointing\n  \
+        2. Runs FGS acquisition to select a guide star\n  \
+        3. If lock achieved, tracks for N frames recording centroid errors\n  \
+        4. Compares estimated position against ground truth from renderer\n\n\
+        Results are written to CSV files for analysis. Use this to tune FGS \
+        parameters or compare sensor/telescope configurations."
 )]
 struct Args {
-    /// Number of random sky pointings to test
-    #[arg(short = 'n', long, default_value_t = 100)]
+    #[arg(
+        short = 'n',
+        long,
+        default_value_t = 100,
+        help = "Number of random sky pointings to test",
+        long_help = "Number of unique sky positions to evaluate. Each pointing generates \
+            a different star field with varying star density and magnitudes. More \
+            pointings provide better statistical coverage but increase runtime. \
+            The pointing coordinates are generated pseudo-randomly using --seed \
+            for reproducibility."
+    )]
     num_pointings: usize,
 
-    /// Sensor model to use (gsense4040bsi, gsense6510bsi, hwk4123, imx455)
-    #[arg(long, default_value_t = SensorModel::Hwk4123)]
+    #[arg(
+        long,
+        default_value_t = SensorModel::Hwk4123,
+        help = "Sensor model for simulation",
+        long_help = "Sensor model to use for image simulation. Each sensor has different \
+            pixel size, read noise, dark current, and quantum efficiency characteristics. \
+            Available models: gsense4040bsi, gsense6510bsi, hwk4123, imx455. The sensor \
+            affects both the image quality and the achievable centroiding precision."
+    )]
     sensor: SensorModel,
 
-    /// Telescope model to use
-    #[arg(long, default_value_t = TelescopeModel::CosmicFrontierJbt50cm)]
+    #[arg(
+        long,
+        default_value_t = TelescopeModel::CosmicFrontierJbt50cm,
+        help = "Telescope model to use",
+        long_help = "Telescope optical configuration. Determines aperture, focal length, \
+            and resulting field-of-view. The f-number can be overridden with \
+            --f-number-range to test different focal ratios while keeping aperture \
+            constant. Larger apertures collect more light but have smaller FOV."
+    )]
     telescope: TelescopeModel,
 
-    /// F-number range to test (start:stop:step)
-    /// Example: --f-number-range 8:16:2 tests f/8, f/10, f/12, f/14, f/16
-    /// If not specified, uses the telescope's default f-number
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "F-number range to test (start:stop:step)",
+        long_help = "Range of f-numbers to evaluate. Format: 'start:stop:step', e.g., \
+            '8:16:2' tests f/8, f/10, f/12, f/14, f/16. Varying f-number changes both \
+            the field-of-view and image scale (pixels per arcsec). Lower f-numbers \
+            give wider FOV but larger PSF in pixels. If not specified, uses only \
+            the telescope's native f-number.",
+        value_name = "RANGE"
+    )]
     f_number_range: Option<RangeArg>,
 
-    /// Exposure time range in milliseconds (start:stop:step)
-    /// Example: --exposure-range-ms 100:1000:100
-    #[arg(long, default_value = "100:1000:200")]
+    #[arg(
+        long,
+        default_value = "100:1000:200",
+        help = "Exposure range in milliseconds (start:stop:step)",
+        long_help = "Range of exposure times to test. Format: 'start:stop:step', e.g., \
+            '100:1000:200' tests 100ms, 300ms, 500ms, 700ms, 900ms. Longer exposures \
+            collect more photons (better SNR) but increase dark current contribution \
+            and reduce frame rate. The optimal exposure depends on star brightness \
+            and sensor characteristics.",
+        value_name = "RANGE"
+    )]
     exposure_range_ms: RangeArg,
 
-    /// Number of time points to track after lock acquisition
-    #[arg(long, default_value_t = DEFAULT_TRACKED_POINTS)]
+    #[arg(
+        long,
+        default_value_t = DEFAULT_TRACKED_POINTS,
+        help = "Number of frames to track after acquiring lock",
+        long_help = "Number of consecutive frames to process after successful lock \
+            acquisition. More points provide better statistics on centroiding accuracy \
+            and stability, but increase runtime per experiment. The tracking error \
+            statistics (mean, std) are computed over these points."
+    )]
     tracked_points: usize,
 
-    /// Output CSV file for experiment results
-    #[arg(short, long, default_value = DEFAULT_CSV_FILENAME)]
+    #[arg(
+        short,
+        long,
+        default_value = DEFAULT_CSV_FILENAME,
+        help = "Output CSV file for summary results",
+        long_help = "Path to CSV file for experiment summary results. If using the \
+            default filename, a timestamp is automatically inserted. Contains one row \
+            per experiment with: pointing, f-number, exposure, lock status, star \
+            magnitude, and centroid error statistics. A separate 'tracking.csv' file \
+            in the output directory contains per-frame tracking details."
+    )]
     output_csv: String,
 
-    /// Path to star catalog file
-    #[arg(long, default_value = "gaia_mag16_multi.bin")]
+    #[arg(
+        long,
+        default_value = "gaia_mag16_multi.bin",
+        help = "Path to binary star catalog file",
+        long_help = "Path to the binary star catalog file. The catalog provides ground \
+            truth star positions and magnitudes for the simulation. Larger catalogs \
+            with fainter magnitude limits provide more realistic star fields but \
+            require more memory and disk space. Default uses Gaia DR3 to magnitude 16."
+    )]
     catalog: PathBuf,
 
-    /// Run experiments serially instead of in parallel
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Run experiments serially instead of in parallel",
+        long_help = "Execute experiments one at a time instead of using multiple CPU \
+            cores. Serial mode is useful for debugging (predictable ordering, cleaner \
+            output) or when memory is limited. Parallel mode uses Rayon with \
+            work-stealing for optimal throughput."
+    )]
     serial: bool,
 
-    /// Number of acquisition frames for FGS
-    #[arg(long, default_value_t = 3)]
+    #[arg(
+        long,
+        default_value_t = 3,
+        help = "Number of frames for FGS acquisition phase",
+        long_help = "Number of full-frame images captured during the acquisition phase \
+            before selecting a guide star. More frames improve detection reliability \
+            by averaging out noise, but increase time to first lock. The FGS analyzes \
+            all acquisition frames to find stable guide star candidates."
+    )]
     acquisition_frames: usize,
 
-    /// Minimum SNR for guide star selection
-    #[arg(long, default_value_t = 10.0)]
+    #[arg(
+        long,
+        default_value_t = 10.0,
+        help = "Minimum SNR for guide star selection",
+        long_help = "Minimum signal-to-noise ratio required for a star to be selected \
+            as a guide star. Higher values ensure more reliable centroids but may \
+            fail to lock in sparse fields or with faint stars. Lower values allow \
+            dimmer guide stars but reduce centroiding precision. Typical range: 5-20."
+    )]
     min_snr: f64,
 
-    /// ROI size in pixels
-    #[arg(long, default_value_t = 32)]
+    #[arg(
+        long,
+        default_value_t = 32,
+        help = "ROI size in pixels (square)",
+        long_help = "Size of the region-of-interest window used for tracking, in pixels. \
+            The ROI is extracted around the guide star for fast centroiding. Must be \
+            large enough to contain the full PSF with margin for motion, but small \
+            enough for fast readout. Should be a power of 2 for some cameras. \
+            Typical range: 16-64 pixels."
+    )]
     roi_size: usize,
 
-    /// Centroid radius multiplier (times FWHM)
-    #[arg(long, default_value_t = 5.0)]
+    #[arg(
+        long,
+        default_value_t = 5.0,
+        help = "Centroid aperture radius as multiple of FWHM",
+        long_help = "Radius of the centroiding aperture expressed as a multiple of the \
+            PSF full-width at half-maximum. Larger apertures capture more of the PSF \
+            wings but include more background noise. Smaller apertures are faster \
+            and less noisy but may truncate the PSF causing bias. Typical range: 2-6."
+    )]
     centroid_multiplier: f64,
 
-    /// Random seed for reproducibility
-    #[arg(long, default_value_t = 0)]
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Random seed for reproducible pointing generation",
+        long_help = "Seed for the random number generator used to select sky pointings. \
+            Using the same seed produces identical pointing sequences, enabling \
+            reproducible experiments. Set to 0 for the default sequence, or use \
+            different values to explore different sky regions."
+    )]
     seed: u64,
 
-    /// Temperature in Celsius for sensor simulation
-    #[arg(long, default_value_t = -10.0)]
+    #[arg(
+        long,
+        default_value_t = -10.0,
+        help = "Sensor temperature in Celsius",
+        long_help = "Operating temperature for the sensor simulation. Affects dark \
+            current generation - cooler temperatures reduce thermal noise. Typical \
+            values: -10 to -40C for cooled scientific cameras, +20 to +30C for \
+            uncooled cameras. The sensor model's dark current scales with temperature."
+    )]
     temperature: f64,
 
-    /// Number of threads for parallel execution (0 = use all available)
-    #[arg(long, default_value_t = 0)]
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Number of threads (0 = all available)",
+        long_help = "Number of worker threads for parallel experiment execution. Set to \
+            0 to use all available CPU cores (default). Reduce if running alongside \
+            other workloads or to limit memory usage. Each thread runs independent \
+            experiments, so memory scales roughly linearly with thread count."
+    )]
     threads: usize,
 }
 
