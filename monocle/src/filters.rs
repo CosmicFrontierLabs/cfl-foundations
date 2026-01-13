@@ -7,6 +7,14 @@ use ndarray::ArrayView2;
 use shared::bad_pixel_map::BadPixelMap;
 use shared::image_proc::detection::StarDetection;
 
+/// Steepness factor for the SNR quality sigmoid curve.
+/// Higher values create a sharper transition around the center point.
+const SNR_SIGMOID_STEEPNESS: f64 = 0.1;
+
+/// Center point for the SNR quality sigmoid (SNR value where score = 0.5).
+/// Stars with SNR above this value are considered high quality.
+const SNR_SIGMOID_CENTER: f64 = 20.0;
+
 pub use shared::image_proc::source_snr::{calculate_snr, filter_by_snr};
 
 /// Filter stars that have saturated pixels
@@ -145,8 +153,8 @@ pub fn calculate_quality_score(
 ) -> f64 {
     let (snr_weight, position_weight, psf_weight) = weights;
 
-    // Normalize SNR (sigmoid function, centered at SNR=20)
-    let snr_score = 1.0 / (1.0 + (-0.1 * (snr - 20.0)).exp());
+    // Normalize SNR (sigmoid function)
+    let snr_score = 1.0 / (1.0 + (-SNR_SIGMOID_STEEPNESS * (snr - SNR_SIGMOID_CENTER)).exp());
 
     // Normalize position (prefer center)
     let position_score = 1.0 - (distance_from_center / (image_diagonal / 2.0)).min(1.0);

@@ -4,7 +4,11 @@
 //! sub-pixel positions of stellar objects from image data and masks.
 
 use ndarray::ArrayView2;
+
 use serde::{Deserialize, Serialize};
+
+/// Maximum intensity value for 16-bit unsigned images (2^16 - 1)
+pub const SATURATION_16BIT: f64 = 65535.0;
 
 /// Spot shape characterization without position.
 ///
@@ -88,7 +92,7 @@ pub fn compute_centroid_from_mask(
     image: &ArrayView2<f64>,
     mask: &ArrayView2<bool>,
 ) -> CentroidResult {
-    compute_centroid_from_mask_with_saturation(image, mask, 65535.0)
+    compute_centroid_from_mask_with_saturation(image, mask, SATURATION_16BIT)
 }
 
 /// Calculate centroid and shape moments with custom saturation threshold
@@ -444,12 +448,12 @@ mod tests {
         image[[1, 2]] = 30000.0; // Below default cutoff
         mask[[1, 2]] = true;
 
-        // Using default function should use 65535.0 as cutoff
+        // Using default function should use SATURATION_16BIT as cutoff
         let result = compute_centroid_from_mask(&image.view(), &mask.view());
 
         assert_eq!(
-            result.n_saturated.0, 65535.0,
-            "Default cutoff should be 65535.0"
+            result.n_saturated.0, SATURATION_16BIT,
+            "Default cutoff should be SATURATION_16BIT"
         );
         assert_eq!(
             result.n_saturated.1, 1,

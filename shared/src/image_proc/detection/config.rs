@@ -30,6 +30,22 @@
 use crate::image_proc::airy::PixelScaledAiryDisk;
 use starfield::image::starfinders::{DAOStarFinderConfig, IRAFStarFinderConfig};
 
+/// Threshold multiplier for reducing false positives in star detection.
+/// Applied on top of the sigma threshold for more conservative detections.
+const DETECTION_THRESHOLD_FACTOR: f64 = 1.2;
+
+/// Multiplier for converting PSF FWHM to effective detection kernel FWHM.
+/// Larger values improve centroid accuracy at the cost of blending close sources.
+const DAO_FWHM_MULTIPLIER: f64 = 2.0;
+
+/// Multiplier for converting PSF FWHM to effective detection kernel FWHM for IRAF.
+/// Slightly smaller than DAO for different kernel shape characteristics.
+const IRAF_FWHM_MULTIPLIER: f64 = 1.75;
+
+/// Minimum separation factor relative to first Airy zero.
+/// Allows detection of close binaries while avoiding double-detections.
+const MIN_SEPARATION_FACTOR: f64 = 0.8;
+
 /// Create DAOStarFinder configuration optimized for space telescope observations.
 ///
 /// Generates a configuration tuned for diffraction-limited space telescopes with
@@ -63,8 +79,8 @@ pub fn dao_autoconfig(
     let first_zero = scaled_airy_disk.first_zero();
 
     DAOStarFinderConfig {
-        threshold: detection_sigma * background_rms * 1.2,
-        fwhm: 2.0 * fwhm, // Larger FWHM for better centroid accuracy
+        threshold: detection_sigma * background_rms * DETECTION_THRESHOLD_FACTOR,
+        fwhm: DAO_FWHM_MULTIPLIER * fwhm,
         ratio: 1.0,
         theta: 0.0,
         sigma_radius: 1.5,
@@ -73,7 +89,7 @@ pub fn dao_autoconfig(
         exclude_border: false,
         brightest: None,
         peakmax: None,
-        min_separation: 0.8 * first_zero,
+        min_separation: MIN_SEPARATION_FACTOR * first_zero,
     }
 }
 
@@ -109,8 +125,8 @@ pub fn iraf_autoconfig(
     let fwhm = scaled_airy_disk.fwhm();
 
     IRAFStarFinderConfig {
-        threshold: detection_sigma * background_rms * 1.2,
-        fwhm: 1.75 * fwhm, // Larger FWHM improves centroid accuracy
+        threshold: detection_sigma * background_rms * DETECTION_THRESHOLD_FACTOR,
+        fwhm: IRAF_FWHM_MULTIPLIER * fwhm,
         sigma_radius: 1.5,
         minsep_fwhm: 1.5,      // 1.5 × FWHM separation
         sharpness: 0.2..=5.0,  // Broader range for better detection
