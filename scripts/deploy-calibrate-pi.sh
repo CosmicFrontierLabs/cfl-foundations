@@ -92,7 +92,9 @@ Wants=graphical.target
 Type=simple
 User=meawoppl
 WorkingDirectory=/home/meawoppl/rust-builds/meter-sim
-Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=SDL_VIDEODRIVER=wayland
 Environment=RUST_LOG=info
 ExecStart=/home/meawoppl/rust-builds/meter-sim/target/release/calibrate_serve --wait-for-oled
 Restart=on-failure
