@@ -25,10 +25,10 @@ cd "$(dirname "$0")/../test-bench-frontend"
 echo "Building calibrate frontend..."
 trunk build --release --config Trunk-calibrate.toml --filehash false
 
-# Build camera frontend
-echo "Building camera frontend..."
-trunk build --release --config Trunk-camera.toml --filehash false
+# Build FGS frontend
+echo "Building FGS frontend..."
+trunk build --release --config Trunk-fgs.toml --filehash false
 
 echo "Yew frontends built successfully!"
 echo "Calibrate output: test-bench-frontend/dist/calibrate/"
-echo "Camera output: test-bench-frontend/dist/camera/"
+echo "FGS output: test-bench-frontend/dist/fgs/"
