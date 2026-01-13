@@ -1,4 +1,4 @@
-use test_bench_frontend::CameraFrontend;
+use test_bench_frontend::FgsFrontend;
 use yew::prelude::*;
 
 #[function_component(App)]
@@ -24,7 +24,7 @@ fn app() -> Html {
         .unwrap_or(1080);
 
     html! {
-        <CameraFrontend {device} {width} {height} />
+        <FgsFrontend {device} {width} {height} />
     }
 }
 

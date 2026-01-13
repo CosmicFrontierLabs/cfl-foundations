@@ -78,22 +78,22 @@ jobs:
           exit 1
         fi
 
-    - name: Build Camera App
-      run: trunk build --config Trunk-camera.toml
+    - name: Build FGS App
+      run: trunk build --config Trunk-fgs.toml
 
-    - name: Verify Camera Artifacts
+    - name: Verify FGS Artifacts
       run: |
-        echo "Listing dist/camera:"
-        ls -R dist/camera
-        if [ ! -f "dist/camera/index.html" ]; then
-          echo "Error: dist/camera/index.html not found"
+        echo "Listing dist/fgs:"
+        ls -R dist/fgs
+        if [ ! -f "dist/fgs/index.html" ]; then
+          echo "Error: dist/fgs/index.html not found"
           exit 1
         fi
-        if ! ls dist/camera/*.wasm 1> /dev/null 2>&1; then
-          echo "Error: No .wasm file found in dist/camera"
+        if ! ls dist/fgs/*.wasm 1> /dev/null 2>&1; then
+          echo "Error: No .wasm file found in dist/fgs"
           exit 1
         fi
-        if ! ls dist/camera/*.js 1> /dev/null 2>&1; then
-          echo "Error: No .js file found in dist/camera"
+        if ! ls dist/fgs/*.js 1> /dev/null 2>&1; then
+          echo "Error: No .js file found in dist/fgs"
           exit 1
         fi

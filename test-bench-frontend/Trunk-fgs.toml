@@ -1,6 +1,6 @@
 [build]
-target = "camera_index.html"
-dist = "dist/camera"
+target = "fgs_index.html"
+dist = "dist/fgs"
 
 [watch]
 ignore = ["dist"]

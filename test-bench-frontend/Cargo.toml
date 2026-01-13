@@ -12,8 +12,8 @@ name = "calibrate_wasm"
 path = "src/calibrate_main.rs"
 
 [[bin]]
-name = "camera_wasm"
-path = "src/camera_main.rs"
+name = "fgs_wasm"
+path = "src/fgs_main.rs"
 
 [dependencies]
 anyhow = "1.0"

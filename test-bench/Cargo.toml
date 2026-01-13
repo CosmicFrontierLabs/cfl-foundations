@@ -13,18 +13,14 @@ path = "src/bin/calibrate_serve.rs"
 required-features = ["sdl2"]
 
 [[bin]]
-name = "cam_serve"
-path = "src/bin/cam_serve.rs"
-
-[[bin]]
 name = "playerone_info"
 path = "src/bin/playerone_info.rs"
 required-features = ["playerone"]
 
 [[bin]]
-name = "cam_track"
-path = "src/bin/cam_track.rs"
-# Note: Requires either "playerone" or "nsv455" feature for camera support
+name = "fgs_server"
+path = "src/bin/fgs_server.rs"
+# Fine Guidance System server - camera display and star tracking
 
 [[bin]]
 name = "dark_frame_analysis"
