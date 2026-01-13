@@ -1409,11 +1409,11 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                 // If tracking is now disabled, request ROI clear to return to full frame
                 if !tracking_for_loop.enabled.load(Ordering::SeqCst) {
                     let mut fgs_guard = fgs_clone.lock().unwrap();
-                    if fgs_guard.is_some() {
-                        tracing::info!("Tracking disabled, clearing FGS and requesting ROI clear");
-                        *fgs_guard = None;
-                        clear_roi_clone.store(true, Ordering::SeqCst);
-                    }
+                    // Always request ROI clear when tracking is disabled, even if FGS wasn't initialized
+                    // This ensures we return to full-frame capture mode
+                    tracing::info!("Tracking disabled, clearing FGS and requesting ROI clear");
+                    *fgs_guard = None;
+                    clear_roi_clone.store(true, Ordering::SeqCst);
                 }
                 return false;
             }
@@ -1698,13 +1698,13 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                     }
                 }
             } else {
-                // Tracking disabled - clear FGS if it was initialized
+                // Tracking disabled - clear FGS and return to full-frame capture
                 let mut fgs_guard = fgs_clone.lock().unwrap();
                 if fgs_guard.is_some() {
-                    tracing::info!("Tracking disabled, clearing FGS");
+                    tracing::info!("Tracking disabled, clearing FGS and returning to full frame");
                     *fgs_guard = None;
                     clear_roi_clone.store(true, Ordering::SeqCst);
-                    return false; // Restart stream
+                    return false; // Restart stream to apply ROI clear
                 }
             }
 

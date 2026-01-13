@@ -10,7 +10,7 @@ use shared::image_proc::detection::aabb::AABB;
 /// stars too close to edges or bad pixels, and stars with insufficient SNR.
 ///
 /// # Example Configuration
-/// ```ignore
+/// ```text
 /// GuideStarFilters {
 ///     detection_threshold_sigma: 5.0,  // 5-sigma detection
 ///     snr_min: 10.0,                    // Minimum SNR of 10
@@ -97,7 +97,7 @@ pub struct GuideStarFilters {
 /// - **Tracking**: Small ROI windows are read out around selected stars for fast updates
 ///
 /// # Example Configuration
-/// ```ignore
+/// ```text
 /// FgsConfig {
 ///     acquisition_frames: 5,
 ///     filters: GuideStarFilters { /* ... */ },
