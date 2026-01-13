@@ -12,6 +12,9 @@ pub use test_bench_shared::{
     ExportSettings, ExportStatus, TrackingEnableRequest, TrackingSettings, TrackingStatus,
 };
 
+/// Maximum SNR history entries (at ~10Hz polling = ~10 seconds)
+const SNR_HISTORY_MAX: usize = 100;
+
 #[derive(Properties, PartialEq)]
 pub struct FgsFrontendProps {
     pub device: String,
@@ -41,6 +44,8 @@ pub struct FgsFrontend {
     tracking_settings: Option<TrackingSettings>,
     tracking_settings_pending: bool,
     show_tracking_settings: bool,
+    // SNR history for plotting
+    snr_history: std::collections::VecDeque<f64>,
     // Export state
     export_status: Option<ExportStatus>,
     export_settings_pending: bool,
@@ -126,6 +131,7 @@ impl Component for FgsFrontend {
             tracking_settings: None,
             tracking_settings_pending: false,
             show_tracking_settings: false,
+            snr_history: std::collections::VecDeque::with_capacity(SNR_HISTORY_MAX),
             export_status: None,
             export_settings_pending: false,
             show_export_settings: false,
@@ -284,6 +290,13 @@ impl Component for FgsFrontend {
             }
             Msg::TrackingStatusLoaded(status) => {
                 self.tracking_available = true;
+                // Update SNR history if we have a position
+                if let Some(ref pos) = status.position {
+                    if self.snr_history.len() >= SNR_HISTORY_MAX {
+                        self.snr_history.pop_front();
+                    }
+                    self.snr_history.push_back(pos.snr);
+                }
                 self.tracking_status = Some(status);
                 true
             }
@@ -505,6 +518,7 @@ impl Component for FgsFrontend {
                         status={self.tracking_status.clone()}
                         toggle_pending={self.tracking_toggle_pending}
                         on_toggle_tracking={ctx.link().callback(|_| Msg::ToggleTracking)}
+                        snr_history={self.snr_history.iter().cloned().collect::<Vec<_>>()}
                         show_settings={self.show_tracking_settings}
                         settings={self.tracking_settings.clone()}
                         settings_pending={self.tracking_settings_pending}

@@ -199,18 +199,18 @@ pub fn tracking_settings_view(props: &TrackingSettingsViewProps) -> Html {
                     label="SNR Min"
                     value={settings.snr_min}
                     min={3.0}
-                    max={50.0}
-                    step={1.0}
-                    decimals={1}
+                    max={500.0}
+                    step={5.0}
+                    decimals={0}
                     onchange={make_slider_callback("snr_min", props.on_update.clone())}
                 />
                 <Slider
                     label="SNR Dropout"
                     value={settings.snr_dropout_threshold}
                     min={1.0}
-                    max={20.0}
-                    step={0.5}
-                    decimals={1}
+                    max={200.0}
+                    step={5.0}
+                    decimals={0}
                     onchange={make_slider_callback("snr_dropout_threshold", props.on_update.clone())}
                 />
                 <Slider
@@ -332,6 +332,8 @@ pub struct TrackingViewProps {
     pub status: Option<TrackingStatus>,
     pub toggle_pending: bool,
     pub on_toggle_tracking: Callback<()>,
+    // SNR history for plotting
+    pub snr_history: Vec<f64>,
     // Tracking settings
     pub show_settings: bool,
     pub settings: Option<TrackingSettings>,
@@ -414,6 +416,82 @@ pub fn tracking_view(props: &TrackingViewProps) -> Html {
                 .map(|p| format!("({:.2}, {:.2})", p.x, p.y))
                 .unwrap_or_else(|| "N/A".to_string());
 
+            let snr_text = status
+                .and_then(|s| s.position.as_ref())
+                .map(|p| format!("{:.1}", p.snr))
+                .unwrap_or_else(|| "N/A".to_string());
+
+            // Render SNR sparkline plot
+            let snr_plot = if !props.snr_history.is_empty() {
+                let width = 200.0;
+                let height = 40.0;
+                let padding = 2.0;
+
+                // Find min/max for scaling (with some bounds)
+                let min_snr = props
+                    .snr_history
+                    .iter()
+                    .cloned()
+                    .fold(f64::INFINITY, f64::min)
+                    .max(0.0);
+                let max_snr = props
+                    .snr_history
+                    .iter()
+                    .cloned()
+                    .fold(f64::NEG_INFINITY, f64::max)
+                    .max(min_snr + 1.0);
+                let range = (max_snr - min_snr).max(1.0);
+
+                // Build SVG path
+                let points: Vec<String> = props
+                    .snr_history
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &snr)| {
+                        let x = padding
+                            + (i as f64 / props.snr_history.len().max(1) as f64)
+                                * (width - 2.0 * padding);
+                        let y =
+                            height - padding - ((snr - min_snr) / range) * (height - 2.0 * padding);
+                        format!("{x:.1},{y:.1}")
+                    })
+                    .collect();
+
+                let path_d = if points.len() > 1 {
+                    format!("M {} L {}", points[0], points[1..].join(" L "))
+                } else if points.len() == 1 {
+                    format!("M {} L {}", points[0], points[0])
+                } else {
+                    String::new()
+                };
+
+                html! {
+                    <div class="metadata-item" style="margin-top: 10px;">
+                        <span class="metadata-label">{"SNR History:"}</span>
+                        <svg width={width.to_string()} height={height.to_string()} style="background: #111; border: 1px solid #333;">
+                            // Reference line at SNR=3 (dropout threshold)
+                            if max_snr >= 3.0 && min_snr <= 3.0 {
+                                <line
+                                    x1={padding.to_string()}
+                                    y1={(height - padding - ((3.0 - min_snr) / range) * (height - 2.0 * padding)).to_string()}
+                                    x2={(width - padding).to_string()}
+                                    y2={(height - padding - ((3.0 - min_snr) / range) * (height - 2.0 * padding)).to_string()}
+                                    stroke="#ff0000"
+                                    stroke-width="1"
+                                    stroke-dasharray="3,3"
+                                />
+                            }
+                            <path d={path_d} fill="none" stroke="#00ff00" stroke-width="1.5"/>
+                        </svg>
+                        <div style="font-size: 0.7em; color: #666;">
+                            {format!("Range: {:.1} - {:.1}", min_snr, max_snr)}
+                        </div>
+                    </div>
+                }
+            } else {
+                html! {}
+            };
+
             html! {
                 <>
                     <h2 style="margin-top: 30px;">{"Tracking"}</h2>
@@ -425,6 +503,11 @@ pub fn tracking_view(props: &TrackingViewProps) -> Html {
                         <span class="metadata-label">{"Position:"}</span>
                         <span style="color: #00ff00;">{position_text}</span>
                     </div>
+                    <div class="metadata-item">
+                        <span class="metadata-label">{"SNR:"}</span>
+                        <span style="color: #00ff00;">{snr_text}</span>
+                    </div>
+                    { snr_plot }
                     <div class="metadata-item">
                         <span class="metadata-label">{"Frames:"}</span>
                         <span>{frames_processed.to_string()}</span>
