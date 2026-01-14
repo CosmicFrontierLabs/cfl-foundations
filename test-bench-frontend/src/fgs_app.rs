@@ -1,5 +1,4 @@
-use std::collections::VecDeque;
-
+use test_bench_shared::RingBuffer;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
@@ -18,43 +17,44 @@ pub use test_bench_shared::{
 const HISTORY_MAX: usize = 100;
 
 /// Rolling history buffer for tracking data visualization.
-#[derive(Default, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct TrackingHistory {
-    x: VecDeque<f64>,
-    y: VecDeque<f64>,
-    snr: VecDeque<f64>,
+    x: RingBuffer<f64>,
+    y: RingBuffer<f64>,
+    snr: RingBuffer<f64>,
+}
+
+impl Default for TrackingHistory {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TrackingHistory {
     fn new() -> Self {
         Self {
-            x: VecDeque::with_capacity(HISTORY_MAX),
-            y: VecDeque::with_capacity(HISTORY_MAX),
-            snr: VecDeque::with_capacity(HISTORY_MAX),
+            x: RingBuffer::new(HISTORY_MAX),
+            y: RingBuffer::new(HISTORY_MAX),
+            snr: RingBuffer::new(HISTORY_MAX),
         }
     }
 
     fn push(&mut self, x: f64, y: f64, snr: f64) {
-        if self.x.len() >= HISTORY_MAX {
-            self.x.pop_front();
-            self.y.pop_front();
-            self.snr.pop_front();
-        }
-        self.x.push_back(x);
-        self.y.push_back(y);
-        self.snr.push_back(snr);
+        self.x.push(x);
+        self.y.push(y);
+        self.snr.push(snr);
     }
 
-    pub fn x_slice(&self) -> &VecDeque<f64> {
-        &self.x
+    pub fn x_slice(&self) -> &std::collections::VecDeque<f64> {
+        self.x.as_deque()
     }
 
-    pub fn y_slice(&self) -> &VecDeque<f64> {
-        &self.y
+    pub fn y_slice(&self) -> &std::collections::VecDeque<f64> {
+        self.y.as_deque()
     }
 
-    pub fn snr_slice(&self) -> &VecDeque<f64> {
-        &self.snr
+    pub fn snr_slice(&self) -> &std::collections::VecDeque<f64> {
+        self.snr.as_deque()
     }
 }
 
