@@ -56,7 +56,7 @@ jobs:
     - name: Install Trunk
       uses: jetli/trunk-action@v0.4.0
       with:
-        version: 'latest'
+        version: 'v0.21.4'
 
     - name: Build Calibrate App
       run: trunk build --config Trunk-calibrate.toml
