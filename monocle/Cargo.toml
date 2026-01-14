@@ -16,7 +16,7 @@ ndarray = "0.16"
 
 # Internal dependencies
 shared = { path = "../shared" }
-nalgebra = "0.34.1"
+nalgebra = "0.32"
 
 [dev-dependencies]
 env_logger = "0.11"

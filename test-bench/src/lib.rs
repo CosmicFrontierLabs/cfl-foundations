@@ -4,6 +4,7 @@ pub mod calibration_overlay;
 pub mod camera_init;
 pub mod camera_server;
 pub mod display_patterns;
+pub mod fsm_calibration;
 
 #[cfg(feature = "sdl2")]
 pub mod calibrate;

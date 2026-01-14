@@ -6,6 +6,7 @@
 pub mod bilinear;
 pub mod icp;
 pub mod lookup_table;
+pub mod matrix2;
 pub mod min_max_scan;
 pub mod misc;
 pub mod motion;
@@ -18,6 +19,10 @@ pub mod stats;
 pub use bilinear::{BilinearInterpolator, InterpolationError};
 pub use icp::{iterative_closest_point, ICPResult};
 pub use lookup_table::{LookupError, LookupTable};
+pub use matrix2::{
+    angle_between_vectors, invert_matrix, matrix_from_columns_checked, rotation_matrix,
+    scale_matrix, DegenerateVectorsError, SingularMatrixError,
+};
 pub use min_max_scan::{MinMaxError, MinMaxScan};
 pub use misc::{dec_dms_to_deg, interp, normalize, ra_hms_to_deg, InterpError};
 pub use motion::{MotionModel, XAxisSpinner, XYWobble};
