@@ -42,6 +42,25 @@ cargo test
 
 IMPORTANT: Always run `cargo fmt` before committing any code changes!
 
+## Git Hooks Setup
+This repo uses git hooks stored in `.githooks/` directory. On session startup, check if hooks are configured:
+
+```bash
+# Check if hooks are configured correctly
+git config core.hooksPath
+```
+
+If the output is NOT `.githooks`, run the install script:
+```bash
+scripts/install-hooks.sh
+```
+
+**Hooks in `.githooks/`:**
+- **pre-commit**: Runs cargo fmt check, cargo check, clippy, and doctest check before each commit
+- **commit-msg**: Rejects commits containing AI attribution (Claude, Anthropic, Co-Authored-By, etc.)
+
+The hooks are versioned in the repo, so changes take effect immediately without reinstalling. The commit-msg hook reminds users: "You are responsible for code you commit. You prompted it, you reviewed it, you own it."
+
 ## Code Editing Guidelines
 - **NEVER use sed, awk, or other command-line tools to edit code** - Always use the Edit or MultiEdit tools directly
 - Take time to properly edit each file individually rather than using shortcuts

@@ -1,91 +1,26 @@
 #!/bin/bash
-# Install git pre-commit hooks for formatting and linting
+# Install git hooks for this repository
 #
-# This script installs pre-commit hooks that match the CI pipeline checks
-# to catch issues before pushing to the repository.
+# This script configures git to use hooks from .githooks/ directory.
+# Hooks are versioned in the repo so changes take effect immediately.
 
 set -e
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-HOOKS_DIR="$REPO_ROOT/.git/hooks"
+GITHOOKS_DIR="$REPO_ROOT/.githooks"
 
-echo "Installing pre-commit hooks..."
+echo "Configuring git to use .githooks/ directory..."
 
-# Create pre-commit hook
-cat > "$HOOKS_DIR/pre-commit" << 'EOF'
-#!/bin/bash
-# Pre-commit hook to run cargo fmt, check, and clippy
-#
-# This matches the CI checks in .github/workflows/
+# Set git to use .githooks as the hooks directory
+git config core.hooksPath .githooks
 
-set -e
-
-echo "Checking if code is properly formatted..."
-
-# Check if any Rust files are staged
-if git diff --cached --name-only | grep -q '\.rs$'; then
-    # Run cargo fmt check (show output on failure, matching CI)
-    fmt_output=$(cargo fmt --all -- --check 2>&1)
-    if [ $? -ne 0 ]; then
-        echo "❌ Code is not properly formatted!"
-        echo "$fmt_output"
-        echo ""
-        echo "Please run 'cargo fmt --all' before committing."
-        exit 1
-    fi
-    echo "✅ Code formatting is correct."
-
-    # Run cargo check (matching CI)
-    echo "Running cargo check..."
-    if ! cargo check --locked --all-targets; then
-        echo ""
-        echo "========================================"
-        echo "❌ CARGO CHECK FAILED!"
-        echo "========================================"
-        echo ""
-        exit 1
-    fi
-    echo "✅ Cargo check passed."
-
-    # Run cargo clippy with warnings as errors (show output on failure, matching CI)
-    echo "Running clippy checks..."
-    if ! cargo clippy -- -D warnings; then
-        echo ""
-        echo "========================================"
-        echo "❌ CLIPPY FOUND ISSUES!"
-        echo "========================================"
-        echo ""
-        exit 1
-    fi
-    echo "✅ Clippy checks passed."
-
-    # Check that there are no doctests (we use proper unit tests instead)
-    echo "Checking for doctests (should be 0)..."
-    doctest_output=$(cargo test --doc 2>&1)
-    # Count lines that show non-zero test runs like "running 5 tests"
-    doctest_count=$(echo "$doctest_output" | grep -E '^running [1-9][0-9]* tests?$' | wc -l)
-    if [ "$doctest_count" -gt 0 ]; then
-        echo "❌ Found doctests! We don't use doctests in this codebase."
-        echo "$doctest_output" | grep -E '^running [1-9][0-9]* tests?$'
-        echo ""
-        echo "Please convert doctests to proper unit tests in #[cfg(test)] modules."
-        exit 1
-    fi
-    echo "✅ No doctests found."
-fi
-
-exit 0
-EOF
-
-# Make the hook executable
-chmod +x "$HOOKS_DIR/pre-commit"
-
-echo "✅ Pre-commit hook installed successfully!"
+echo "✅ Git hooks configured successfully!"
 echo ""
-echo "The pre-commit hook will:"
-echo "  - Check code formatting with 'cargo fmt'"
-echo "  - Run 'cargo check --locked --all-targets'"
-echo "  - Run clippy linting with warnings as errors"
-echo "  - Verify no doctests exist (use unit tests instead)"
+echo "Hooks in .githooks/ will now run automatically:"
+echo "  • pre-commit: Format check, cargo check, clippy, doctest check"
+echo "  • commit-msg: Reject commits with AI attribution"
 echo ""
-echo "To bypass the hook (not recommended), use: git commit --no-verify"
+echo "Hooks are versioned in .githooks/ - changes take effect immediately."
+echo ""
+echo "Remember: You are responsible for code you commit."
+echo "You prompted it, you reviewed it, you own it."
