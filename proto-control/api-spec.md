@@ -1,11 +1,76 @@
-# Proto-Control API Specification
+# Proto-Control
 
-**External Integrator Interface Documentation**
+Line-of-Sight Control Interface for the meter-sim spacecraft pointing control system.
 
-# Proto-Control: External Integrator Interface Specification
+## Overview
 
-Protocol definitions and data structures for external state propagation
-integrators to interface with the meter-sim spacecraft simulation system.
+This crate defines the protocol and data structures for the line-of-sight (LOS)
+control algorithm to interface with the spacecraft simulation system. The
+`StateEstimator` trait provides the interface for state estimation and control logic.
+
+## Architecture
+
+### Control Loop Timing
+
+- **`GyroTick`** - 500Hz tick counter synchronized with gyroscope measurements
+- **`Timestamp`** - Microseconds (u64) for sensor timing precision
+
+### Sensor Inputs
+
+| Struct | Description | Rate |
+|--------|-------------|------|
+| `GyroReadout` | 3-axis integrated angles (radians) from Exail gyroscope | Every gyro tick (500Hz) |
+| `FgsReadout` | Fine Guidance System 2D angular position with variance (arcseconds) | Lower rate (camera-based) |
+| `FsmReadout` | Fast Steering Mirror voltage feedback (vx/vy volts) | Every gyro tick |
+
+### Control Output
+
+- **`FsmCommand`** - Voltage commands to drive the Fast Steering Mirror (vx/vy volts)
+
+### State Container
+
+- **`EstimatorState`** - Packages one complete control cycle: gyro tick, all sensor
+  readings, and the computed FSM command output
+
+## The StateEstimator Trait
+
+This is the interface for the LOS control algorithm:
+
+```text
+f: (state_history, gyro, fsm_readout, fgs_readout?) → EstimatorState
+```
+
+Key design points:
+
+- Receives FIFO history of previous outputs (oldest → newest)
+- FGS readout is optional (camera rate slower than 500Hz control loop)
+- Caller handles FSM command execution timing and LOS updates to payload computer
+
+## System Context
+
+The system implements classic sensor fusion for spacecraft fine pointing:
+
+1. **High-rate gyro measurement** - Exail gyroscope provides integrated angles at 500Hz
+2. **Periodic FGS corrections** - Camera-based Fine Guidance System provides absolute reference
+3. **FSM actuation** - Fast Steering Mirror commands for fine pointing stabilization
+
+```text
++-------------+     +-----------------+     +-------------+
+| Exail Gyro  |---->|                 |---->|     FSM     |
+|   (500Hz)   |     |  StateEstimator |     |  (actuator) |
++-------------+     |                 |     +-------------+
+                    |  (LOS control   |
++-------------+     |   algorithm)    |     +-------------+
+|     FGS     |---->|                 |---->|   Payload   |
+|  (camera)   |     +-----------------+     |  Computer   |
++-------------+           ^                 | (LOS update)|
+                          |                 +-------------+
+                    +-----+-----+
+                    |   state   |
+                    |  history  |
+                    +-----------+
+```
+
 
 \newpage
 
@@ -15,13 +80,15 @@ integrators to interface with the meter-sim spacecraft simulation system.
 
 Timestamp in microseconds since the initialization of the control loop.
 
-Maximum representable time: ~71.58 minutes (2^32 microseconds)
+Maximum representable time: ~584,942 years. If your mission exceeds this
+duration, congratulations on the interstellar voyage and/or achieving
+functional immortality. Please file a bug report from Alpha Centauri.
 
 ### Definition
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Timestamp(pub u32);
+pub struct Timestamp(pub u64);
 ```
 
 ### Methods
@@ -31,7 +98,7 @@ pub struct Timestamp(pub u32);
 Create timestamp from microseconds.
 
 ```rust
-pub fn from_micros(micros: u32) -> Self
+pub fn from_micros(micros: u64) -> Self
 ```
 
 #### `as_micros`
@@ -39,18 +106,18 @@ pub fn from_micros(micros: u32) -> Self
 Get timestamp as microseconds.
 
 ```rust
-pub fn as_micros(&self) -> u32
+pub fn as_micros(&self) -> u64
 ```
 
 \newpage
 
-## RtiTick
+## GyroTick
 
 *Struct*
 
-RTI (Real-Time Interrupt) tick counter at 500Hz.
+Gyro tick counter at 500Hz.
 
-Represents discrete timing ticks from the control system clock.
+Represents discrete timing ticks synchronized with gyroscope measurements.
 Maximum representable time: ~99.42 days (2^32 ticks at 500Hz)
 
 # Behavior
@@ -63,7 +130,7 @@ Maximum representable time: ~99.42 days (2^32 ticks at 500Hz)
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct RtiTick(pub u32);
+pub struct GyroTick(pub u32);
 ```
 
 \newpage
@@ -72,33 +139,31 @@ pub struct RtiTick(pub u32);
 
 *Struct*
 
-Gyroscope readout representing angular change on three axes.
+Gyroscope readout representing integrated angle on three axes.
 
-All angular values are in arcseconds, representing the delta angle
-since the previous measurement (not absolute position or rates).
+All angular values are in radians, representing the integrated angle
+as reported by the Exail gyroscope hardware.
 
 # Timing
 
 The `timestamp` field represents the time difference between the current
 XYZ angle measurement and the previous measurement, as reported by the
-Exail gyroscope hardware.
-
-**Note:** The alignment of this timestamp with respect to the actual time
-of the angle measurements is currently TBD (to be determined).
+Exail gyroscope hardware. The timestamp is aligned to the first moment
+the measurement was computed by the gyro.
 
 ### Definition
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GyroReadout {
-    /// X-axis delta angle in arcseconds
+    /// X-axis angle in radians
     pub x: f64,
-    /// Y-axis delta angle in arcseconds
+    /// Y-axis angle in radians
     pub y: f64,
-    /// Z-axis delta angle in arcseconds
+    /// Z-axis angle in radians
     pub z: f64,
-    /// Timestamp representing time difference from previous measurement
-    /// as reported by Exail gyro (alignment TBD)
+    /// Timestamp representing time difference from previous measurement,
+    /// aligned to the first moment the measurement was computed by the gyro
     pub timestamp: Timestamp,
 }
 ```
@@ -114,6 +179,10 @@ Fine Guidance System 2D angular estimate with uncertainty.
 Represents pointing direction in two angular dimensions with
 variance estimates for each axis.
 
+# Timing
+
+The `timestamp` field corresponds to the center of the image exposure.
+
 ### Definition
 
 ```rust
@@ -127,7 +196,7 @@ pub struct FgsReadout {
     pub x_variance: f64,
     /// Variance of y-axis measurement in arcseconds²
     pub y_variance: f64,
-    /// Timestamp of measurement
+    /// Timestamp corresponding to center of image exposure
     pub timestamp: Timestamp,
 }
 ```
@@ -198,8 +267,8 @@ Represents the complete state used by the estimation and control system.
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EstimatorState {
-    /// RTI tick for this state
-    pub rti_tick: RtiTick,
+    /// Gyro tick for this state
+    pub gyro_tick: GyroTick,
     /// Gyroscope readout
     pub gyro: GyroReadout,
     /// FSM voltage readout
@@ -217,80 +286,71 @@ pub struct EstimatorState {
 
 *Trait*
 
-Trait for external state estimator implementation.
+Trait for line-of-sight state estimator implementation.
 
-The external party implements this trait to provide state estimation
-and control logic. The estimator processes sensor measurements and
-command history to produce the next estimator state.
+Implement this trait to provide state estimation and control logic
+for the LOS control algorithm. The estimator processes sensor measurements
+and state history to compute the next FSM command.
 
 # Function Signature (Conceptual)
 
 ```text
-f: (Vec<EstimatorState>, GyroReadout, FsmReadout, Option<FgsReadout>) → EstimatorState
+f: (&[EstimatorState], &GyroReadout, &FsmReadout, Option<&FgsReadout>) → FsmCommand
 ```
 
 # State History
 
 The `state_history` parameter contains previous `EstimatorState` values
-that were returned by prior calls to this `estimate()` function. This vector
-provides the estimator with access to its own historical outputs for filtering,
+assembled by the caller from prior calls. This vector provides the estimator
+with access to historical sensor readings and commands for filtering,
 prediction, and state estimation purposes.
 
 **Ordering Requirements:**
+
 - Elements are ordered chronologically: `state_history[0]` is the oldest state
 - `state_history[n-1]` is the most recent state (where n = length)
 - On the first call, `state_history` will be empty (`&[]`)
-- Each subsequent call appends the previous return value to the end of the vector
 
 **Length Constraints:**
+
 - The vector will retain a fixed maximum number of previous states
 - When the maximum length is reached, oldest states are removed as new ones are added
 - The exact maximum length is implementation-defined (FIFO buffer behavior)
 - The estimator should not assume any specific history length
 
-**Example Timeline:**
-```text
-Call 1: state_history = []           → returns state_1
-Call 2: state_history = [state_1]    → returns state_2
-Call 3: state_history = [state_1, state_2] → returns state_3
-...
-Call N: state_history = [state_k, ..., state_N-1] → returns state_N
-        (length capped at maximum, oldest states dropped)
-```
-
 # Parameters
 
-- `state_history`: Previous estimator states returned by this function (ordered oldest to newest)
-- `gyro`: New gyroscope delta angle readout since previous measurement
+- `state_history`: Previous estimator states assembled by caller (ordered oldest to newest)
+- `gyro_readout`: Current gyroscope angle readout
 - `fsm_readout`: Current FSM voltage readout
 - `fgs_readout`: Optional fine guidance system readout. None if FGS
   data is not available for this cycle.
 
 # Returns
 
-Next estimator state containing updated gyro, FSM readout, and FSM command.
+The computed FSM voltage command for this cycle.
 
 # Caller Responsibilities
 
-Upon return of the next `EstimatorState`, it is the caller's responsibility to:
+Upon return of the `FsmCommand`, it is the caller's responsibility to:
+
+- Assemble an `EstimatorState` from the passed sensor readings and returned command
+- Append the new state to the history for subsequent calls
 - Perform the `FsmCommand` adjustment to the FSM hardware at the appropriate time
 - Push a Line-of-Sight (LOS) update to the payload computer at the required interval
-
-The estimator only computes the desired FSM command; execution timing and
-LOS update delivery are handled externally by the calling system.
 
 ### Definition
 
 ```rust
 pub trait StateEstimator {
-    /// Estimate next state from sensor measurements and history.
+    /// Compute FSM command from sensor measurements and history.
     ///
     /// # Parameters
     ///
-    /// - `state_history`: Previous estimator states returned by this function,
+    /// - `state_history`: Previous estimator states assembled by caller,
     ///   ordered oldest to newest (index 0 = oldest). Empty on first call.
     ///   See trait-level documentation for detailed ordering requirements.
-    /// - `gyro_readout`: New gyroscope delta angle readout since previous measurement
+    /// - `gyro_readout`: Current gyroscope angle readout
     /// - `fsm_readout`: Current FSM voltage readout
     /// - `fgs_readout`: Optional fine guidance system update. None if FGS
     ///   update is not available for this cycle. When present, represents
@@ -298,15 +358,14 @@ pub trait StateEstimator {
     ///
     /// # Returns
     ///
-    /// New estimator state containing the input measurements and computed
-    /// FSM voltage command for this cycle.
+    /// The computed FSM voltage command for this cycle.
     fn estimate(
         &self,
         state_history: &[EstimatorState],
         gyro_readout: &GyroReadout,
         fsm_readout: &FsmReadout,
         fgs_readout: Option<&FgsReadout>,
-    ) -> EstimatorState;
+    ) -> FsmCommand;
 }
 ```
 

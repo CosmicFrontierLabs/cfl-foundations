@@ -13,14 +13,21 @@ def extract_docs_and_code(rust_file):
     with open(rust_file, 'r') as f:
         lines = f.readlines()
 
-    # Extract module-level docs
-    module_doc = []
-    i = 0
-    while i < len(lines) and lines[i].startswith('//!'):
-        module_doc.append(lines[i][3:].strip())
-        i += 1
-
-    module_doc_text = '\n'.join(module_doc)
+    # Check for README.md (used via #![doc = include_str!("../README.md")])
+    readme_path = rust_file.parent.parent / 'README.md'
+    from_readme = False
+    if readme_path.exists():
+        with open(readme_path, 'r') as f:
+            module_doc_text = f.read()
+        from_readme = True
+    else:
+        # Fallback: extract module-level docs from //! comments
+        module_doc = []
+        i = 0
+        while i < len(lines) and lines[i].startswith('//!'):
+            module_doc.append(lines[i][3:].strip())
+            i += 1
+        module_doc_text = '\n'.join(module_doc)
 
     # Parse types and their docs
     items = []
@@ -161,21 +168,24 @@ def extract_docs_and_code(rust_file):
         if methods:
             impls[type_name] = methods
 
-    return module_doc_text, items, impls
+    return module_doc_text, items, impls, from_readme
 
 
-def generate_markdown(module_doc, items, impls):
+def generate_markdown(module_doc, items, impls, from_readme=False):
     """Generate markdown documentation."""
     md = []
 
-    # Title
-    md.append("# Proto-Control API Specification\n\n")
-    md.append("**External Integrator Interface Documentation**\n\n")
-
-    # Module-level documentation
-    if module_doc:
+    if from_readme:
+        # README already has title and overview
         md.append(module_doc)
         md.append("\n\n")
+    else:
+        # Add title for legacy //! doc comments
+        md.append("# Proto-Control API Specification\n\n")
+        md.append("**External Integrator Interface Documentation**\n\n")
+        if module_doc:
+            md.append(module_doc)
+            md.append("\n\n")
 
     # Each type
     for item in items:
@@ -216,12 +226,14 @@ def main():
     output_pdf = script_dir / 'api-spec.pdf'
 
     print(f"Extracting documentation from {rust_file}...")
-    module_doc, items, impls = extract_docs_and_code(rust_file)
+    module_doc, items, impls, from_readme = extract_docs_and_code(rust_file)
 
     print(f"Found {len(items)} documented types")
+    if from_readme:
+        print("Using README.md for module documentation")
 
     print(f"Generating markdown to {output_md}...")
-    markdown = generate_markdown(module_doc, items, impls)
+    markdown = generate_markdown(module_doc, items, impls, from_readme=from_readme)
 
     with open(output_md, 'w') as f:
         f.write(markdown)
