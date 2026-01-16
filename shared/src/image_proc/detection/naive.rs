@@ -122,6 +122,16 @@ impl StellarSource for StarDetection {
     }
 }
 
+impl Locatable2d for Box<dyn StellarSource> {
+    fn x(&self) -> f64 {
+        self.get_centroid().0
+    }
+
+    fn y(&self) -> f64 {
+        self.get_centroid().1
+    }
+}
+
 /// Debug function to validate centroid calculation arguments
 #[inline]
 fn validate_centroid_args(
