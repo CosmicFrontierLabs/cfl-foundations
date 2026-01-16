@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-shared = { path = "../shared" }
+# Internal dependencies - only needs core functionality
+shared = { path = "../shared", default-features = false }
 simulator = { path = "../simulator" }
 monocle = { path = "../monocle" }
 starfield = "0.2.3"

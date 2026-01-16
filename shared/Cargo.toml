@@ -6,6 +6,16 @@ authors = ["CosmicFrontierLabs"]
 description = "Shared components and utilities for meter-sim modules"
 license = "MIT OR Apache-2.0"
 
+[features]
+default = ["full"]
+full = ["zmq-support", "tracking", "pattern-client", "frame-writer", "config-storage", "system-info"]
+zmq-support = ["dep:zmq"]
+tracking = []
+pattern-client = ["zmq-support"]
+frame-writer = ["dep:fitsio"]
+config-storage = []
+system-info = []
+
 [dependencies]
 # Core math and arrays
 nalgebra = "0.32"
@@ -16,7 +26,7 @@ float-cmp = "0.9"
 
 # Image processing
 image = "0.25"
-fitsio = { version = "0.21", features = ["array"] }
+fitsio = { version = "0.21", features = ["array"], optional = true }
 starfield = "0.2.3"
 
 # Scientific computing
@@ -49,7 +59,7 @@ serde_json = "1.0.145"
 crossbeam-channel = "0.5.15"
 anyhow = "1.0.100"
 tracing = "0.1.41"
-zmq = "0.10.0"
+zmq = { version = "0.10.0", optional = true }
 ureq = { version = "3.1.4", features = ["json"] }
 
 [dev-dependencies]

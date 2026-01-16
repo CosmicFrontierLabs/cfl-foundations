@@ -14,8 +14,8 @@ log = "0.4"
 # Array processing
 ndarray = "0.16"
 
-# Internal dependencies
-shared = { path = "../shared" }
+# Internal dependencies - only needs core image processing and algorithms
+shared = { path = "../shared", default-features = false }
 nalgebra = "0.32"
 
 [dev-dependencies]
