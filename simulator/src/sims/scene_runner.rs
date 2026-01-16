@@ -15,7 +15,7 @@ use core::f64;
 use image::DynamicImage;
 use log::{debug, info, warn};
 use shared::algo::{
-    icp::{icp_match_objects, Locatable2d},
+    icp::{icp_match_indices, Locatable2d},
     MinMaxScan,
 };
 use shared::frame_writer::{FrameFormat, FrameWriterHandle};
@@ -23,11 +23,10 @@ use shared::image_proc::airy::PixelScaledAiryDisk;
 use shared::image_proc::detection::{detect_stars_unified, StarFinder};
 use shared::image_proc::histogram_stretch::sigma_stretch;
 use shared::image_proc::image::array2_to_gray_image;
-use shared::image_proc::{
-    draw_stars_with_x_markers, stretch_histogram, u16_to_u8_scaled, StarDetection,
-};
+use shared::image_proc::{draw_stars_with_x_markers, stretch_histogram, u16_to_u8_scaled};
 use shared::viz::histogram::{Histogram, HistogramConfig, Scale};
 use starfield::catalogs::{StarCatalog, StarData};
+use starfield::image::starfinders::StellarSource;
 use starfield::Equatorial;
 use std::collections::HashMap;
 use std::fs::File;
@@ -327,37 +326,17 @@ pub fn run_experiment<T: StarCatalog>(
                     airy_disk_pixels,
                     satellite.telescope.corrected_to,
                 );
-                let detected_stars = match detect_stars_unified(
+                let detected_stars: Vec<Box<dyn StellarSource>> = match detect_stars_unified(
                     render_result.quantized_image.view(),
                     params.common_args.star_finder,
                     &scaled_airy_disk,
                     background_rms,
                     detection_sigma,
                 ) {
-                    // See TODO.md: Simulator - Scene Processing
-                    Ok(stars) => stars
-                        .into_iter()
-                        .map(|star| {
-                            // Convert boxed StellarSource to StarDetection-like structure
-                            {
-                                let (x, y) = star.get_centroid();
-                                shared::image_proc::StarDetection {
-                                    id: 0,
-                                    x,
-                                    y,
-                                    flux: star.flux(),
-                                    m_xx: 1.0,
-                                    m_yy: 1.0,
-                                    m_xy: 0.0,
-                                    aspect_ratio: 1.0,
-                                    diameter: 2.0,
-                                }
-                            }
-                        })
-                        .collect(),
+                    Ok(stars) => stars,
                     Err(e) => {
                         log::warn!("Star detection failed: {e}");
-                        vec![] // Return empty vector instead of early return
+                        vec![]
                     }
                 };
 
@@ -376,18 +355,26 @@ pub fn run_experiment<T: StarCatalog>(
                 // Now we take our detected stars and match them against the sources
                 // Get projected stars from scene instead of render_result
                 let projected_stars: Vec<StarInFrame> = scene.stars.clone();
-                let result = match icp_match_objects::<StarDetection, StarInFrame>(
+                let result = match icp_match_indices(
                     &detected_stars,
                     &projected_stars,
                     params.common_args.icp_max_iterations,
                     params.common_args.icp_convergence_threshold,
                 ) {
-                    Ok((matches, icp_result)) => {
+                    Ok((match_indices, icp_result)) => {
                         // Debug statistics output
-                        debug_stats(&render_result, &matches).unwrap();
+                        debug_stats(
+                            &render_result,
+                            &detected_stars,
+                            &projected_stars,
+                            &match_indices,
+                        )
+                        .unwrap();
 
-                        let magnitudes: Vec<f64> =
-                            matches.iter().map(|(_, s)| s.star.magnitude).collect();
+                        let magnitudes: Vec<f64> = match_indices
+                            .iter()
+                            .map(|(_, tgt_idx)| projected_stars[*tgt_idx].star.magnitude)
+                            .collect();
 
                         let mag_scan = MinMaxScan::new(&magnitudes);
                         let (brightest_mag, faintest_mag) =
@@ -400,7 +387,7 @@ pub fn run_experiment<T: StarCatalog>(
                         );
 
                         debug!("ICP match results:");
-                        debug!("\tMatched stars: {}", matches.len());
+                        debug!("\tMatched stars: {}", match_indices.len());
                         debug!("\tConverged in {} iterations", icp_result.iterations);
                         debug!("\tTranslation: {:?}", icp_result.translation);
                         debug!("\tRotation: {:?}", icp_result.rotation);
@@ -422,13 +409,19 @@ pub fn run_experiment<T: StarCatalog>(
 
                         // Find the brightest star (lowest magnitude) and calculate its pixel error
                         let (brightest_star_pixel_error, brightest_star_dx, brightest_star_dy) =
-                            if !matches.is_empty() {
-                                matches
+                            if !match_indices.is_empty() {
+                                match_indices
                                     .iter()
-                                    .min_by(|(_, a), (_, b)| {
-                                        a.star.magnitude.partial_cmp(&b.star.magnitude).unwrap()
+                                    .min_by(|(_, a_idx), (_, b_idx)| {
+                                        projected_stars[*a_idx]
+                                            .star
+                                            .magnitude
+                                            .partial_cmp(&projected_stars[*b_idx].star.magnitude)
+                                            .unwrap()
                                     })
-                                    .map(|(detected, catalog)| {
+                                    .map(|(src_idx, tgt_idx)| {
+                                        let detected = &detected_stars[*src_idx];
+                                        let catalog = &projected_stars[*tgt_idx];
                                         let dx = detected.x() - catalog.x();
                                         let dy = detected.y() - catalog.y();
                                         let error = (dx * dx + dy * dy).sqrt();
@@ -526,7 +519,7 @@ pub fn run_experiment<T: StarCatalog>(
 pub fn save_image_outputs(
     render_result: &RenderingResult,
     sensor: &SensorConfig,
-    detected_stars: &[StarDetection],
+    detected_stars: &[Box<dyn StellarSource>],
     output_path: &Path,
     prefix: &str,
     frame_writer: &FrameWriterHandle,
@@ -572,7 +565,8 @@ pub fn save_image_outputs(
     let mut label_map = HashMap::new();
 
     detected_stars.iter().for_each(|detect| {
-        label_map.insert(format!("{:.1}", detect.flux), (detect.y, detect.x, 10.0));
+        let (x, y) = detect.get_centroid();
+        label_map.insert(format!("{:.1}", detect.flux()), (y, x, 10.0));
     });
 
     let x_markers_image = draw_stars_with_x_markers(
@@ -626,7 +620,9 @@ pub fn save_image_outputs(
 /// Display debug statistics including electron counts, noise, match distances and histogram
 pub fn debug_stats(
     render_result: &RenderingResult,
-    matches: &[(StarDetection, StarInFrame)],
+    detected_stars: &[Box<dyn StellarSource>],
+    projected_stars: &[StarInFrame],
+    match_indices: &[(usize, usize)],
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Guard expensive debug calls for performance
     if !log::log_enabled!(log::Level::Debug) {
@@ -644,19 +640,23 @@ pub fn debug_stats(
     );
 
     // Print ICP match distances
-    for (dete, star) in matches.iter() {
-        let distance = ((dete.x() - star.x()).powf(2.0) + (dete.y() - star.y()).powf(2.0)).sqrt();
+    for (src_idx, tgt_idx) in match_indices.iter() {
+        let dete = &detected_stars[*src_idx];
+        let star = &projected_stars[*tgt_idx];
+        let (dete_x, dete_y) = dete.get_centroid();
+        let distance = ((dete_x - star.x()).powf(2.0) + (dete_y - star.y()).powf(2.0)).sqrt();
         debug!("Matched star with distance {distance:.2}");
         debug!(
             "\tDetected X/Y: ({:.2}, {:.2}), Source X/Y: ({:.2}, {:.2})",
-            dete.x(),
-            dete.y(),
+            dete_x,
+            dete_y,
             star.x(),
             star.y()
         );
         debug!(
             "\tDetected flux: {:.2}, Source magnitude: {:.2}",
-            dete.flux, star.star.magnitude
+            dete.flux(),
+            star.star.magnitude
         );
     }
     // Get statistics for binning (gross)

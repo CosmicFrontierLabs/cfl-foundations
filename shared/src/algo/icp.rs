@@ -483,6 +483,67 @@ where
     Ok((matched_objects, result))
 }
 
+/// Matches objects from source to target using ICP, returning indices instead of cloned objects.
+///
+/// This is useful when working with types that don't implement Clone, such as `Box<dyn Trait>`.
+/// The returned indices can be used to access the original slices.
+///
+/// # Arguments
+/// * `source` - Slice of source objects implementing Locatable2d
+/// * `target` - Slice of target objects implementing Locatable2d
+/// * `max_iterations` - Maximum number of ICP iterations
+/// * `convergence_threshold` - Minimum mean squared error change to continue iterating
+///
+/// # Returns
+/// * Tuple of (matched_indices, ICPResult) where matched_indices is Vec<(source_idx, target_idx)>
+///
+/// # Errors
+/// * `ICPError::ArgumentError` - If either source or target slice is empty, or if convergence_threshold is not positive.
+pub fn icp_match_indices<R1, R2>(
+    source: &[R1],
+    target: &[R2],
+    max_iterations: usize,
+    convergence_threshold: f64,
+) -> Result<(Vec<(usize, usize)>, ICPResult), ICPError>
+where
+    R1: Locatable2d,
+    R2: Locatable2d,
+{
+    if source.is_empty() {
+        return Err(ICPError::ArgumentError("source slice is empty".to_string()));
+    }
+
+    if target.is_empty() {
+        return Err(ICPError::ArgumentError("target slice is empty".to_string()));
+    }
+
+    if convergence_threshold <= 0.0 {
+        return Err(ICPError::ArgumentError(format!(
+            "convergence_threshold must be positive, got {convergence_threshold}"
+        )));
+    }
+
+    // Convert source Locatable2d objects to ndarray::Array2<f64>
+    let source_points_vec: Vec<f64> = source.iter().flat_map(|p| [p.x(), p.y()]).collect();
+    let source_points = Array2::from_shape_vec((source.len(), 2), source_points_vec)
+        .expect("Source points vector should have correct length for Array2 conversion");
+
+    // Convert target Locatable2d objects to ndarray::Array2<f64>
+    let target_points_vec: Vec<f64> = target.iter().flat_map(|p| [p.x(), p.y()]).collect();
+    let target_points = Array2::from_shape_vec((target.len(), 2), target_points_vec)
+        .expect("Target points vector should have correct length for Array2 conversion");
+
+    // Run the ICP algorithm
+    let result = iterative_closest_point(
+        &source_points,
+        &target_points,
+        max_iterations,
+        convergence_threshold,
+    );
+
+    Ok((result.matches.clone(), result))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
