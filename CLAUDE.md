@@ -101,9 +101,61 @@ The hooks are versioned in the repo, so changes take effect immediately without 
 - Prefer shorter, more focused commits over large monolithic ones
 - Reference issue numbers when applicable
 - Always check `git status` before committing to ensure no unwanted files are staged
-- **When pushing a new branch to remote, ALWAYS provide both the PR creation URL and diff URL** - Makes it easy to review changes immediately
-- **When sharing links to changes, prefer PR URLs over commit URLs** - PRs show full context, discussion, and CI status
-- **After pushing work to a branch, ALWAYS share the GitHub PR link and ask for review** - Makes it easy for user to review and approve changes
+- **After pushing work to a branch, share the PR link directly** - Don't share diff/compare links, just the PR URL
+
+## ARM64 Builds and Deployment
+
+### Self-Hosted Runner
+A GitHub Actions runner on `cfl-test-bench` builds ARM64 binaries natively. The workflow runs on:
+- Push to main
+- PRs targeting main
+- Manual trigger via `workflow_dispatch`
+
+### Trigger ARM64 Build Manually
+```bash
+# Trigger on any branch
+gh workflow run arm64-build.yml --ref <branch-name>
+
+# Watch the build progress
+gh run list --workflow=arm64-build.yml --limit 3
+gh run watch <run-id>
+```
+
+### Download Built Artifacts
+```bash
+# List artifacts from a run
+gh run view <run-id> --json artifacts
+
+# Download ARM64 binaries (retained 7 days)
+gh run download <run-id> -n arm64-binaries
+```
+
+### Remote Build Scripts
+For building directly on target ARM devices:
+```bash
+# Build on cfl-test-bench (ARM64 build server)
+./scripts/build-remote.sh --package test-bench --test-bench --binary fgs_server
+
+# Build on test-bench-pi (Raspberry Pi)
+./scripts/build-remote.sh --package test-bench --test-bench-pi --binary calibrate_serve --features sdl2
+
+# Build on Orin Nano (auto-enables playerone feature)
+./scripts/build-remote.sh --package test-bench --orin --binary fgs_server
+
+# Build on Neutralino (auto-enables nsv455 feature)
+./scripts/build-remote.sh --package test-bench --neut --binary fgs_server
+```
+
+### Deploy Scripts
+```bash
+# Deploy calibrate_serve to test-bench-pi
+./scripts/deploy-calibrate-pi.sh           # Update only
+./scripts/deploy-calibrate-pi.sh --setup   # Full setup with systemd service
+
+# Deploy fgs_server to Orin or Neutralino
+./scripts/deploy-fgs-orin.sh
+./scripts/deploy-fgs-neut.sh
+```
 
 ## Acronyms
 - HIL: Hardware In the Loop - Testing real hardware components with simulated environments
