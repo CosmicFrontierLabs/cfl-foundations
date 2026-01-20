@@ -131,16 +131,19 @@ gh run download <run-id> -n arm64-binaries
 ```
 
 ### Remote Build Scripts
-For building directly on target ARM devices:
+Build on cfl-test-bench (fast ARM64 server) and deploy binaries to target devices:
 ```bash
-# Build on cfl-test-bench (ARM64 build server)
-./scripts/build-remote.sh --package test-bench --test-bench --binary fgs_server
+# Build and run on cfl-test-bench itself
+./scripts/build-remote.sh --package test-bench --binary calibrate_serve --test-bench --features sdl2
 
-# Build on Orin Nano (auto-enables playerone feature)
-./scripts/build-remote.sh --package test-bench --orin --binary fgs_server
+# Build on cfl-test-bench, deploy to Neutralino (orin-005)
+./scripts/build-remote.sh --package test-bench --binary fgs_server --neut
 
-# Build on Neutralino (auto-enables nsv455 feature)
-./scripts/build-remote.sh --package test-bench --neut --binary fgs_server
+# Build on cfl-test-bench, deploy to NSV (orin-416)
+./scripts/build-remote.sh --package test-bench --binary fgs_server --nsv
+
+# Build and deploy, then run immediately
+./scripts/build-remote.sh --package test-bench --binary fgs_server --neut --run './fgs_server'
 ```
 
 ### Deploy Scripts
