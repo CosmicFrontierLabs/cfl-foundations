@@ -46,6 +46,7 @@ fn test_full_tracking_lifecycle() {
         snr_dropout_threshold: 3.0,
         roi_h_alignment: 1,
         roi_v_alignment: 1,
+        noise_estimation_downsample: 1,
     };
 
     let mut fgs = FineGuidanceSystem::new(config);
@@ -286,6 +287,7 @@ fn test_tracking_loss_and_recovery() {
         snr_dropout_threshold: 3.0,
         roi_h_alignment: 1,
         roi_v_alignment: 1,
+        noise_estimation_downsample: 1,
     };
 
     let mut fgs = FineGuidanceSystem::new(config);
@@ -383,6 +385,7 @@ fn test_image_sequence_processing() {
         snr_dropout_threshold: 3.0,
         roi_h_alignment: 1,
         roi_v_alignment: 1,
+        noise_estimation_downsample: 1,
     };
 
     let mut fgs = FineGuidanceSystem::new(config);

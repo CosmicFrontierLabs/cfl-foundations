@@ -37,6 +37,7 @@ fn test_star_detection_on_correct_cycle() {
         snr_dropout_threshold: 3.0,
         roi_h_alignment: 1,
         roi_v_alignment: 1,
+        noise_estimation_downsample: 1,
     };
 
     let mut fgs = FineGuidanceSystem::new(config);
@@ -123,6 +124,7 @@ fn test_position_accuracy() {
         snr_dropout_threshold: 3.0,
         roi_h_alignment: 1,
         roi_v_alignment: 1,
+        noise_estimation_downsample: 1,
     };
 
     let mut fgs = FineGuidanceSystem::new(config);
@@ -227,6 +229,7 @@ fn test_moving_star_tracking() {
         snr_dropout_threshold: 3.0,
         roi_h_alignment: 1,
         roi_v_alignment: 1,
+        noise_estimation_downsample: 1,
     };
 
     let mut fgs = FineGuidanceSystem::new(config);

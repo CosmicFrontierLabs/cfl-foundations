@@ -37,6 +37,7 @@ fn test_single_stationary_star() {
         snr_dropout_threshold: 3.0,
         roi_h_alignment: 1,
         roi_v_alignment: 1,
+        noise_estimation_downsample: 1,
     };
 
     let mut fgs = FineGuidanceSystem::new(config);
@@ -122,6 +123,7 @@ fn test_guidance_update_timestamp_correlation() {
         snr_dropout_threshold: 3.0,
         roi_h_alignment: 1,
         roi_v_alignment: 1,
+        noise_estimation_downsample: 1,
     };
 
     // Create synthetic star

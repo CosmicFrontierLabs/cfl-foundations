@@ -1,5 +1,6 @@
 use ndarray::ArrayView2;
 use shared::image_proc::detection::{detect_stars, StarDetection};
+use shared::image_proc::downsample_f64;
 use shared::image_proc::noise::quantify::estimate_noise_level;
 
 use crate::config::FgsConfig;
@@ -80,7 +81,9 @@ pub fn detect_and_select_guides(
     let background_elapsed = t0.elapsed();
 
     let t0 = Instant::now();
-    let noise_level = estimate_noise_level(&averaged_frame, 8);
+    // Downsample image for faster noise estimation (noise is a global sensor property)
+    let downsampled = downsample_f64(&averaged_frame, config.noise_estimation_downsample);
+    let noise_level = estimate_noise_level(&downsampled.view(), 8);
     let noise_elapsed = t0.elapsed();
 
     let detection_threshold =

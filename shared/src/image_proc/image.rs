@@ -188,6 +188,43 @@ pub fn gray16_image_to_array2(img: &Gray16Image) -> Array2<u16> {
     })
 }
 
+/// Downsample an image by sampling every Nth pixel.
+///
+/// Creates a smaller image by taking every `factor`th pixel in both dimensions.
+/// This is a fast decimation operation (no filtering/interpolation) useful for
+/// speeding up algorithms where full resolution is unnecessary.
+///
+/// # Arguments
+/// * `image` - 2D array of pixel values
+/// * `factor` - Downsampling factor (1 = no change, 2 = half size in each dimension, etc.)
+///
+/// # Returns
+/// Downsampled image array. If factor is 1, returns a copy of the input.
+///
+/// # Performance
+/// With factor=N, the output has ~1/N² pixels of the input.
+/// For a 9576x6388 image (61MP) with factor=16, returns a 599x400 image (~240k pixels).
+///
+/// # Use Cases
+/// - Fast noise estimation on large images (noise is a global sensor property)
+/// - Quick preview generation
+/// - Reducing computation for algorithms that don't need full resolution
+///
+pub fn downsample_f64(image: &ndarray::ArrayView2<f64>, factor: usize) -> Array2<f64> {
+    let factor = factor.max(1);
+    if factor == 1 {
+        return image.to_owned();
+    }
+
+    let (height, width) = image.dim();
+    let new_height = height.div_ceil(factor);
+    let new_width = width.div_ceil(factor);
+
+    Array2::from_shape_fn((new_height, new_width), |(i, j)| {
+        image[[i * factor, j * factor]]
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,5 +343,105 @@ mod tests {
 
         assert_eq!(img.width(), 75);
         assert_eq!(img.height(), 50);
+    }
+
+    #[test]
+    fn test_downsample_f64_factor_1() {
+        // Factor 1 should return a copy of the input
+        let arr = Array2::from_shape_fn((10, 10), |(i, j)| (i * 10 + j) as f64);
+        let result = downsample_f64(&arr.view(), 1);
+
+        assert_eq!(result.dim(), arr.dim());
+        for i in 0..10 {
+            for j in 0..10 {
+                assert_eq!(result[[i, j]], arr[[i, j]]);
+            }
+        }
+    }
+
+    #[test]
+    fn test_downsample_f64_factor_0_clamped() {
+        // Factor 0 should be clamped to 1
+        let arr = Array2::from_elem((10, 10), 42.0);
+        let result = downsample_f64(&arr.view(), 0);
+
+        assert_eq!(result.dim(), (10, 10));
+    }
+
+    #[test]
+    fn test_downsample_f64_factor_2() {
+        // 10x10 with factor 2 -> 5x5
+        let arr = Array2::from_shape_fn((10, 10), |(i, j)| (i * 10 + j) as f64);
+        let result = downsample_f64(&arr.view(), 2);
+
+        assert_eq!(result.dim(), (5, 5));
+
+        // Check sampled values
+        assert_eq!(result[[0, 0]], arr[[0, 0]]); // 0
+        assert_eq!(result[[0, 1]], arr[[0, 2]]); // 2
+        assert_eq!(result[[1, 0]], arr[[2, 0]]); // 20
+        assert_eq!(result[[2, 2]], arr[[4, 4]]); // 44
+    }
+
+    #[test]
+    fn test_downsample_f64_non_divisible() {
+        // 7x9 with factor 3 -> ceil(7/3) x ceil(9/3) = 3x3
+        let arr = Array2::from_shape_fn((7, 9), |(i, j)| (i * 9 + j) as f64);
+        let result = downsample_f64(&arr.view(), 3);
+
+        assert_eq!(result.dim(), (3, 3));
+
+        // Check sampled values at (0,0), (0,3), (0,6), (3,0), etc.
+        assert_eq!(result[[0, 0]], arr[[0, 0]]); // 0
+        assert_eq!(result[[0, 1]], arr[[0, 3]]); // 3
+        assert_eq!(result[[0, 2]], arr[[0, 6]]); // 6
+        assert_eq!(result[[1, 0]], arr[[3, 0]]); // 27
+        assert_eq!(result[[2, 0]], arr[[6, 0]]); // 54
+    }
+
+    #[test]
+    fn test_downsample_f64_large_factor() {
+        // 100x100 with factor 10 -> 10x10
+        let arr = Array2::from_elem((100, 100), 3.14159);
+        let result = downsample_f64(&arr.view(), 10);
+
+        assert_eq!(result.dim(), (10, 10));
+
+        // All values should still be pi
+        for i in 0..10 {
+            for j in 0..10 {
+                assert_eq!(result[[i, j]], 3.14159);
+            }
+        }
+    }
+
+    #[test]
+    fn test_downsample_f64_preserves_pattern() {
+        // Create a checkerboard pattern and verify downsampling picks correct pixels
+        let arr = Array2::from_shape_fn((8, 8), |(i, j)| if (i + j) % 2 == 0 { 1.0 } else { 0.0 });
+        let result = downsample_f64(&arr.view(), 2);
+
+        assert_eq!(result.dim(), (4, 4));
+
+        // With factor 2, we sample (0,0), (0,2), (0,4), etc.
+        // All of these have (i+j) even, so all should be 1.0
+        for i in 0..4 {
+            for j in 0..4 {
+                assert_eq!(result[[i, j]], 1.0);
+            }
+        }
+    }
+
+    #[test]
+    fn test_downsample_f64_small_image() {
+        // 3x3 with factor 2 -> 2x2 (ceil(3/2) = 2)
+        let arr = Array2::from_shape_fn((3, 3), |(i, j)| (i * 3 + j) as f64);
+        let result = downsample_f64(&arr.view(), 2);
+
+        assert_eq!(result.dim(), (2, 2));
+        assert_eq!(result[[0, 0]], 0.0); // arr[0,0]
+        assert_eq!(result[[0, 1]], 2.0); // arr[0,2]
+        assert_eq!(result[[1, 0]], 6.0); // arr[2,0]
+        assert_eq!(result[[1, 1]], 8.0); // arr[2,2]
     }
 }

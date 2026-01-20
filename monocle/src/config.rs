@@ -176,10 +176,31 @@ pub struct FgsConfig {
     /// camera with `get_roi_offset_alignment()`.
     #[serde(default = "default_alignment")]
     pub roi_v_alignment: usize,
+
+    /// Downsample factor for noise estimation during calibration.
+    ///
+    /// The noise estimation algorithm (Chen et al. 2015) is computationally expensive
+    /// on large images. This factor controls how much to downsample the image before
+    /// estimating noise. A value of N means every Nth pixel is sampled in each dimension,
+    /// reducing computation by N² while still providing an accurate global noise estimate.
+    ///
+    /// For a 9576x6388 image (61MP):
+    /// - downsample=1: ~11 seconds (full resolution)
+    /// - downsample=8: ~170ms
+    /// - downsample=16: ~40ms
+    ///
+    /// Since noise is a global sensor property, downsampling has minimal impact on
+    /// accuracy. Typical range: 8-32.
+    #[serde(default = "default_noise_downsample")]
+    pub noise_estimation_downsample: usize,
 }
 
 fn default_alignment() -> usize {
     1
+}
+
+fn default_noise_downsample() -> usize {
+    16
 }
 
 impl FgsConfig {

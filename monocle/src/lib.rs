@@ -811,6 +811,7 @@ mod tests {
             snr_dropout_threshold: 3.0,
             roi_h_alignment: 1,
             roi_v_alignment: 1,
+            noise_estimation_downsample: 1,
         }
     }
 

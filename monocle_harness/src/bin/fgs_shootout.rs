@@ -441,6 +441,7 @@ fn run_single_experiment(
         snr_dropout_threshold: 3.0,
         roi_h_alignment,
         roi_v_alignment,
+        noise_estimation_downsample: 16,
     };
 
     // Create FGS

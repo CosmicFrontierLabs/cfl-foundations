@@ -37,6 +37,7 @@ fn test_fgs_with_synthetic_frames() {
         snr_dropout_threshold: 3.0,
         roi_h_alignment: 1,
         roi_v_alignment: 1,
+        noise_estimation_downsample: 1,
     };
 
     let mut fgs = FineGuidanceSystem::new(config);
@@ -120,6 +121,7 @@ fn test_fgs_acquisition_to_tracking_transition() {
         snr_dropout_threshold: 3.0,
         roi_h_alignment: 1,
         roi_v_alignment: 1,
+        noise_estimation_downsample: 1,
     };
 
     let mut fgs = FineGuidanceSystem::new(config);
@@ -217,6 +219,7 @@ fn test_fgs_with_moving_stars() {
         snr_dropout_threshold: 3.0,
         roi_h_alignment: 1,
         roi_v_alignment: 1,
+        noise_estimation_downsample: 1,
     };
 
     let mut fgs = FineGuidanceSystem::new(config);
@@ -298,6 +301,7 @@ fn test_fgs_loses_tracking_with_large_motion() {
         snr_dropout_threshold: 3.0,
         roi_h_alignment: 1,
         roi_v_alignment: 1,
+        noise_estimation_downsample: 1,
     };
 
     let mut fgs = FineGuidanceSystem::new(config);

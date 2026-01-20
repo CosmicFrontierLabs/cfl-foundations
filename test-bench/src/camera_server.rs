@@ -1568,6 +1568,7 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                         snr_dropout_threshold: settings.snr_dropout_threshold,
                         roi_h_alignment,
                         roi_v_alignment,
+                        noise_estimation_downsample: 16,
                     };
                     tracing::info!(
                         "Initializing Fine Guidance System with settings: acq_frames={}, roi={}, sigma={:.1}, snr_min={:.1}, fwhm={:.1}",

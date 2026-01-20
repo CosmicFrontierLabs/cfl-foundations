@@ -226,6 +226,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         snr_dropout_threshold: 3.0,
         roi_h_alignment,
         roi_v_alignment,
+        noise_estimation_downsample: 16,
     };
 
     // Update config with camera's saturation value (95% of max to be conservative)
