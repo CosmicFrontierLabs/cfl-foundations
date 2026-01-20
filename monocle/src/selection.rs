@@ -64,6 +64,9 @@ pub fn detect_and_select_guides(
     config: &FgsConfig,
 ) -> Result<(Option<GuideStar>, Vec<StarDetection>), String> {
     use shared::image_proc::noise::quantify::estimate_background;
+    use std::time::Instant;
+
+    let calibration_start = Instant::now();
 
     // Calculate downsample factor to get ~100 samples for fast background estimation
     // For image of size (H, W), downsample n gives ~(H*W)/n² samples
@@ -72,24 +75,39 @@ pub fn detect_and_select_guides(
     let total_pixels = (height * width) as f64;
     let downsample = ((total_pixels / 100.0).sqrt() as usize).max(1);
 
+    let t0 = Instant::now();
     let background_level = estimate_background(&averaged_frame, downsample);
+    let background_elapsed = t0.elapsed();
+
+    let t0 = Instant::now();
     let noise_level = estimate_noise_level(&averaged_frame, 8);
+    let noise_elapsed = t0.elapsed();
 
     let detection_threshold =
         background_level + (config.filters.detection_threshold_sigma * noise_level);
 
     log::info!(
-        "Background: {background_level:.2}, Noise: {noise_level:.2}, using {}-sigma threshold: {detection_threshold:.2}",
+        "Background: {background_level:.2} ({:.1}ms), Noise: {noise_level:.2} ({:.1}ms), using {}-sigma threshold: {detection_threshold:.2}",
+        background_elapsed.as_secs_f64() * 1000.0,
+        noise_elapsed.as_secs_f64() * 1000.0,
         config.filters.detection_threshold_sigma
     );
 
+    let t0 = Instant::now();
     let detections = detect_stars(&averaged_frame, Some(detection_threshold));
+    let detection_elapsed = t0.elapsed();
+    log::info!(
+        "Star detection: found {} candidates in {:.1}ms",
+        detections.len(),
+        detection_elapsed.as_secs_f64() * 1000.0
+    );
 
     if let Some(stats) = calculate_detection_stats(&detections) {
         stats.log("Initial detections");
     }
 
     // Apply bad pixel filter
+    let t0 = Instant::now();
     let after_bad_pixel_filter: Vec<StarDetection> = detections
         .iter()
         .filter(|star| {
@@ -108,14 +126,22 @@ pub fn detect_and_select_guides(
         })
         .cloned()
         .collect();
+    let bad_pixel_elapsed = t0.elapsed();
 
     if let Some(stats) = calculate_detection_stats(&after_bad_pixel_filter) {
-        stats.log("After bad pixel filter");
+        stats.log(&format!(
+            "After bad pixel filter ({:.1}ms)",
+            bad_pixel_elapsed.as_secs_f64() * 1000.0
+        ));
     } else {
-        log::warn!("All stars filtered out by bad pixel filter");
+        log::warn!(
+            "All stars filtered out by bad pixel filter ({:.1}ms)",
+            bad_pixel_elapsed.as_secs_f64() * 1000.0
+        );
     }
 
     // Apply diameter filter
+    let t0 = Instant::now();
     let (diameter_min, diameter_max) = config.filters.diameter_range;
     let after_diameter_filter: Vec<StarDetection> = after_bad_pixel_filter
         .iter()
@@ -131,14 +157,22 @@ pub fn detect_and_select_guides(
         })
         .cloned()
         .collect();
+    let diameter_elapsed = t0.elapsed();
 
     if let Some(stats) = calculate_detection_stats(&after_diameter_filter) {
-        stats.log("After diameter filter");
+        stats.log(&format!(
+            "After diameter filter ({:.1}ms)",
+            diameter_elapsed.as_secs_f64() * 1000.0
+        ));
     } else {
-        log::warn!("All stars filtered out by diameter filter");
+        log::warn!(
+            "All stars filtered out by diameter filter ({:.1}ms)",
+            diameter_elapsed.as_secs_f64() * 1000.0
+        );
     }
 
     // Apply aspect ratio filter
+    let t0 = Instant::now();
     let after_aspect_filter: Vec<StarDetection> = after_diameter_filter
         .iter()
         .filter(|star| {
@@ -153,14 +187,22 @@ pub fn detect_and_select_guides(
         })
         .cloned()
         .collect();
+    let aspect_elapsed = t0.elapsed();
 
     if let Some(stats) = calculate_detection_stats(&after_aspect_filter) {
-        stats.log("After aspect ratio filter");
+        stats.log(&format!(
+            "After aspect ratio filter ({:.1}ms)",
+            aspect_elapsed.as_secs_f64() * 1000.0
+        ));
     } else {
-        log::warn!("All stars filtered out by aspect ratio filter");
+        log::warn!(
+            "All stars filtered out by aspect ratio filter ({:.1}ms)",
+            aspect_elapsed.as_secs_f64() * 1000.0
+        );
     }
 
     // Apply edge distance filter
+    let t0 = Instant::now();
     let image_shape = averaged_frame.dim();
     let after_edge_filter: Vec<StarDetection> = after_aspect_filter
         .iter()
@@ -180,14 +222,23 @@ pub fn detect_and_select_guides(
         })
         .cloned()
         .collect();
+    let edge_elapsed = t0.elapsed();
 
     if let Some(stats) = calculate_detection_stats(&after_edge_filter) {
-        stats.log("After edge distance filter");
+        stats.log(&format!(
+            "After edge distance filter ({:.1}ms)",
+            edge_elapsed.as_secs_f64() * 1000.0
+        ));
     } else {
-        log::warn!("All stars filtered out by edge distance filter");
+        log::warn!(
+            "All stars filtered out by edge distance filter ({:.1}ms)",
+            edge_elapsed.as_secs_f64() * 1000.0
+        );
     }
 
     // Apply saturation filter
+    let t0 = Instant::now();
+    let saturation_input_count = after_edge_filter.len();
     let after_saturation_filter: Vec<StarDetection> = after_edge_filter
         .iter()
         .filter(|star| {
@@ -207,14 +258,29 @@ pub fn detect_and_select_guides(
         })
         .cloned()
         .collect();
+    let saturation_elapsed = t0.elapsed();
 
     if let Some(stats) = calculate_detection_stats(&after_saturation_filter) {
-        stats.log("After saturation filter");
+        stats.log(&format!(
+            "After saturation filter ({:.1}ms for {} stars, {:.2}ms/star)",
+            saturation_elapsed.as_secs_f64() * 1000.0,
+            saturation_input_count,
+            if saturation_input_count > 0 {
+                saturation_elapsed.as_secs_f64() * 1000.0 / saturation_input_count as f64
+            } else {
+                0.0
+            }
+        ));
     } else {
-        log::warn!("All stars filtered out by saturation filter");
+        log::warn!(
+            "All stars filtered out by saturation filter ({:.1}ms)",
+            saturation_elapsed.as_secs_f64() * 1000.0
+        );
     }
 
     // Apply SNR filter
+    let t0 = Instant::now();
+    let snr_input_count = after_saturation_filter.len();
     let after_snr_filter: Vec<StarDetection> = after_saturation_filter
         .iter()
         .filter(|star| {
@@ -237,11 +303,24 @@ pub fn detect_and_select_guides(
         })
         .cloned()
         .collect();
+    let snr_elapsed = t0.elapsed();
 
     if let Some(stats) = calculate_detection_stats(&after_snr_filter) {
-        stats.log("After SNR filter");
+        stats.log(&format!(
+            "After SNR filter ({:.1}ms for {} stars, {:.2}ms/star)",
+            snr_elapsed.as_secs_f64() * 1000.0,
+            snr_input_count,
+            if snr_input_count > 0 {
+                snr_elapsed.as_secs_f64() * 1000.0 / snr_input_count as f64
+            } else {
+                0.0
+            }
+        ));
     } else {
-        log::warn!("All stars filtered out by SNR filter");
+        log::warn!(
+            "All stars filtered out by SNR filter ({:.1}ms)",
+            snr_elapsed.as_secs_f64() * 1000.0
+        );
     }
 
     // Sort by flux descending
@@ -301,6 +380,21 @@ pub fn detect_and_select_guides(
             .partial_cmp(&a.flux)
             .expect("flux values should be valid numbers for comparison")
     });
+
+    let calibration_elapsed = calibration_start.elapsed();
+    log::info!(
+        "Total calibration time: {:.1}ms (background: {:.1}ms, noise: {:.1}ms, detection: {:.1}ms, filters: bad_pixel={:.1}ms diameter={:.1}ms aspect={:.1}ms edge={:.1}ms saturation={:.1}ms snr={:.1}ms)",
+        calibration_elapsed.as_secs_f64() * 1000.0,
+        background_elapsed.as_secs_f64() * 1000.0,
+        noise_elapsed.as_secs_f64() * 1000.0,
+        detection_elapsed.as_secs_f64() * 1000.0,
+        bad_pixel_elapsed.as_secs_f64() * 1000.0,
+        diameter_elapsed.as_secs_f64() * 1000.0,
+        aspect_elapsed.as_secs_f64() * 1000.0,
+        edge_elapsed.as_secs_f64() * 1000.0,
+        saturation_elapsed.as_secs_f64() * 1000.0,
+        snr_elapsed.as_secs_f64() * 1000.0,
+    );
 
     log::info!(
         "Selected {} guide star for tracking",

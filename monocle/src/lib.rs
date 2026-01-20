@@ -629,9 +629,18 @@ impl FineGuidanceSystem {
 
     /// Detect stars and select guide stars from averaged frame
     fn detect_and_select_guides(&mut self, _frame: ArrayView2<u16>) -> Result<(), String> {
+        use std::time::Instant;
+
+        let t0 = Instant::now();
         let averaged_frame = self
             .get_averaged_frame()
             .ok_or("No accumulated frame available for calibration")?;
+        let averaging_elapsed = t0.elapsed();
+        log::info!(
+            "Frame averaging: {:.1}ms ({} frames accumulated)",
+            averaging_elapsed.as_secs_f64() * 1000.0,
+            self.frames_accumulated
+        );
 
         let (guide_star, detected_stars) =
             selection::detect_and_select_guides(averaged_frame.view(), &self.config)?;
