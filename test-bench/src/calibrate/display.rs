@@ -32,8 +32,6 @@ struct WatchdogInner {
 #[derive(Clone)]
 pub struct OledSafetyWatchdog {
     inner: Arc<Mutex<WatchdogInner>>,
-    /// Shared pattern state - watchdog writes to this when blanking/waking
-    pattern: Arc<AsyncRwLock<PatternConfig>>,
     /// Channel to notify display of updates
     update_tx: Sender<()>,
 }
@@ -65,40 +63,26 @@ impl OledSafetyWatchdog {
             watchdog_thread(inner_clone, pattern_clone, update_tx_clone);
         });
 
-        Self {
-            inner,
-            pattern,
-            update_tx,
-        }
+        Self { inner, update_tx }
     }
 
     /// Reset the watchdog timer (call on any display activity).
     ///
-    /// If the display is currently blanked, this will restore the
-    /// previous pattern and wake the display.
+    /// If the display is currently blanked, this clears the blanked state.
+    /// The caller is responsible for setting the new pattern - this method
+    /// does NOT restore the saved pattern (since the caller likely just set
+    /// a new pattern that should take precedence).
     pub fn reset(&self) {
         let mut inner = self.inner.lock().unwrap();
         inner.last_activity = Instant::now();
 
         if inner.is_blanked {
-            // Wake up - restore saved pattern
-            if let Some(saved) = inner.saved_pattern.take() {
-                tracing::info!("Watchdog: waking display, restoring pattern");
-
-                // Write to shared pattern state
-                // Use blocking approach since we're in sync context
-                let pattern = self.pattern.blocking_write();
-                *std::ops::DerefMut::deref_mut(&mut { pattern }) = saved;
-
-                inner.is_blanked = false;
-
-                // Notify display to update
-                let _ = self.update_tx.send(());
-            } else {
-                // No saved pattern (shouldn't happen, but handle gracefully)
-                tracing::warn!("Watchdog: waking but no saved pattern");
-                inner.is_blanked = false;
-            }
+            tracing::info!("Watchdog: waking display, clearing blanked state");
+            // Clear saved pattern - caller has already set the new pattern
+            inner.saved_pattern = None;
+            inner.is_blanked = false;
+            // Notify display to update (caller's new pattern will be used)
+            let _ = self.update_tx.send(());
         }
     }
 
