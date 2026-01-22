@@ -7,9 +7,8 @@
 //! # Feature Flags
 //!
 //! - `full` (default): Enables all optional features
-//! - `zmq-support`: ZeroMQ messaging support
 //! - `tracking`: Tracking data collection and messages
-//! - `pattern-client`: Pattern generator client (requires zmq-support)
+//! - `pattern-client`: Pattern generator client
 //! - `frame-writer`: FITS file writing support
 //! - `config-storage`: Configuration persistence
 //! - `system-info`: System information types
@@ -50,6 +49,3 @@ pub mod tracking_collector;
 
 #[cfg(feature = "tracking")]
 pub mod tracking_message;
-
-#[cfg(feature = "zmq-support")]
-pub mod zmq;

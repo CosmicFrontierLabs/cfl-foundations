@@ -38,7 +38,7 @@ use clap::Parser;
         - Live mode (--live): Continuously cycle through positions with real-time TUI visualization\n\n\
         The controller communicates via:\n  \
         - HTTP REST API to calibrate_serve for pattern commands\n  \
-        - ZMQ SUB socket to receive tracking messages from fgs_server"
+        - SSE (Server-Sent Events) to receive tracking messages from fgs_server"
 )]
 pub struct Args {
     #[arg(
@@ -52,11 +52,10 @@ pub struct Args {
 
     #[arg(
         long,
-        default_value = "tcp://orin-005.tail944341.ts.net:5555",
-        help = "ZMQ endpoint to receive tracking messages",
-        long_help = "ZeroMQ SUB socket endpoint for receiving TrackingMessage updates from \
-            fgs_server. The controller subscribes to all messages on this endpoint. \
-            Default points to orin-005 (Neutralino) Tailscale hostname on port 5555."
+        default_value = "http://orin-005.tail944341.ts.net:3000/tracking/events",
+        help = "SSE endpoint to receive tracking messages",
+        long_help = "HTTP Server-Sent Events endpoint for receiving TrackingMessage updates \
+            from fgs_server. Default points to orin-005 (Neutralino) Tailscale hostname."
     )]
     pub tracking_endpoint: String,
 

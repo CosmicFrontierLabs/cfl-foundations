@@ -8,10 +8,9 @@ license = "MIT OR Apache-2.0"
 
 [features]
 default = ["full"]
-full = ["zmq-support", "tracking", "pattern-client", "frame-writer", "config-storage", "system-info"]
-zmq-support = ["dep:zmq"]
+full = ["tracking", "pattern-client", "frame-writer", "config-storage", "system-info"]
 tracking = []
-pattern-client = ["zmq-support"]
+pattern-client = []
 frame-writer = ["dep:fitsio"]
 config-storage = []
 system-info = []
@@ -59,7 +58,6 @@ serde_json = "1.0.145"
 crossbeam-channel = "0.5.15"
 anyhow = "1.0.100"
 tracing = "0.1.41"
-zmq = { version = "0.10.0", optional = true }
 ureq = { version = "3.1.4", features = ["json"] }
 
 [dev-dependencies]

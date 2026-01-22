@@ -3,7 +3,10 @@ use axum::{
     extract::{ConnectInfo, Request, State},
     http::{header, StatusCode},
     middleware::{self, Next},
-    response::{Html, Response},
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        Html, Response,
+    },
     routing::{get, post},
     Json, Router,
 };
@@ -20,12 +23,11 @@ use shared::camera_interface::{CameraInterface, FrameMetadata, SensorGeometry};
 use shared::frame_writer::{FrameFormat, FrameWriterHandle};
 use shared::image_proc::u16_to_gray_image;
 use shared::tracking_message::TrackingMessage;
-use shared::zmq::TypedZmqPublisher;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::{Mutex, Notify, RwLock};
+use tokio::sync::{broadcast, Mutex, Notify, RwLock};
 
 use crate::calibration_overlay::{
     analyze_calibration_pattern, render_annotated_image, render_svg_overlay,
@@ -117,10 +119,15 @@ pub struct TrackingSharedState {
     pub export_csv_records: AtomicU64,
     pub export_frames_written: AtomicU64,
     pub export_last_error: RwLock<Option<String>>,
+    /// Broadcast channel for SSE subscribers
+    pub sse_tx: broadcast::Sender<TrackingMessage>,
 }
 
 impl Default for TrackingSharedState {
     fn default() -> Self {
+        // Buffer size 64 allows ~1 second of updates at 60Hz
+        // Slow clients will receive Lagged error and can recover
+        let (sse_tx, _) = broadcast::channel(64);
         Self {
             enabled: AtomicBool::new(false),
             restart_requested: AtomicBool::new(false),
@@ -131,6 +138,7 @@ impl Default for TrackingSharedState {
             export_csv_records: AtomicU64::new(0),
             export_frames_written: AtomicU64::new(0),
             export_last_error: RwLock::new(None),
+            sse_tx,
         }
     }
 }
@@ -150,8 +158,6 @@ pub struct TrackingConfig {
     pub roi_h_alignment: usize,
     /// ROI vertical offset alignment (from camera constraints)
     pub roi_v_alignment: usize,
-    /// ZMQ PUB socket bind address for tracking updates (e.g., tcp://*:5555)
-    pub zmq_pub: String,
 }
 
 impl Default for TrackingConfig {
@@ -167,7 +173,6 @@ impl Default for TrackingConfig {
             saturation_value: 65535.0,
             roi_h_alignment: 1,
             roi_v_alignment: 1,
-            zmq_pub: "tcp://*:5555".to_string(),
         }
     }
 }
@@ -823,6 +828,46 @@ async fn tracking_status_endpoint<C: CameraInterface + 'static>(
     }
 }
 
+/// SSE endpoint for real-time tracking events
+///
+/// Streams TrackingMessage updates to multiple subscribers via Server-Sent Events.
+/// Each message is sent as a JSON-encoded "tracking" event.
+async fn tracking_events_endpoint<C: CameraInterface + 'static>(
+    State(state): State<Arc<AppState<C>>>,
+) -> Result<Sse<impl futures::Stream<Item = Result<Event, std::convert::Infallible>>>, StatusCode> {
+    let tracking = match &state.tracking {
+        Some(t) => t.clone(),
+        None => return Err(StatusCode::NOT_FOUND),
+    };
+
+    let mut rx = tracking.sse_tx.subscribe();
+
+    let stream = async_stream::stream! {
+        loop {
+            match rx.recv().await {
+                Ok(msg) => {
+                    if let Ok(json) = serde_json::to_string(&msg) {
+                        yield Ok(Event::default().event("tracking").data(json));
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    // Timestamps in messages allow clients to detect gaps
+                    continue;
+                }
+                Err(broadcast::error::RecvError::Closed) => {
+                    break;
+                }
+            }
+        }
+    };
+
+    Ok(Sse::new(stream).keep_alive(
+        KeepAlive::default()
+            .interval(std::time::Duration::from_secs(15))
+            .text("keepalive"),
+    ))
+}
+
 async fn tracking_enable_endpoint<C: CameraInterface + 'static>(
     State(state): State<Arc<AppState<C>>>,
     Json(req): Json<test_bench_shared::TrackingEnableRequest>,
@@ -1091,6 +1136,7 @@ pub fn create_router<C: CameraInterface + 'static>(state: Arc<AppState<C>>) -> R
             post(set_zoom_endpoint::<C>).get(get_zoom_endpoint::<C>),
         )
         .route("/tracking/status", get(tracking_status_endpoint::<C>))
+        .route("/tracking/events", get(tracking_events_endpoint::<C>))
         .route("/tracking/enable", post(tracking_enable_endpoint::<C>))
         .route(
             "/tracking/settings",
@@ -1502,20 +1548,6 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
     let roi_h_alignment = tracking_config.roi_h_alignment;
     let roi_v_alignment = tracking_config.roi_v_alignment;
 
-    // Create ZMQ publisher for tracking telemetry (mandatory)
-    let zmq_publisher: Arc<TypedZmqPublisher<TrackingMessage>> = {
-        let bind_addr = &tracking_config.zmq_pub;
-        let ctx = zmq::Context::new();
-        let socket = ctx
-            .socket(zmq::PUB)
-            .expect("Failed to create ZMQ PUB socket");
-        socket
-            .bind(bind_addr)
-            .unwrap_or_else(|e| panic!("Failed to bind ZMQ socket to {bind_addr}: {e}"));
-        tracing::info!("ZMQ telemetry publisher bound to {}", bind_addr);
-        Arc::new(TypedZmqPublisher::new(socket))
-    };
-
     let fgs: Arc<StdMutex<Option<FineGuidanceSystem>>> = Arc::new(StdMutex::new(None));
     let pending_settings: Arc<StdMutex<Vec<CameraSettingsUpdate>>> =
         Arc::new(StdMutex::new(Vec::new()));
@@ -1531,7 +1563,6 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
         let clear_roi_clone = clear_roi_requested.clone();
         let tracking_shared_for_cb = tracking_shared.clone();
         let bad_pixel_map_clone = bad_pixel_map.clone();
-        let zmq_publisher_clone = zmq_publisher.clone();
 
         let stream_result = camera.stream(&mut |frame, metadata| {
             let start_capture = std::time::Instant::now();
@@ -1644,7 +1675,6 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
 
                     // Register callback for tracking updates
                     let tracking_cb = tracking_shared_for_cb.clone();
-                    let zmq_for_cb = zmq_publisher_clone.clone();
                     let csv_for_cb = csv_writer.clone();
                     let frame_writer_for_cb = frame_writer.clone();
                     new_fgs.register_callback(move |event| {
@@ -1673,7 +1703,7 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                                 });
                                 status.num_guide_stars = *num_guide_stars;
 
-                                // Publish to ZMQ
+                                // Publish to SSE broadcast (ignore if no subscribers)
                                 let msg = TrackingMessage::new(
                                     *track_id,
                                     initial_position.x,
@@ -1681,9 +1711,7 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                                     initial_position.timestamp,
                                     initial_position.shape.clone(),
                                 );
-                                if let Err(e) = zmq_for_cb.send(&msg) {
-                                    tracing::warn!("Failed to send ZMQ tracking message: {}", e);
-                                }
+                                let _ = tracking_cb.sse_tx.send(msg);
                             }
                             FgsCallbackEvent::TrackingUpdate { track_id, position } => {
                                 tracing::debug!(
@@ -1706,7 +1734,7 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                                 status.total_updates =
                                     tracking_cb.total_updates.load(Ordering::SeqCst);
 
-                                // Publish to ZMQ
+                                // Publish to SSE broadcast (ignore if no subscribers)
                                 let msg = TrackingMessage::new(
                                     *track_id,
                                     position.x,
@@ -1714,9 +1742,7 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                                     position.timestamp,
                                     position.shape.clone(),
                                 );
-                                if let Err(e) = zmq_for_cb.send(&msg) {
-                                    tracing::warn!("Failed to send ZMQ tracking message: {}", e);
-                                }
+                                let _ = tracking_cb.sse_tx.send(msg);
 
                                 // Write to CSV if configured
                                 if let Some(ref csv) = csv_for_cb {

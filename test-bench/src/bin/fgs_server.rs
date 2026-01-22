@@ -102,20 +102,6 @@ struct Args {
 
     #[arg(
         long,
-        default_value = "tcp://*:5555",
-        help = "ZMQ PUB socket bind address for tracking updates",
-        long_help = "Bind address for a ZeroMQ PUB socket that streams tracking updates in \
-            real-time. Each tracking update is serialized as a TrackingMessage and published. \
-            Subscribers can connect to receive live centroid data. Example addresses:\n  \
-            - tcp://*:5555 (TCP on all interfaces, port 5555)\n  \
-            - ipc:///tmp/tracking.sock (Unix domain socket)\n  \
-            - tcp://127.0.0.1:5555 (TCP localhost only)",
-        value_name = "ADDR"
-    )]
-    zmq_pub: String,
-
-    #[arg(
-        long,
         help = "PI E-727 FSM controller IP address (enables FSM control)",
         long_help = "IP address of the PI E-727 piezo controller for the S-330 Fast Steering \
             Mirror. When specified, the web UI will include X/Y position sliders for manual \
@@ -211,7 +197,6 @@ async fn main() -> anyhow::Result<()> {
         saturation_value: camera.saturation_value(),
         roi_h_alignment,
         roi_v_alignment,
-        zmq_pub: args.zmq_pub,
     };
 
     // Initialize FSM if IP address provided

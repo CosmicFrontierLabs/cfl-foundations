@@ -46,14 +46,14 @@ pub fn initialize(
     // Create pattern client
     let pattern_client = PatternClient::new(&args.http_endpoint);
 
-    // Create tracking collector
+    // Create tracking collector (waits for connection to establish)
     if verbose {
         println!("Connecting to tracking endpoint...");
     }
     let tracking_collector = TrackingCollector::connect(&args.tracking_endpoint)?;
-
-    // Allow ZMQ tracking connection to establish
-    std::thread::sleep(Duration::from_millis(500));
+    if verbose {
+        println!("Connected to tracking endpoint");
+    }
 
     // Enable RemoteControlled mode on the display server
     if verbose {
