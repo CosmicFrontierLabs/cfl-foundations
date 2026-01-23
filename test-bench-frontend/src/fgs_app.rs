@@ -3,7 +3,7 @@ use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
 use crate::fgs::{
-    api::{calculate_backoff_delay, check_url_ok, fetch_json_with_status, fetch_text, post_json},
+    api::{calculate_backoff_delay, check_url_ok, fetch_text, FgsError, FgsServerClient},
     histogram::render_histogram,
     views::{FsmView, StarDetectionSettingsView, StatsView, TrackingView, ZoomView},
 };
@@ -265,11 +265,11 @@ impl Component for FgsFrontend {
             }
             Msg::RefreshStats => {
                 let link = ctx.link().clone();
+                let client = FgsServerClient::for_web();
                 wasm_bindgen_futures::spawn_local(async move {
-                    let (_, result) = fetch_json_with_status::<CameraStats>("/stats").await;
-                    match result {
-                        Some(stats) => link.send_message(Msg::StatsLoaded(stats)),
-                        None => link.send_message(Msg::StatsError),
+                    match client.get_camera_stats().await {
+                        Ok(stats) => link.send_message(Msg::StatsLoaded(stats)),
+                        Err(_) => link.send_message(Msg::StatsError),
                     }
                 });
                 false
@@ -354,23 +354,23 @@ impl Component for FgsFrontend {
             }
             Msg::RefreshTracking => {
                 let link = ctx.link().clone();
+                let client = FgsServerClient::for_web();
                 wasm_bindgen_futures::spawn_local(async move {
-                    let (status_code, result) =
-                        fetch_json_with_status::<TrackingStatus>("/tracking/status").await;
-                    if status_code == 404 {
-                        link.send_message(Msg::TrackingNotAvailable);
-                    } else if let Some(status) = result {
-                        link.send_message(Msg::TrackingStatusLoaded(status));
+                    match client.get_tracking_status().await {
+                        Ok(status) => link.send_message(Msg::TrackingStatusLoaded(status)),
+                        Err(FgsError::ServerError { status: 404, .. }) => {
+                            link.send_message(Msg::TrackingNotAvailable);
+                        }
+                        Err(_) => {}
                     }
                 });
 
                 // Also fetch settings if we don't have them yet
                 if self.tracking_settings.is_none() {
                     let link2 = ctx.link().clone();
+                    let client = FgsServerClient::for_web();
                     wasm_bindgen_futures::spawn_local(async move {
-                        let (_, result) =
-                            fetch_json_with_status::<TrackingSettings>("/tracking/settings").await;
-                        if let Some(settings) = result {
+                        if let Ok(settings) = client.get_tracking_settings().await {
                             link2.send_message(Msg::TrackingSettingsLoaded(settings));
                         }
                     });
@@ -378,34 +378,32 @@ impl Component for FgsFrontend {
 
                 // Also fetch export status
                 let link3 = ctx.link().clone();
+                let client = FgsServerClient::for_web();
                 wasm_bindgen_futures::spawn_local(async move {
-                    let (_, result) =
-                        fetch_json_with_status::<ExportStatus>("/tracking/export").await;
-                    if let Some(status) = result {
+                    if let Ok(status) = client.get_export_status().await {
                         link3.send_message(Msg::ExportStatusLoaded(status));
                     }
                 });
 
                 // Also fetch FSM status
                 let link4 = ctx.link().clone();
+                let client = FgsServerClient::for_web();
                 wasm_bindgen_futures::spawn_local(async move {
-                    let (status_code, result) =
-                        fetch_json_with_status::<FsmStatus>("/fsm/status").await;
-                    if status_code == 404 {
-                        link4.send_message(Msg::FsmNotAvailable);
-                    } else if let Some(status) = result {
-                        link4.send_message(Msg::FsmStatusLoaded(status));
+                    match client.get_fsm_status().await {
+                        Ok(status) => link4.send_message(Msg::FsmStatusLoaded(status)),
+                        Err(FgsError::ServerError { status: 404, .. }) => {
+                            link4.send_message(Msg::FsmNotAvailable);
+                        }
+                        Err(_) => {}
                     }
                 });
 
                 // Fetch star detection settings if we don't have them yet
                 if self.star_detection_settings.is_none() {
                     let link5 = ctx.link().clone();
+                    let client = FgsServerClient::for_web();
                     wasm_bindgen_futures::spawn_local(async move {
-                        let (_, result) =
-                            fetch_json_with_status::<StarDetectionSettings>("/detection/settings")
-                                .await;
-                        if let Some(settings) = result {
+                        if let Ok(settings) = client.get_star_detection_settings().await {
                             link5.send_message(Msg::StarDetectionSettingsLoaded(settings));
                         }
                     });
@@ -445,13 +443,11 @@ impl Component for FgsFrontend {
                     .unwrap_or(false);
 
                 let link = ctx.link().clone();
+                let client = FgsServerClient::for_web();
                 wasm_bindgen_futures::spawn_local(async move {
-                    let request = TrackingEnableRequest {
-                        enabled: new_enabled,
-                    };
-                    match post_json::<_, TrackingStatus>("/tracking/enable", &request).await {
-                        Some(status) => link.send_message(Msg::TrackingToggleComplete(status)),
-                        None => link.send_message(Msg::TrackingToggleFailed),
+                    match client.set_tracking_enabled(new_enabled).await {
+                        Ok(status) => link.send_message(Msg::TrackingToggleComplete(status)),
+                        Err(_) => link.send_message(Msg::TrackingToggleFailed),
                     }
                 });
                 true
@@ -495,12 +491,11 @@ impl Component for FgsFrontend {
 
                 if let Some(settings) = self.tracking_settings.clone() {
                     let link = ctx.link().clone();
+                    let client = FgsServerClient::for_web();
                     wasm_bindgen_futures::spawn_local(async move {
-                        match post_json::<_, TrackingSettings>("/tracking/settings", &settings)
-                            .await
-                        {
-                            Some(saved) => link.send_message(Msg::TrackingSettingsSaved(saved)),
-                            None => link.send_message(Msg::TrackingSettingsSaveFailed),
+                        match client.set_tracking_settings(&settings).await {
+                            Ok(()) => link.send_message(Msg::TrackingSettingsSaved(settings)),
+                            Err(_) => link.send_message(Msg::TrackingSettingsSaveFailed),
                         }
                     });
                 }
@@ -554,10 +549,11 @@ impl Component for FgsFrontend {
                 if let Some(ref status) = self.export_status {
                     let settings = status.settings.clone();
                     let link = ctx.link().clone();
+                    let client = FgsServerClient::for_web();
                     wasm_bindgen_futures::spawn_local(async move {
-                        match post_json::<_, ExportSettings>("/tracking/export", &settings).await {
-                            Some(saved) => link.send_message(Msg::ExportSettingsSaved(saved)),
-                            None => link.send_message(Msg::ExportSettingsSaveFailed),
+                        match client.set_export_settings(&settings).await {
+                            Ok(()) => link.send_message(Msg::ExportSettingsSaved(settings)),
+                            Err(_) => link.send_message(Msg::ExportSettingsSaveFailed),
                         }
                     });
                 }
@@ -601,16 +597,22 @@ impl Component for FgsFrontend {
                 }
                 self.fsm_move_pending = true;
 
-                let request = FsmMoveRequest {
-                    x_urad: self.fsm_target_x,
-                    y_urad: self.fsm_target_y,
-                };
+                let x = self.fsm_target_x;
+                let y = self.fsm_target_y;
 
                 let link = ctx.link().clone();
+                let client = FgsServerClient::for_web();
                 wasm_bindgen_futures::spawn_local(async move {
-                    match post_json::<_, FsmStatus>("/fsm/move", &request).await {
-                        Some(status) => link.send_message(Msg::FsmMoveComplete(status)),
-                        None => link.send_message(Msg::FsmMoveFailed),
+                    match client.move_fsm(x, y).await {
+                        Ok(()) => {
+                            // Fetch updated status after move
+                            if let Ok(status) = client.get_fsm_status().await {
+                                link.send_message(Msg::FsmMoveComplete(status));
+                            } else {
+                                link.send_message(Msg::FsmMoveFailed);
+                            }
+                        }
+                        Err(_) => link.send_message(Msg::FsmMoveFailed),
                     }
                 });
                 true
@@ -670,17 +672,11 @@ impl Component for FgsFrontend {
 
                 if let Some(settings) = self.star_detection_settings.clone() {
                     let link = ctx.link().clone();
+                    let client = FgsServerClient::for_web();
                     wasm_bindgen_futures::spawn_local(async move {
-                        match post_json::<_, StarDetectionSettings>(
-                            "/detection/settings",
-                            &settings,
-                        )
-                        .await
-                        {
-                            Some(saved) => {
-                                link.send_message(Msg::StarDetectionSettingsSaved(saved))
-                            }
-                            None => link.send_message(Msg::StarDetectionSettingsSaveFailed),
+                        match client.set_star_detection_settings(&settings).await {
+                            Ok(saved) => link.send_message(Msg::StarDetectionSettingsSaved(saved)),
+                            Err(_) => link.send_message(Msg::StarDetectionSettingsSaveFailed),
                         }
                     });
                 }

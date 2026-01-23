@@ -1,29 +1,6 @@
 use gloo_net::http::Request;
-use serde::{de::DeserializeOwned, Serialize};
 
-/// Fetch JSON from a URL, returning None on failure.
-pub async fn fetch_json<T: DeserializeOwned>(url: &str) -> Option<T> {
-    let response = Request::get(url).send().await.ok()?;
-    response.json::<T>().await.ok()
-}
-
-/// Fetch JSON from a URL, returning the status code along with the result.
-pub async fn fetch_json_with_status<T: DeserializeOwned>(url: &str) -> (u16, Option<T>) {
-    match Request::get(url).send().await {
-        Ok(response) => {
-            let status = response.status();
-            let json = response.json::<T>().await.ok();
-            (status, json)
-        }
-        Err(_) => (0, None),
-    }
-}
-
-/// POST JSON to a URL and return the response.
-pub async fn post_json<T: Serialize, R: DeserializeOwned>(url: &str, body: &T) -> Option<R> {
-    let response = Request::post(url).json(body).ok()?.send().await.ok()?;
-    response.json::<R>().await.ok()
-}
+pub use test_bench_shared::{FgsError, FgsServerClient};
 
 /// Check if a URL returns a successful response (for image loading).
 pub async fn check_url_ok(url: &str) -> bool {

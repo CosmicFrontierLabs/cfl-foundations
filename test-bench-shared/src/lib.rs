@@ -4,7 +4,10 @@
 //! by both the Rust backend (test-bench) and WASM frontend (test-bench-frontend).
 //! All types here must be WASM-compatible (no threading, no C bindings).
 
+mod fgs_client;
 mod ring_buffer;
+
+pub use fgs_client::{FgsError, FgsServerClient};
 pub use ring_buffer::RingBuffer;
 
 use serde::{Deserialize, Serialize};
