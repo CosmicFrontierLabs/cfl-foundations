@@ -22,6 +22,7 @@ use test_bench::display_utils::{
     estimate_pixel_pitch_um, get_display_resolution, list_displays, resolve_display_index,
     wait_for_oled_display, OLED_HEIGHT, OLED_PIXEL_PITCH_UM, OLED_WIDTH,
 };
+use test_bench_shared::PatternCommand;
 use tokio::sync::RwLock;
 
 #[derive(Parser, Debug)]
@@ -398,10 +399,8 @@ async fn update_pattern_config(
 /// The display must be in RemoteControlled mode for these commands to have visible effect.
 async fn post_pattern_command(
     State(state): State<Arc<AppState>>,
-    Json(cmd): Json<shared::pattern_command::PatternCommand>,
+    Json(cmd): Json<PatternCommand>,
 ) -> Response {
-    use shared::pattern_command::PatternCommand;
-
     // Log the command
     match &cmd {
         PatternCommand::Spot {
@@ -448,9 +447,7 @@ async fn post_pattern_command(
 }
 
 /// Get current pattern command state.
-async fn get_pattern_command(
-    State(state): State<Arc<AppState>>,
-) -> Json<shared::pattern_command::PatternCommand> {
+async fn get_pattern_command(State(state): State<Arc<AppState>>) -> Json<PatternCommand> {
     let cmd = state.remote_state.lock().unwrap().current().clone();
     Json(cmd)
 }
@@ -626,10 +623,9 @@ fn main() -> Result<()> {
             };
 
             // Parse command
-            match serde_json::from_str::<shared::pattern_command::PatternCommand>(&msg) {
+            match serde_json::from_str::<PatternCommand>(&msg) {
                 Ok(cmd) => {
                     // Log position changes for pattern commands
-                    use shared::pattern_command::PatternCommand;
                     match &cmd {
                         PatternCommand::Spot {
                             x,

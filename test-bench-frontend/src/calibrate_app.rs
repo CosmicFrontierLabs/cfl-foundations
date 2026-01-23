@@ -1,11 +1,11 @@
-use gloo_net::http::Request;
 use std::collections::HashMap;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
 // Re-export shared types
 pub use test_bench_shared::{
-    ControlSpec, DisplayInfo, PatternConfigResponse, PatternSpec, SchemaResponse,
+    CalibrateError, CalibrateServerClient, ControlSpec, DisplayInfo, PatternConfigRequest,
+    PatternConfigResponse, PatternSpec, SchemaResponse,
 };
 
 // ============================================================================
@@ -115,51 +115,30 @@ impl Component for CalibrateFrontend {
         // Fetch schema on load
         let link = ctx.link().clone();
         wasm_bindgen_futures::spawn_local(async move {
-            match Request::get("/schema").send().await {
-                Ok(response) => {
-                    if let Ok(schema) = response.json::<SchemaResponse>().await {
-                        link.send_message(Msg::SchemaLoaded(schema));
-                    } else {
-                        link.send_message(Msg::SchemaError);
-                    }
-                }
-                Err(_) => {
-                    link.send_message(Msg::SchemaError);
-                }
+            let client = CalibrateServerClient::for_web();
+            match client.get_schema().await {
+                Ok(schema) => link.send_message(Msg::SchemaLoaded(schema)),
+                Err(_) => link.send_message(Msg::SchemaError),
             }
         });
 
         // Fetch current config on load (don't overwrite server state)
         let link = ctx.link().clone();
         wasm_bindgen_futures::spawn_local(async move {
-            match Request::get("/config").send().await {
-                Ok(response) => {
-                    if let Ok(config) = response.json::<PatternConfigResponse>().await {
-                        link.send_message(Msg::InitialConfigLoaded(config));
-                    } else {
-                        link.send_message(Msg::InitialConfigError);
-                    }
-                }
-                Err(_) => {
-                    link.send_message(Msg::InitialConfigError);
-                }
+            let client = CalibrateServerClient::for_web();
+            match client.get_config().await {
+                Ok(config) => link.send_message(Msg::InitialConfigLoaded(config)),
+                Err(_) => link.send_message(Msg::InitialConfigError),
             }
         });
 
         // Fetch display info on load
         let link = ctx.link().clone();
         wasm_bindgen_futures::spawn_local(async move {
-            match Request::get("/info").send().await {
-                Ok(response) => {
-                    if let Ok(info) = response.json::<DisplayInfo>().await {
-                        link.send_message(Msg::DisplayInfoLoaded(info));
-                    } else {
-                        link.send_message(Msg::DisplayInfoError);
-                    }
-                }
-                Err(_) => {
-                    link.send_message(Msg::DisplayInfoError);
-                }
+            let client = CalibrateServerClient::for_web();
+            match client.get_display_info().await {
+                Ok(info) => link.send_message(Msg::DisplayInfoLoaded(info)),
+                Err(_) => link.send_message(Msg::DisplayInfoError),
             }
         });
 
@@ -280,21 +259,15 @@ impl Component for CalibrateFrontend {
                         });
 
                 wasm_bindgen_futures::spawn_local(async move {
-                    let mut body = serde_json::json!({
-                        "pattern_id": pattern_id,
-                        "values": values,
-                        "invert": invert,
-                    });
-
-                    // Add optional global controls
-                    if let Some(emit) = emit_gyro {
-                        body["emit_gyro"] = serde_json::json!(emit);
-                    }
-                    if let Some(scale) = plate_scale {
-                        body["plate_scale"] = serde_json::json!(scale);
-                    }
-
-                    let _ = Request::post("/config").json(&body).unwrap().send().await;
+                    let client = CalibrateServerClient::for_web();
+                    let config = PatternConfigRequest {
+                        pattern_id,
+                        values,
+                        invert: Some(invert),
+                        emit_gyro,
+                        plate_scale,
+                    };
+                    let _ = client.set_config(&config).await;
                 });
                 true
             }
@@ -327,10 +300,9 @@ impl Component for CalibrateFrontend {
             Msg::PollConfig => {
                 let link = ctx.link().clone();
                 wasm_bindgen_futures::spawn_local(async move {
-                    if let Ok(response) = Request::get("/config").send().await {
-                        if let Ok(config) = response.json::<PatternConfigResponse>().await {
-                            link.send_message(Msg::ConfigPolled(config));
-                        }
+                    let client = CalibrateServerClient::for_web();
+                    if let Ok(config) = client.get_config().await {
+                        link.send_message(Msg::ConfigPolled(config));
                     }
                 });
                 false
