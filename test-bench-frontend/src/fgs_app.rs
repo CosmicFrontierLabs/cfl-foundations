@@ -17,12 +17,20 @@ pub use test_bench_shared::{
 /// Maximum history entries for sparkline plots (at ~10Hz polling = ~10 seconds)
 const HISTORY_MAX: usize = 100;
 
+/// Single tracking data point with position, SNR, and timestamp.
+#[derive(Clone, Copy, PartialEq)]
+pub struct TrackingPoint {
+    pub x: f64,
+    pub y: f64,
+    pub snr: f64,
+    /// Timestamp in seconds (with fractional nanos)
+    pub t: f64,
+}
+
 /// Rolling history buffer for tracking data visualization.
 #[derive(Clone, PartialEq)]
 pub struct TrackingHistory {
-    x: RingBuffer<f64>,
-    y: RingBuffer<f64>,
-    snr: RingBuffer<f64>,
+    points: RingBuffer<TrackingPoint>,
 }
 
 impl Default for TrackingHistory {
@@ -34,28 +42,25 @@ impl Default for TrackingHistory {
 impl TrackingHistory {
     fn new() -> Self {
         Self {
-            x: RingBuffer::new(HISTORY_MAX),
-            y: RingBuffer::new(HISTORY_MAX),
-            snr: RingBuffer::new(HISTORY_MAX),
+            points: RingBuffer::new(HISTORY_MAX),
         }
     }
 
-    fn push(&mut self, x: f64, y: f64, snr: f64) {
-        self.x.push(x);
-        self.y.push(y);
-        self.snr.push(snr);
+    fn push(&mut self, x: f64, y: f64, snr: f64, timestamp_sec: u64, timestamp_nanos: u64) {
+        let t = timestamp_sec as f64 + (timestamp_nanos as f64) / 1_000_000_000.0;
+        self.points.push(TrackingPoint { x, y, snr, t });
     }
 
-    pub fn x_slice(&self) -> &std::collections::VecDeque<f64> {
-        self.x.as_deque()
+    pub fn points(&self) -> &std::collections::VecDeque<TrackingPoint> {
+        self.points.as_deque()
     }
 
-    pub fn y_slice(&self) -> &std::collections::VecDeque<f64> {
-        self.y.as_deque()
+    pub fn len(&self) -> usize {
+        self.points.len()
     }
 
-    pub fn snr_slice(&self) -> &std::collections::VecDeque<f64> {
-        self.snr.as_deque()
+    pub fn is_empty(&self) -> bool {
+        self.points.is_empty()
     }
 }
 
@@ -411,7 +416,13 @@ impl Component for FgsFrontend {
                 self.tracking_available = true;
                 // Update position and SNR history if we have a position
                 if let Some(ref pos) = status.position {
-                    self.tracking_history.push(pos.x, pos.y, pos.snr);
+                    self.tracking_history.push(
+                        pos.x,
+                        pos.y,
+                        pos.snr,
+                        pos.timestamp_sec,
+                        pos.timestamp_nanos,
+                    );
                 }
                 self.tracking_status = Some(status);
                 true

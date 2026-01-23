@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use test_bench_shared::{
     CameraStats, ExportStatus, FsmStatus, StarDetectionSettings, TrackingSettings, TrackingState,
     TrackingStatus,
@@ -13,95 +11,97 @@ use super::components::{
     Slider, SmallCheckbox, StatusCount, TextInput,
 };
 
+use crate::fgs_app::TrackingPoint;
+
 /// Configuration for a single sparkline within the aligned panel.
 struct SparklineRow {
     label: &'static str,
     color: &'static str,
-    data: VecDeque<f64>,
+    /// Function to extract value from TrackingPoint
+    extractor: fn(&TrackingPoint) -> f64,
     reference_line: Option<(f64, &'static str)>,
 }
 
 /// Render aligned sparklines for X, Y, and SNR with shared time axis.
 /// All three plots share the same width and time scale for easy correlation.
+/// Uses actual timestamps for accurate X positioning when there are gaps from tab backgrounding.
+/// Labels and values are rendered as HTML elements to avoid SVG clipping issues.
 fn render_aligned_sparklines(history: &TrackingHistory) -> Html {
-    let x_data = history.x_slice().clone();
-    let y_data = history.y_slice().clone();
-    let snr_data = history.snr_slice().clone();
+    let points = history.points();
 
-    // All three should have the same length since they're pushed together
-    let data_len = x_data.len();
-    if data_len == 0 {
+    if points.is_empty() {
         return html! {};
     }
 
-    let rows = vec![
+    // Calculate time range from actual timestamps
+    let time_min = points.front().map(|p| p.t).unwrap_or(0.0);
+    let time_max = points.back().map(|p| p.t).unwrap_or(0.0);
+    let time_range = (time_max - time_min).max(0.001);
+    let time_span_secs = time_range;
+
+    let rows = [
         SparklineRow {
             label: "X",
             color: "#00aaff",
-            data: x_data,
+            extractor: |p| p.x,
             reference_line: None,
         },
         SparklineRow {
             label: "Y",
             color: "#ffaa00",
-            data: y_data,
+            extractor: |p| p.y,
             reference_line: None,
         },
         SparklineRow {
             label: "SNR",
-            color: "#00ff00",
-            data: snr_data,
+            color: "#44ddaa",
+            extractor: |p| p.snr,
             reference_line: Some((3.0, "#ff0000")),
         },
     ];
 
     // Layout constants
-    let label_width = 35.0; // Width for labels on left
-    let plot_width = 270.0; // 50% wider (was 180)
-    let value_width = 95.0; // Width for BIG current value on right
-    let row_height = 64.0; // Doubled height for better visibility
+    let plot_width = 200.0;
+    let row_height = 48.0;
     let padding = 2.0;
-    let total_width = label_width + plot_width + value_width;
     let time_axis_height = 16.0;
-    let total_height = (rows.len() as f64) * row_height + time_axis_height;
+    let total_svg_height = (rows.len() as f64) * row_height + time_axis_height;
 
-    // Calculate time span (assuming ~10Hz polling, 100 samples = ~10 seconds)
-    let time_span_secs = (data_len as f64) / 10.0;
-
-    // Build SVG rows
-    let row_svgs: Html = rows
+    // Build HTML rows with label, SVG plot, and value
+    let html_rows: Html = rows
         .iter()
         .enumerate()
         .map(|(row_idx, row)| {
             let y_offset = row_idx as f64 * row_height;
 
+            // Extract values using the row's extractor function
+            let values: Vec<f64> = points.iter().map(row.extractor).collect();
+
             // Calculate min/max for this row's data
-            let min_val = row.data.iter().cloned().fold(f64::INFINITY, f64::min);
-            let max_val = row.data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let min_val = values.iter().cloned().fold(f64::INFINITY, f64::min);
+            let max_val = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
             let range = (max_val - min_val).max(0.001);
 
-            // Get current (latest) value
-            let current_val = row.data.back().copied().unwrap_or(0.0);
-
-            // Build path for this row
-            let points: Vec<String> = row
-                .data
+            // Build path for this row using actual timestamps for X positioning
+            let path_points: Vec<String> = points
                 .iter()
-                .enumerate()
-                .map(|(i, &val)| {
-                    let x = label_width
-                        + padding
-                        + (i as f64 / data_len.max(1) as f64) * (plot_width - 2.0 * padding);
+                .zip(values.iter())
+                .map(|(pt, &val)| {
+                    // Use actual timestamp for X position (handles gaps from backgrounded tabs)
+                    let t_normalized = (pt.t - time_min) / time_range;
+                    let x = padding + t_normalized * (plot_width - 2.0 * padding);
                     let y = y_offset + padding + (row_height - 2.0 * padding)
                         - ((val - min_val) / range) * (row_height - 2.0 * padding);
                     format!("{x:.1},{y:.1}")
                 })
                 .collect();
 
-            let path_d = if points.len() > 1 {
-                format!("M {} L {}", points[0], points[1..].join(" L "))
+            let path_d = if path_points.len() > 1 {
+                format!("M {} L {}", path_points[0], path_points[1..].join(" L "))
+            } else if !path_points.is_empty() {
+                format!("M {} L {}", path_points[0], path_points[0])
             } else {
-                format!("M {} L {}", points[0], points[0])
+                String::new()
             };
 
             // Reference line (for SNR threshold)
@@ -111,9 +111,9 @@ fn render_aligned_sparklines(history: &TrackingHistory) -> Html {
                         - ((ref_val - min_val) / range) * (row_height - 2.0 * padding);
                     html! {
                         <line
-                            x1={(label_width + padding).to_string()}
+                            x1={padding.to_string()}
                             y1={y.to_string()}
-                            x2={(label_width + plot_width - padding).to_string()}
+                            x2={(plot_width - padding).to_string()}
                             y2={y.to_string()}
                             stroke={ref_color}
                             stroke-width="1"
@@ -127,10 +127,10 @@ fn render_aligned_sparklines(history: &TrackingHistory) -> Html {
                 html! {}
             };
 
-            // Row background and border
+            // Row background and border in SVG
             let bg_rect = html! {
                 <rect
-                    x={label_width.to_string()}
+                    x="0"
                     y={y_offset.to_string()}
                     width={plot_width.to_string()}
                     height={row_height.to_string()}
@@ -140,47 +140,16 @@ fn render_aligned_sparklines(history: &TrackingHistory) -> Html {
                 />
             };
 
-            // Label on left (outside graph, green like framing elements)
-            let label_y = y_offset + row_height / 2.0 + 4.0;
-            let label_elem = html! {
-                <text
-                    x={(label_width - 4.0).to_string()}
-                    y={label_y.to_string()}
-                    fill="#00ff00"
-                    font-size="11"
-                    font-family="monospace"
-                    text-anchor="end"
-                >
-                    {row.label}
-                </text>
-            };
-
-            // Current value on right side - BIG like the graph height
-            let value_text = format!("{current_val:.2}");
-            let value_y = y_offset + row_height / 2.0 + 16.0; // Centered vertically for big text
-            let value_elem = html! {
-                <text
-                    x={(label_width + plot_width + 8.0).to_string()}
-                    y={value_y.to_string()}
-                    fill={row.color}
-                    font-size="48"
-                    font-family="monospace"
-                    font-weight="bold"
-                >
-                    {value_text}
-                </text>
-            };
-
-            // Vertical scale annotations (min at bottom, max at top)
-            let scale_x = label_width + plot_width - 3.0;
-            let max_text = format!("{max_val:.2}");
-            let min_text = format!("{min_val:.2}");
+            // Vertical scale annotations (min at bottom, max at top), 3 decimal places
+            let scale_x = plot_width - 3.0;
+            let max_text = format!("{max_val:.3}");
+            let min_text = format!("{min_val:.3}");
             let scale_elems = html! {
                 <>
                     <text
                         x={scale_x.to_string()}
                         y={(y_offset + 10.0).to_string()}
-                        fill="#666"
+                        fill="#00ff00"
                         font-size="9"
                         font-family="monospace"
                         text-anchor="end"
@@ -190,7 +159,7 @@ fn render_aligned_sparklines(history: &TrackingHistory) -> Html {
                     <text
                         x={scale_x.to_string()}
                         y={(y_offset + row_height - 3.0).to_string()}
-                        fill="#666"
+                        fill="#00ff00"
                         font-size="9"
                         font-family="monospace"
                         text-anchor="end"
@@ -200,64 +169,59 @@ fn render_aligned_sparklines(history: &TrackingHistory) -> Html {
                 </>
             };
 
+            // Return just the SVG elements for this row (background, line, path, scale)
             html! {
                 <>
                     { bg_rect }
                     { ref_line }
                     <path d={path_d} fill="none" stroke={row.color} stroke-width="1.5"/>
-                    { label_elem }
-                    { value_elem }
                     { scale_elems }
                 </>
             }
         })
         .collect();
 
-    // Time axis at bottom
+    // Time axis at bottom of SVG
     let time_y = (rows.len() as f64) * row_height + 12.0;
     let time_axis = html! {
         <>
-            // Time axis line
             <line
-                x1={label_width.to_string()}
+                x1="0"
                 y1={(time_y - 8.0).to_string()}
-                x2={(label_width + plot_width).to_string()}
+                x2={plot_width.to_string()}
                 y2={(time_y - 8.0).to_string()}
                 stroke="#444"
                 stroke-width="1"
             />
-            // Left tick (oldest)
             <line
-                x1={label_width.to_string()}
+                x1="0"
                 y1={(time_y - 10.0).to_string()}
-                x2={label_width.to_string()}
+                x2="0"
                 y2={(time_y - 6.0).to_string()}
                 stroke="#444"
                 stroke-width="1"
             />
-            // Right tick (newest)
             <line
-                x1={(label_width + plot_width).to_string()}
+                x1={plot_width.to_string()}
                 y1={(time_y - 10.0).to_string()}
-                x2={(label_width + plot_width).to_string()}
+                x2={plot_width.to_string()}
                 y2={(time_y - 6.0).to_string()}
                 stroke="#444"
                 stroke-width="1"
             />
-            // Time labels
             <text
-                x={label_width.to_string()}
+                x="0"
                 y={time_y.to_string()}
-                fill="#666"
+                fill="#00ff00"
                 font-size="9"
                 font-family="monospace"
             >
                 {format!("-{:.0}s", time_span_secs)}
             </text>
             <text
-                x={(label_width + plot_width).to_string()}
+                x={plot_width.to_string()}
                 y={time_y.to_string()}
-                fill="#666"
+                fill="#00ff00"
                 font-size="9"
                 font-family="monospace"
                 text-anchor="end"
@@ -267,16 +231,38 @@ fn render_aligned_sparklines(history: &TrackingHistory) -> Html {
         </>
     };
 
+    // viewBox dimensions for SVG coordinate system
+    let view_box = format!("0 0 {plot_width} {total_svg_height}");
+
     html! {
         <div style="margin-top: 10px;">
-            <svg
-                width={total_width.to_string()}
-                height={total_height.to_string()}
-                style="display: block;"
-            >
-                { row_svgs }
-                { time_axis }
-            </svg>
+            <div style="display: flex; align-items: stretch;">
+                // Left column: labels + values combined
+                <div style="display: flex; flex-direction: column; flex-shrink: 0; padding-right: 12px;">
+                    {for rows.iter().map(|row| {
+                        let values: Vec<f64> = points.iter().map(row.extractor).collect();
+                        let current_val = values.last().copied().unwrap_or(0.0);
+                        // Format: "SNR 1234.567" - label right-padded to 3 chars, value right-aligned
+                        let combined_text = format!("{:<3} {:>10.3}", row.label, current_val);
+                        html! {
+                            <div style={format!("color: {}; font-weight: bold; font-family: monospace; font-size: 32px; height: 48px; display: flex; align-items: center; white-space: pre;", row.color)}>
+                                {combined_text}
+                            </div>
+                        }
+                    })}
+                    <div style="height: 16px;"></div>
+                </div>
+                // Right: SVG sparklines (stretches to fill available width)
+                <svg
+                    viewBox={view_box}
+                    preserveAspectRatio="none"
+                    style="display: block; flex: 1; min-width: 100px;"
+                    height={total_svg_height.to_string()}
+                >
+                    { html_rows }
+                    { time_axis }
+                </svg>
+            </div>
         </div>
     }
 }
