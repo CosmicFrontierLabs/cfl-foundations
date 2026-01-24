@@ -1,11 +1,49 @@
 # Development Scripts
 
-This directory contains scripts for git hooks, building, and deploying to Jetson Orin.
+This directory contains scripts for git hooks, building, and deploying to NSV device (orin-005).
 
 ## Build & Deployment Scripts
 
+### build-remote.sh
+Build on cfl-test-bench and deploy to target devices.
+
+Usage:
+```bash
+# Build and deploy to NSV (orin-005)
+./scripts/build-remote.sh --package test-bench --binary fgs_server --nsv
+
+# Build on test-bench only (no deployment)
+./scripts/build-remote.sh --package test-bench --binary fgs_server --test-bench
+
+# Build and run
+./scripts/build-remote.sh --package test-bench --binary fgs_server --nsv --run './fgs_server'
+```
+
+Options:
+- `--package PKG` - Package to build (e.g., test-bench)
+- `--binary BIN` - Binary to build
+- `--nsv` - Deploy to NSV device (orin-005)
+- `--test-bench` - Build on cfl-test-bench only
+- `--features FEAT` - Cargo features to enable
+- `--run CMD` - Command to run after deployment
+
+Environment variables:
+- `NSV_HOST` - Override NSV host (default: cosmicfrontier@orin-005.tail944341.ts.net)
+
+### deploy-fgs.sh
+Deploy fgs_server to NSV device with frontend files.
+
+Usage:
+```bash
+# Update existing deployment
+./scripts/deploy-fgs.sh
+
+# Full setup (install systemd service)
+./scripts/deploy-fgs.sh --setup
+```
+
 ### build-arm64.sh
-Cross-compile packages for ARM64 (Jetson Orin).
+Cross-compile packages for ARM64.
 
 Usage:
 ```bash
@@ -14,33 +52,7 @@ Usage:
 
 # Build specific binary
 ./scripts/build-arm64.sh <package-name> <binary-name>
-
-# Examples
-./scripts/build-arm64.sh flight-software
-./scripts/build-arm64.sh poa_cameras playerone_info
 ```
-
-### deploy-to-orin.sh
-Build and deploy packages to remote Jetson Orin device.
-
-Usage:
-```bash
-# Deploy package and run command
-./scripts/deploy-to-orin.sh --package poa_cameras --binary playerone_info --run './playerone_info --detailed'
-
-# Deploy without building (use existing binaries)
-./scripts/deploy-to-orin.sh --package flight-software --skip-build --keep-remote
-```
-
-Options:
-- `--package PKG` - Package to deploy (flight-software, poa_cameras)
-- `--binary BIN` - Specific binary to deploy
-- `--skip-build` - Skip build step
-- `--keep-remote` - Keep remote directory after deployment
-- `--run CMD` - Command to run remotely
-
-Environment variables:
-- `ORIN_HOST` - Remote host (default: cosmicfrontiers@192.168.15.229)
 
 ## Git Hooks Scripts
 

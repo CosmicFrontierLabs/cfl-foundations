@@ -1,13 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-# Deploy fgs_server to remote ARM targets
+# Deploy fgs_server to NSV device (orin-005)
 #
 # Usage:
-#   ./deploy-fgs.sh neut           # Update: build, sync, restart service on Neutralino
-#   ./deploy-fgs.sh orin           # Update: build, sync, restart service on Orin Nano
-#   ./deploy-fgs.sh neut --setup   # Full setup: build, sync, install systemd service
-#   ./deploy-fgs.sh orin --setup   # Full setup: build, sync, install systemd service
+#   ./deploy-fgs.sh              # Update: build, sync, restart service
+#   ./deploy-fgs.sh --setup      # Full setup: build, sync, install systemd service
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -25,14 +23,9 @@ print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 usage() {
-    echo "Usage: $0 <target> [OPTIONS]"
+    echo "Usage: $0 [OPTIONS]"
     echo ""
-    echo "Deploy fgs_server to remote ARM targets."
-    echo ""
-    echo "Targets:"
-    echo "  neut          Neutralino (NSV455 camera on orin-005)"
-    echo "  nsv           NSV (NSV455 camera on orin-416)"
-    echo "  orin          Orin Nano (PlayerOne camera)"
+    echo "Deploy fgs_server to NSV device (orin-005)."
     echo ""
     echo "Modes:"
     echo "  (default)     Update: build, sync frontend, restart service"
@@ -42,69 +35,24 @@ usage() {
     echo "  -h, --help    Show this help"
     echo ""
     echo "Environment Variables:"
-    echo "  ORIN_HOST     Override Orin Nano host (default: meawoppl@orin-nano.tail944341.ts.net)"
-    echo "  NEUT_HOST     Override Neutralino host (default: cosmicfrontier@orin-005.tail944341.ts.net)"
-    echo "  NSV_HOST      Override NSV host (default: cosmicfrontier@orin-416.tail944341.ts.net)"
+    echo "  NSV_HOST      Override NSV host (default: cosmicfrontier@orin-005.tail944341.ts.net)"
     exit 0
 }
 
-# Target configuration
-configure_target() {
-    case $1 in
-        neut|neutralino)
-            REMOTE_HOST="${NEUT_HOST:-cosmicfrontier@orin-005.tail944341.ts.net}"
-            BUILD_TARGET="--neut"
-            CAMERA_TYPE="nsv"
-            CAMERA_DESC="NSV455"
-            REMOTE_USER="cosmicfrontier"
-            FRIENDLY_NAME="neutralino"
-            ;;
-        nsv)
-            REMOTE_HOST="${NSV_HOST:-cosmicfrontier@orin-416.tail944341.ts.net}"
-            BUILD_TARGET="--nsv"
-            CAMERA_TYPE="nsv"
-            CAMERA_DESC="NSV455"
-            REMOTE_USER="cosmicfrontier"
-            FRIENDLY_NAME="nsv"
-            ;;
-        orin|orin-nano)
-            REMOTE_HOST="${ORIN_HOST:-meawoppl@orin-nano.tail944341.ts.net}"
-            BUILD_TARGET="--orin"
-            CAMERA_TYPE="poa"
-            CAMERA_DESC="PlayerOne"
-            REMOTE_USER="meawoppl"
-            FRIENDLY_NAME="orin-nano"
-            ;;
-        *)
-            print_error "Unknown target: $1"
-            echo "Valid targets: neut, nsv, orin"
-            exit 1
-            ;;
-    esac
-
-    REMOTE_BUILD_DIR="rust-builds/meter-sim"
-    SERVICE_NAME="fgs-server"
-}
+# Target configuration (NSV only)
+REMOTE_HOST="${NSV_HOST:-cosmicfrontier@orin-005.tail944341.ts.net}"
+CAMERA_TYPE="nsv"
+CAMERA_DESC="NSV455"
+REMOTE_USER="cosmicfrontier"
+FRIENDLY_NAME="nsv"
+REMOTE_BUILD_DIR="rust-builds/meter-sim"
+SERVICE_NAME="fgs-server"
 
 # Parse arguments
-if [[ $# -lt 1 ]]; then
-    usage
-fi
-
-TARGET=""
 SETUP_MODE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        neut|neutralino|nsv|orin|orin-nano)
-            if [[ -z "$TARGET" ]]; then
-                TARGET="$1"
-            else
-                print_error "Multiple targets specified"
-                exit 1
-            fi
-            shift
-            ;;
         --setup)
             SETUP_MODE=true
             shift
@@ -119,18 +67,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$TARGET" ]]; then
-    print_error "No target specified"
-    usage
-fi
-
-configure_target "$TARGET"
-
 print_info "Deploying fgs_server ($CAMERA_DESC) to $FRIENDLY_NAME..."
 
 # Step 1: Build fgs_server on remote
 print_info "Building fgs_server on $FRIENDLY_NAME..."
-"$SCRIPT_DIR/build-remote.sh" --package test-bench --binary fgs_server $BUILD_TARGET
+"$SCRIPT_DIR/build-remote.sh" --package test-bench --binary fgs_server --nsv
 
 # Step 2: Build frontend locally (requires trunk)
 print_info "Building frontend WASM files locally..."

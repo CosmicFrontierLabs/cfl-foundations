@@ -10,15 +10,11 @@ set -euo pipefail
 #
 # Build Modes:
 # - Native build: Used for --test-bench (Ubuntu 24.04 glibc 2.39)
-# - Docker build: Used for --orin/--neut/--nsv (Ubuntu 22.04 glibc 2.35)
+# - Docker build: Used for --nsv (Ubuntu 22.04 glibc 2.35)
 #   * Uses jammy-builder Docker image to match Jetson's glibc version
 #
 # Supported Target Devices:
-# - Orin Nano (--orin): PlayerOne astronomy cameras
-#   * Auto-enables 'playerone' feature flag
-# - Neutralino (--neut): NSV455 camera (V4L2-based) on orin-005
-#   * Auto-enables 'nsv455' feature flag
-# - NSV (--nsv): NSV455 camera (V4L2-based) on orin-416
+# - NSV (--nsv): NSV455 camera (V4L2-based) on orin-005
 #   * Auto-enables 'nsv455' feature flag
 # - Test Bench (--test-bench): Build and run on cfl-test-bench itself
 
@@ -38,12 +34,8 @@ BUILD_HOST="meawoppl@cfl-test-bench.tail944341.ts.net"
 BUILD_DEVICE_NAME="cfl-test-bench"
 
 # Target host presets
-ORIN_HOST="${ORIN_HOST:-meawoppl@orin-nano.tail944341.ts.net}"
-ORIN_TAILSCALE_NAME="orin-nano"
-NEUT_HOST="cosmicfrontier@orin-005.tail944341.ts.net"
-NEUT_DEVICE_NAME="orin-005"
-NSV_HOST="cosmicfrontier@orin-416.tail944341.ts.net"
-NSV_DEVICE_NAME="orin-416"
+NSV_HOST="${NSV_HOST:-cosmicfrontier@orin-005.tail944341.ts.net}"
+NSV_DEVICE_NAME="orin-005"
 
 # Apt dependencies management (for build server only)
 APT_DEPS_VERSION=5
@@ -66,7 +58,7 @@ print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 usage() {
-    echo "Usage: $0 --package PACKAGE --binary BINARY [--orin|--neut|--nsv|--test-bench] [OPTIONS]"
+    echo "Usage: $0 --package PACKAGE --binary BINARY [--nsv|--test-bench] [OPTIONS]"
     echo ""
     echo "Build on cfl-test-bench and deploy binary to target device."
     echo ""
@@ -75,18 +67,16 @@ usage() {
     echo "  --binary BIN         Binary to build (required for deployment)"
     echo ""
     echo "Target Device (one required):"
-    echo "  --orin               Deploy to Jetson Orin Nano (${ORIN_HOST})"
-    echo "  --neut               Deploy to Neutralino/orin-005 (${NEUT_HOST})"
-    echo "  --nsv                Deploy to NSV/orin-416 (${NSV_HOST})"
+    echo "  --nsv                Deploy to NSV/orin-005 (${NSV_HOST})"
     echo "  --test-bench         Build and run on cfl-test-bench (no deployment)"
     echo ""
     echo "Options:"
-    echo "  --features FEAT      Cargo features to enable (auto-detected for some devices)"
+    echo "  --features FEAT      Cargo features to enable (auto-detected for NSV)"
     echo "  --run CMD            Command to run after deployment (relative to binary location)"
     echo "  -h, --help           Show this help"
     echo ""
     echo "Examples:"
-    echo "  $0 --package test-bench --binary fgs_server --neut"
+    echo "  $0 --package test-bench --binary fgs_server --nsv"
     echo "  $0 --package test-bench --binary fgs_server --nsv --run './fgs_server'"
     echo "  $0 --package test-bench --binary calibrate_serve --test-bench --features sdl2"
     exit 0
@@ -94,18 +84,6 @@ usage() {
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --orin)
-            DEVICE_TYPE="orin"
-            TARGET_HOST="$ORIN_HOST"
-            TAILSCALE_DEVICE_NAME="$ORIN_TAILSCALE_NAME"
-            shift
-            ;;
-        --neut)
-            DEVICE_TYPE="neut"
-            TARGET_HOST="$NEUT_HOST"
-            TAILSCALE_DEVICE_NAME="$NEUT_DEVICE_NAME"
-            shift
-            ;;
         --nsv)
             DEVICE_TYPE="nsv"
             TARGET_HOST="$NSV_HOST"
@@ -156,19 +134,13 @@ if [ -z "$BINARY_NAME" ]; then
 fi
 
 if [ -z "$DEVICE_TYPE" ]; then
-    print_error "Device type is required. Use --orin, --neut, --nsv, or --test-bench"
+    print_error "Device type is required. Use --nsv or --test-bench"
     usage
 fi
 
 # Auto-enable features based on device type if not explicitly set
 if [ -z "$FEATURES" ]; then
-    if [ "$DEVICE_TYPE" = "orin" ]; then
-        FEATURES="playerone"
-        print_info "Auto-enabling 'playerone' feature for Orin device"
-    elif [ "$DEVICE_TYPE" = "neut" ]; then
-        FEATURES="nsv455"
-        print_info "Auto-enabling 'nsv455' feature for Neutralino device"
-    elif [ "$DEVICE_TYPE" = "nsv" ]; then
+    if [ "$DEVICE_TYPE" = "nsv" ]; then
         FEATURES="nsv455"
         print_info "Auto-enabling 'nsv455' feature for NSV device"
     fi
