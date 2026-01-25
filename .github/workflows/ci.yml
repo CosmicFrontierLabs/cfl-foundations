@@ -39,3 +39,6 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
 
+    - name: Run hardware driver tests
+      run: cargo test --package hardware --features ci-testable --verbose
+

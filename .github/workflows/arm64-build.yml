@@ -31,12 +31,12 @@ jobs:
     - name: Build fgs_server (NSV455 camera)
       run: |
         source ~/.cargo/env
-        cargo build --release --package test-bench --bin fgs_server --features nsv455
+        cargo build --release --package test-bench --bin fgs_server --features nsv455,pi-fsm
 
     - name: Build fgs_server (PlayerOne camera)
       run: |
         source ~/.cargo/env
-        cargo build --release --package test-bench --bin fgs_server --features playerone
+        cargo build --release --package test-bench --bin fgs_server --features playerone,pi-fsm
       continue-on-error: true  # May fail if libplayeronecamera2 not available
 
     - name: Build calibration_controller

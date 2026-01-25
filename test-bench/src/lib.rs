@@ -1,7 +1,11 @@
 pub mod calibration_controller;
 pub mod camera_init;
-pub mod camera_server;
 pub mod display_patterns;
+
+#[cfg(feature = "pi-fsm")]
+pub mod camera_server;
+
+#[cfg(feature = "pi-fsm")]
 pub mod fsm_calibration;
 
 #[cfg(feature = "sdl2")]
@@ -13,7 +17,7 @@ pub mod display_utils;
 #[cfg(target_os = "linux")]
 pub mod gpio;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "orin"))]
 pub mod orin_monitoring;
 
 #[cfg(feature = "playerone")]

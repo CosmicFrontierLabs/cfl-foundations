@@ -24,7 +24,8 @@ required-features = ["playerone"]
 [[bin]]
 name = "fgs_server"
 path = "src/bin/fgs_server.rs"
-# Fine Guidance System server - camera display and star tracking
+required-features = ["pi-fsm"]
+# Fine Guidance System server - camera display and star tracking (requires PI FSM controller)
 
 [[bin]]
 name = "dark_frame_analysis"
@@ -61,7 +62,8 @@ libc = "0.2.177"
 monocle = { version = "0.1.0", path = "../monocle" }
 nalgebra = "0.32"
 ndarray = "0.16"
-hardware = { version = "0.1.0", path = "../hardware" }
+# Hardware drivers - specify features needed for each deployment target
+hardware = { version = "0.1.0", path = "../hardware", default-features = false }
 prometheus = "0.14"
 rand = "0.8"
 rayon = "1.11.0"
@@ -101,8 +103,15 @@ tokio-test = "0.4"
 
 [features]
 default = []
-linux-bins = []
+# Full feature set for Linux deployment (all hardware drivers)
+full-linux = ["nsv455", "orin", "pi-fsm", "ftdi", "linux-bins"]
+# Individual hardware features
+nsv455 = ["hardware/nsv455", "supported-camera"]
+orin = ["hardware/orin"]
+pi-fsm = ["hardware/pi-fsm"]
+ftdi = ["hardware/ftdi"]
+# Existing features
+linux-bins = ["orin"]
 supported-camera = []
 playerone = ["hardware/playerone", "supported-camera"]
-nsv455 = ["supported-camera"]
-sdl2 = ["dep:sdl2"]
+sdl2 = ["dep:sdl2", "ftdi"]

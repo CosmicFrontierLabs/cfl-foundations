@@ -3,11 +3,14 @@
 //! Provides infrastructure for displaying calibration patterns via the web server.
 
 mod display;
-pub mod gyro_emitter;
 mod pattern;
 mod schema;
 
+#[cfg(feature = "ftdi")]
+pub mod gyro_emitter;
+
 pub use display::{run_display, DisplayConfig, DynamicPattern, OledSafetyWatchdog, PatternSource};
+#[cfg(feature = "ftdi")]
 pub use gyro_emitter::{
     list_ftdi_devices_info, spawn_gyro_emitter, GyroEmissionParams, GyroEmitterConfig,
     GyroEmitterHandle, PositionSource,

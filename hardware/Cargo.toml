@@ -10,12 +10,12 @@ license.workspace = true
 [[bin]]
 name = "fsm_tool"
 path = "src/bin/fsm_tool.rs"
-required-features = ["linux-bins"]
+required-features = ["pi-fsm"]
 
 [[bin]]
 name = "pi_fsm_test"
 path = "src/bin/pi_fsm_test.rs"
-required-features = ["linux-bins"]
+required-features = ["pi-fsm"]
 
 [[bin]]
 name = "v4l2_stride_test"
@@ -30,10 +30,17 @@ required-features = ["linux-bins"]
 [[bin]]
 name = "mock_gyro"
 path = "src/bin/mock_gyro.rs"
+required-features = ["ftdi"]
+
+[[bin]]
+name = "listen_gyro"
+path = "src/bin/listen_gyro.rs"
+required-features = ["ftdi", "exail"]
 
 [[bin]]
 name = "parse_dump"
 path = "src/exail/bin/parse_dump.rs"
+required-features = ["exail"]
 
 [dependencies]
 anyhow = "1.0"
@@ -80,6 +87,20 @@ tokio-test = "0.4"
 
 [features]
 default = []
+# Full feature set for Linux deployments (all drivers)
+full-linux = ["nsv455", "orin", "pi-fsm", "exail", "ftdi", "exolambda"]
+# Cross-platform drivers only (no Linux-specific hardware)
+cross-platform = ["pi-fsm", "exail", "ftdi", "exolambda"]
+# Drivers with tests that can run in CI (no real hardware needed)
+ci-testable = ["exail", "ftdi", "exolambda", "playerone"]
+# Individual driver features
+nsv455 = []        # NSV455 V4L2 camera driver (Linux only)
+orin = []          # Jetson Orin GPIO/monitoring (Linux only)
+pi-fsm = []        # PI E-727 FSM controller (Ethernet, cross-platform)
+exail = []         # Exail gyroscope (serial protocol)
+ftdi = []          # FTDI serial adapters
+exolambda = []     # ExoLambda packet protocol
+playerone = ["dep:playerone-sdk"]  # PlayerOne astronomy camera SDK
+# Legacy/utility features
 hardware-tests = []
-linux-bins = []
-playerone = ["dep:playerone-sdk"]
+linux-bins = ["nsv455", "orin"]

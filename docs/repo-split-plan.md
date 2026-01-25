@@ -284,29 +284,33 @@ shared = { version = "0.1.0", path = "../shared" }
 
 **Outcome**: Faster incremental builds, explicit dependencies, groundwork for extraction.
 
-### Phase 2: Feature-Gate Hardware Drivers (Medium Risk)
+### Phase 2: Feature-Gate Hardware Drivers ✅ (COMPLETED)
 
-**Current state**: NSV455 driver always compiled on Linux, PlayerOne is optional.
+**Status**: Completed in PR #622.
 
-**Step 2.1**: Add features to `hardware/Cargo.toml`:
+**Features added** to `hardware/Cargo.toml`:
 ```toml
 [features]
 default = []
-nsv455 = []  # NEW: Make NSV455 optional
-playerone = ["dep:playerone-sdk"]  # Existing
-exail = []   # NEW: Make Exail gyro optional
-pi-stage = [] # NEW: Make PI controllers optional
+full-linux = ["nsv455", "orin", "pi-fsm", "exail", "ftdi"]
+nsv455 = []      # NSV455 V4L2 camera (Linux only)
+orin = []        # Jetson Orin monitoring (Linux only)
+pi-fsm = []      # PI E-727 FSM controller (Ethernet, cross-platform)
+exail = []       # Exail gyroscope (serial protocol)
+ftdi = []        # FTDI serial adapters
+exolambda = []   # ExoLambda packet protocol
+playerone = ["dep:playerone-sdk"]
 ```
 
-**Step 2.2**: Gate driver modules:
+**Modules gated** in `hardware/src/lib.rs`:
 ```rust
-#[cfg(feature = "nsv455")]
-pub mod nsv455;
-
 #[cfg(feature = "exail")]
 pub mod exail;
 
-#[cfg(feature = "pi-stage")]
+#[cfg(all(target_os = "linux", feature = "nsv455"))]
+pub mod nsv455;
+
+#[cfg(feature = "pi-fsm")]
 pub mod pi;
 ```
 
@@ -401,7 +405,7 @@ pub struct TrackingResult { ... }
 These can be done today with minimal risk:
 
 1. ~~**Feature-gate ZMQ in `shared`**~~ ✅ Done (PR #580)
-2. **Feature-gate NSV455 in `hardware`** - Not needed for simulation
+2. ~~**Feature-gate NSV455 in `hardware`**~~ ✅ Done (PR #622) - All hardware drivers now feature-gated
 3. ~~**Extract `proto-control`**~~ ✅ Merged into `monocle_harness`
 4. **Document public API** for `monocle` - Prepare for publication
 
