@@ -1,7 +1,8 @@
-//! Remote-controlled pattern that receives commands via ZMQ REQ/REP.
+//! Remote-controlled pattern that receives commands via REST API.
 //!
 //! Displays spots, grids, or uniform colors based on commands from
-//! a desktop calibration controller.
+//! a desktop calibration controller. Commands are sent via:
+//! - REST API: POST /pattern with PatternCommand JSON
 
 use std::sync::Mutex;
 use std::time::Instant;
@@ -12,7 +13,7 @@ use test_bench_shared::PatternCommand;
 use super::shared::{compute_normalization_factor, render_gaussian_spot, BlendMode};
 
 /// State for the remote-controlled pattern.
-/// Commands are set externally via the ZMQ REP handler.
+/// Commands are set externally via REST API handler.
 pub struct RemotePatternState {
     /// Currently active command
     current_command: PatternCommand,
@@ -41,7 +42,7 @@ impl RemotePatternState {
         }
     }
 
-    /// Set the current command (called from ZMQ REP handler).
+    /// Set the current command (called from REST API handler).
     pub fn set_command(&mut self, cmd: PatternCommand) {
         self.current_command = cmd;
         self.last_update = Instant::now();

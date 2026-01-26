@@ -131,13 +131,8 @@ pub fn get_pattern_schemas() -> SchemaResponse {
             },
             PatternSpec {
                 id: "RemoteControlled".into(),
-                name: "Remote Controlled (ZMQ)".into(),
-                controls: vec![ControlSpec::Text {
-                    id: "zmq_endpoint".into(),
-                    label: "ZMQ Endpoint".into(),
-                    default: "tcp://localhost:5556".into(),
-                    placeholder: "tcp://host:port".into(),
-                }],
+                name: "Remote Controlled".into(),
+                controls: vec![],
             },
         ],
         global_controls: vec![

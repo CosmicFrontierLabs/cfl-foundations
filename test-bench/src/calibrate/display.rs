@@ -378,7 +378,7 @@ pub fn run_display<P: PatternSource>(
             }
         }
 
-        // Check for updates from external source (web API, watchdog, ZMQ)
+        // Check for updates from external source (web API, watchdog)
         if let Some(rx) = source.update_receiver() {
             if rx.try_recv().is_ok() {
                 let (new_pattern, new_invert) = source.current();

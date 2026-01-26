@@ -35,11 +35,10 @@ use tokio::sync::RwLock;
     long_about = "Web server for displaying calibration patterns on OLED displays.\n\n\
         This server provides a web interface for controlling calibration patterns displayed on \
         an SDL2-controlled display. It supports multiple pattern types (grids, spots, etc.) \
-        and can receive pattern commands via both HTTP REST API and ZMQ sockets.\n\n\
+        and can receive pattern commands via HTTP REST API.\n\n\
         Features:\n  \
         - Web UI at http://<bind>:<port>/ for interactive pattern control\n  \
         - REST API endpoints for programmatic access\n  \
-        - ZMQ REP socket for real-time pattern updates\n  \
         - OLED burn-in protection with configurable idle timeout\n  \
         - Optional gyro emission for hardware-in-the-loop testing"
 )]
@@ -111,17 +110,6 @@ struct Args {
     )]
     idle_timeout: u64,
 
-    #[arg(
-        long,
-        default_value = "tcp://*:5556",
-        help = "ZMQ REP bind address for receiving pattern commands",
-        long_help = "ZeroMQ REP socket bind address for receiving pattern commands. \
-            Pattern commands are JSON-encoded PatternCommand messages (Spot, SpotGrid, \
-            Uniform, Clear). The socket replies 'ok' on success or 'error: <msg>' on failure. \
-            Default: tcp://*:5556 (all interfaces, port 5556)."
-    )]
-    zmq_bind: String,
-
     /// FTDI device options for gyro emission (use --list-ftdi to see available devices)
     #[command(flatten)]
     ftdi: hardware::ftdi::FtdiArgs,
@@ -143,7 +131,7 @@ struct AppState {
     invert: Arc<RwLock<bool>>,
     watchdog: OledSafetyWatchdog,
     display_update_tx: Option<mpsc::Sender<()>>,
-    /// Shared remote pattern state for ZMQ-commanded patterns
+    /// Shared remote pattern state for REST-commanded patterns
     remote_state: Arc<Mutex<RemotePatternState>>,
     /// Display name from SDL
     display_name: String,
@@ -542,95 +530,6 @@ fn main() -> Result<()> {
         pattern.clone(),
         display_update_tx.clone(),
     );
-
-    // Bind ZMQ REP socket for receiving pattern commands
-    let zmq_bind = args.zmq_bind.clone();
-    let remote_state_zmq = remote_state.clone();
-    let display_update_tx_zmq = display_update_tx.clone();
-    let watchdog_zmq = watchdog.clone();
-
-    std::thread::spawn(move || {
-        let ctx = zmq::Context::new();
-        let socket = match ctx.socket(zmq::REP) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("Failed to create ZMQ REP socket: {e}");
-                return;
-            }
-        };
-
-        if let Err(e) = socket.bind(&zmq_bind) {
-            tracing::error!("Failed to bind ZMQ REP socket to {}: {e}", zmq_bind);
-            return;
-        }
-
-        tracing::info!("ZMQ REP socket listening on {}", zmq_bind);
-
-        loop {
-            // Receive command
-            let msg = match socket.recv_string(0) {
-                Ok(Ok(s)) => s,
-                Ok(Err(_)) => {
-                    tracing::warn!("Received non-UTF8 ZMQ message");
-                    let _ = socket.send("error: invalid UTF-8", 0);
-                    continue;
-                }
-                Err(e) => {
-                    tracing::error!("ZMQ recv error: {e}");
-                    break;
-                }
-            };
-
-            // Parse command
-            match serde_json::from_str::<PatternCommand>(&msg) {
-                Ok(cmd) => {
-                    // Log position changes for pattern commands
-                    match &cmd {
-                        PatternCommand::Spot {
-                            x,
-                            y,
-                            fwhm,
-                            intensity,
-                        } => {
-                            tracing::info!(
-                                "ZMQ Spot: ({x:.0}, {y:.0}) fwhm={fwhm:.1} int={intensity:.2}"
-                            );
-                        }
-                        PatternCommand::SpotGrid {
-                            positions,
-                            fwhm,
-                            intensity,
-                        } => {
-                            tracing::info!(
-                                "ZMQ SpotGrid: {} spots, fwhm={fwhm:.1} int={intensity:.2}",
-                                positions.len()
-                            );
-                        }
-                        PatternCommand::Uniform { level } => {
-                            tracing::info!("ZMQ Uniform: level={level}");
-                        }
-                        PatternCommand::Clear => {
-                            tracing::info!("ZMQ Clear");
-                        }
-                    }
-                    remote_state_zmq.lock().unwrap().set_command(cmd);
-
-                    // Reset idle timeout so ZMQ commands keep display active
-                    watchdog_zmq.reset();
-
-                    // Notify display to update
-                    let _ = display_update_tx_zmq.send(());
-
-                    // Send acknowledgment
-                    let _ = socket.send("ok", 0);
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to parse pattern command: {e}");
-                    let _ = socket.send(&format!("error: {e}"), 0);
-                }
-            }
-        }
-    });
 
     let invert = Arc::new(RwLock::new(false));
 

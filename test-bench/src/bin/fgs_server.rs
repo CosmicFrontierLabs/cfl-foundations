@@ -23,7 +23,6 @@ use tracing::info;
         - Web UI for camera control and image viewing\n  \
         - Real-time image streaming to browser\n  \
         - FGS tracking when enabled via the web interface\n  \
-        - Optional ZMQ publishing of tracking updates\n  \
         - Optional FSM (Fast Steering Mirror) control via web UI\n\n\
         Prerequisites:\n  \
         - Run dark_frame_analysis to generate bad pixel map (recommended)\n  \
