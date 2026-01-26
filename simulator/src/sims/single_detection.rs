@@ -146,8 +146,8 @@ pub fn run_single_experiment(params: &ExperimentParams) -> ExperimentResults {
 
     for _ in 0..params.experiment_count {
         // Generate random position in the center area
-        let xpos = rng.gen::<f64>() * half_d + half_d;
-        let ypos = rng.gen::<f64>() * half_d + half_d;
+        let xpos = rng.random::<f64>() * half_d + half_d;
+        let ypos = rng.random::<f64>() * half_d + half_d;
 
         // Create star at the position with correct flux
         let star = params.star_at_pos(xpos, ypos);
@@ -161,7 +161,7 @@ pub fn run_single_experiment(params: &ExperimentParams) -> ExperimentResults {
         );
 
         // Render the scene with a unique seed for this iteration
-        let render_seed = rng.gen::<u64>();
+        let render_seed = rng.random::<u64>();
         let render_result = scene.render_with_seed(&params.exposure, Some(render_seed));
 
         // Use consistent background RMS calculation

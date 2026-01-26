@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use crate::hardware::sensor::SensorConfig;
 use ndarray::Array2;
-use rand::{thread_rng, RngCore};
+use rand::{rng, RngCore};
 use shared::image_proc::noise::generate_noise_with_precomputed_params;
 use shared::units::{Temperature, TemperatureExt};
 
@@ -45,7 +45,7 @@ pub fn generate_sensor_noise(
     rng_seed: Option<u64>,
 ) -> Array2<f64> {
     // Create a random number generator from the supplied seed
-    let rng_seed = rng_seed.unwrap_or(thread_rng().next_u64());
+    let rng_seed = rng_seed.unwrap_or(rng().next_u64());
 
     // Calculate expected dark current electrons during exposure at specified temperature
     let dark_current = sensor.dark_current_at_temperature(temperature);

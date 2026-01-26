@@ -238,8 +238,8 @@ impl ChaoticMotion {
                 .expect("control_points_dec should have at least origin point");
 
             // Random step with momentum
-            let step_ra = rng.gen_range(-1.0..1.0) * max_deviation_arcsec * 0.3;
-            let step_dec = rng.gen_range(-1.0..1.0) * max_deviation_arcsec * 0.3;
+            let step_ra = rng.random_range(-1.0..1.0) * max_deviation_arcsec * 0.3;
+            let step_dec = rng.random_range(-1.0..1.0) * max_deviation_arcsec * 0.3;
 
             // Apply momentum and clamp to max deviation
             let new_ra =

@@ -34,7 +34,7 @@
 
 use crate::algo::process_array_in_parallel_chunks;
 use ndarray::Array2;
-use rand::{thread_rng, RngCore, SeedableRng};
+use rand::{rng, RngCore, SeedableRng};
 use rand_distr::{Distribution, Normal, Poisson};
 
 /// Generate a 2D array of normally distributed values for testing purposes.
@@ -172,7 +172,7 @@ pub fn generate_noise_with_precomputed_params(
     dark_current_mean: f64,
     rng_seed: Option<u64>,
 ) -> Array2<f64> {
-    let seed = rng_seed.unwrap_or(thread_rng().next_u64());
+    let seed = rng_seed.unwrap_or(rng().next_u64());
 
     if dark_current_mean < 0.1 {
         generate_gaussian_noise(width, height, read_noise, dark_current_mean, seed)
@@ -198,7 +198,7 @@ pub fn apply_poisson_photon_noise(
     rng_seed: Option<u64>,
 ) -> Array2<f64> {
     let (_height, _width) = mean_electron_image.dim();
-    let seed = rng_seed.unwrap_or(thread_rng().next_u64());
+    let seed = rng_seed.unwrap_or(rng().next_u64());
 
     // Clone the input array to get the same shape
     let poisson_image = mean_electron_image.clone();

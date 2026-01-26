@@ -65,7 +65,7 @@ ndarray = "0.16"
 # Hardware drivers - specify features needed for each deployment target
 hardware = { version = "0.1.0", path = "../hardware", default-features = false }
 prometheus = "0.14"
-rand = "0.8"
+rand = "0.9"
 rayon = "1.11.0"
 resvg = { version = "0.45.0", features = ["text"] }
 rust-embed = "8.7.2"

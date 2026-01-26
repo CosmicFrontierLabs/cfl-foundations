@@ -174,7 +174,7 @@ mod tests {
 
             for i in 0..num_stars {
                 let position = randomizer.next().unwrap();
-                let mag = rng.gen_range(0.0..15.0);
+                let mag = rng.random_range(0.0..15.0);
 
                 stars.push(StarData {
                     id: i as u64,

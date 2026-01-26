@@ -551,8 +551,8 @@ mod tests {
         let mut seeded_rng = StdRng::seed_from_u64(42);
 
         for _ in 0..100 {
-            let x_loc = seeded_rng.gen_range(5.0..45.0);
-            let y_loc = seeded_rng.gen_range(5.0..45.0);
+            let x_loc = seeded_rng.random_range(5.0..45.0);
+            let y_loc = seeded_rng.random_range(5.0..45.0);
 
             let stars = vec![StarInFrame {
                 x: x_loc,
@@ -677,8 +677,8 @@ mod tests {
 
         let mut stars = Vec::new();
         for _ in 0..100 {
-            let x = rng.gen_range(-50.0..150.0);
-            let y = rng.gen_range(-50.0..150.0);
+            let x = rng.random_range(-50.0..150.0);
+            let y = rng.random_range(-50.0..150.0);
             stars.push(create_star_in_frame(x, y, sigma_pix, total_flux));
         }
 
@@ -704,8 +704,8 @@ mod tests {
 
         let mut stars = Vec::new();
         for _ in 0..1000 {
-            let x = rng.gen_range(-50.0..150.0);
-            let y = rng.gen_range(-50.0..150.0);
+            let x = rng.random_range(-50.0..150.0);
+            let y = rng.random_range(-50.0..150.0);
             stars.push(create_star_in_frame(x, y, sigma_pix, total_flux));
         }
 

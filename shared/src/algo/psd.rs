@@ -252,7 +252,7 @@ impl VibrationSimulator {
         // Initialize RNG at the top
         let mut rng = match seed {
             Some(s) => rand::rngs::StdRng::seed_from_u64(s),
-            None => rand::rngs::StdRng::from_entropy(),
+            None => rand::rngs::StdRng::from_os_rng(),
         };
 
         let mut angular_displacements = vec![Vector3::zeros(); n_samples];
@@ -275,7 +275,7 @@ impl VibrationSimulator {
                     let amplitude = (psd_value * df).sqrt();
 
                     // Random phase
-                    let phase = rng.gen_range(0.0..2.0 * PI);
+                    let phase = rng.random_range(0.0..2.0 * PI);
                     spectrum[i] = Complex64::from_polar(amplitude, phase);
 
                     // Hermitian symmetry for real signal

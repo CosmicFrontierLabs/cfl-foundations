@@ -2,13 +2,13 @@ use image::{ImageBuffer, Rgb};
 use rand::Rng;
 
 pub fn generate_into_buffer(buffer: &mut [u8], width: u32, height: u32, block_size: u32) {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let blocks_x = width.div_ceil(block_size);
     let blocks_y = height.div_ceil(block_size);
 
     for block_y in 0..blocks_y {
         for block_x in 0..blocks_x {
-            let value: u8 = rng.gen();
+            let value: u8 = rng.random();
 
             let start_x = block_x * block_size;
             let start_y = block_y * block_size;

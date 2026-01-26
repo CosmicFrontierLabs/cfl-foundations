@@ -17,12 +17,12 @@ ndarray = "0.16"
 # Internal dependencies - only needs core image processing and algorithms
 shared = { path = "../shared", default-features = false }
 nalgebra = "0.32"
+rand = "0.9"
+rand_chacha = "0.9"
 
 [dev-dependencies]
 env_logger = "0.11"
 approx = "0.5"
-rand = "0.8"
-rand_chacha = "0.3"
 
 [build-dependencies]
 cc = "1.2.49"

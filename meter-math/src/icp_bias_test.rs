@@ -39,8 +39,8 @@ fn test_icp_residual_normality() {
         // Generate source points
         let mut source_vec = Vec::new();
         for _ in 0..n_points {
-            let x = trial_rng.gen_range(-0.0..8000.0);
-            let y = trial_rng.gen_range(-0.0..2000.0);
+            let x = trial_rng.random_range(-0.0..8000.0);
+            let y = trial_rng.random_range(-0.0..2000.0);
             source_points.push(x);
             source_points.push(y);
             source_vec.push(Vector2::new(x, y));
@@ -50,14 +50,14 @@ fn test_icp_residual_normality() {
         let true_angle = if DISABLE_TRANSFORM {
             0.0
         } else {
-            trial_rng.gen_range(-PI / 4.0..PI / 4.0)
+            trial_rng.random_range(-PI / 4.0..PI / 4.0)
         };
         let true_translation = if DISABLE_TRANSFORM {
             Vector2::new(0.0, 0.0)
         } else {
             Vector2::new(
-                trial_rng.gen_range(-2.0..2.0),
-                trial_rng.gen_range(-2.0..2.0),
+                trial_rng.random_range(-2.0..2.0),
+                trial_rng.random_range(-2.0..2.0),
             )
         };
 
@@ -211,8 +211,8 @@ fn test_icp_with_outliers() {
     // Generate source points
     let mut source_points = Vec::new();
     for _ in 0..(n_points + n_outliers) {
-        let x = rng.gen_range(-5.0..5.0);
-        let y = rng.gen_range(-5.0..5.0);
+        let x = rng.random_range(-5.0..5.0);
+        let y = rng.random_range(-5.0..5.0);
         source_points.push(x);
         source_points.push(y);
     }
@@ -239,8 +239,8 @@ fn test_icp_with_outliers() {
 
     // Add outliers at random positions
     for _ in 0..n_outliers {
-        target_points.push(rng.gen_range(-20.0..20.0));
-        target_points.push(rng.gen_range(-20.0..20.0));
+        target_points.push(rng.random_range(-20.0..20.0));
+        target_points.push(rng.random_range(-20.0..20.0));
     }
 
     // Convert to ndarray

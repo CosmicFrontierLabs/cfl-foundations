@@ -923,12 +923,12 @@ mod tests {
     #[test]
     fn test_icp_with_noisy_data() {
         // Create a larger grid of points with random transformations to test robustness
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Random transformation
-        let angle = rng.gen_range(0.0..2.0 * PI); // Random angle
+        let angle = rng.random_range(0.0..2.0 * PI); // Random angle
         let rotation = rotation_matrix(angle);
-        let translation = Vector2::new(rng.gen_range(-5.0..5.0), rng.gen_range(-5.0..5.0));
+        let translation = Vector2::new(rng.random_range(-5.0..5.0), rng.random_range(-5.0..5.0));
 
         // Create source and target points
         let mut source_points = Vec::new();
@@ -950,8 +950,8 @@ mod tests {
                 let p_transformed = rotation * p + translation;
 
                 // Add noise to target points
-                target_points.push(p_transformed[0] + noise_level * (rng.gen::<f64>() - 0.5));
-                target_points.push(p_transformed[1] + noise_level * (rng.gen::<f64>() - 0.5));
+                target_points.push(p_transformed[0] + noise_level * (rng.random::<f64>() - 0.5));
+                target_points.push(p_transformed[1] + noise_level * (rng.random::<f64>() - 0.5));
             }
         }
 

@@ -314,8 +314,8 @@ mod tests {
 
         for _ in 0..100 {
             let point = Equatorial {
-                ra: rng.gen_range(0.0..std::f64::consts::PI * 2.0),
-                dec: rng.gen_range(-std::f64::consts::PI / 2.0..std::f64::consts::PI / 2.0),
+                ra: rng.random_range(0.0..std::f64::consts::PI * 2.0),
+                dec: rng.random_range(-std::f64::consts::PI / 2.0..std::f64::consts::PI / 2.0),
             };
 
             let (width, height) = (101, 37);

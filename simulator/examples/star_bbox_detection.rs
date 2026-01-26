@@ -385,12 +385,12 @@ fn add_galaxy(image: &mut GrayImage, x: u32, y: u32, radius: u32, intensity: u8)
     }
 
     // Add a few bright spots within the galaxy
-    use rand::{thread_rng, Rng};
-    let mut rng = thread_rng();
+    use rand::Rng;
+    let mut rng = rand::rng();
 
     for _ in 0..15 {
-        let r = rng.gen::<f32>() * radius as f32 * 0.8;
-        let theta = rng.gen::<f32>() * 2.0 * std::f32::consts::PI;
+        let r = rng.random::<f32>() * radius as f32 * 0.8;
+        let theta = rng.random::<f32>() * 2.0 * std::f32::consts::PI;
 
         let sx = x as i32 + (r * theta.cos()) as i32;
         let sy = y as i32 + (r * theta.sin()) as i32;
@@ -401,7 +401,7 @@ fn add_galaxy(image: &mut GrayImage, x: u32, y: u32, radius: u32, intensity: u8)
                 sx as u32,
                 sy as u32,
                 1,
-                intensity + rng.gen_range(0..20),
+                intensity + rng.random_range(0..20),
             );
         }
     }
@@ -431,10 +431,10 @@ fn add_galaxy(image: &mut GrayImage, x: u32, y: u32, radius: u32, intensity: u8)
 /// - High noise: amplitude = 15-20 (poor conditions or faint targets)
 fn add_noise(image: &mut GrayImage, amplitude: u8) {
     use rand::Rng;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for pixel in image.pixels_mut() {
-        let noise = rng.gen_range(0..amplitude * 2) as i16 - amplitude as i16;
+        let noise = rng.random_range(0..amplitude * 2) as i16 - amplitude as i16;
         let current = pixel.0[0] as i16;
         let new_value = (current + noise).clamp(0, 255) as u8;
         *pixel = Luma([new_value]);

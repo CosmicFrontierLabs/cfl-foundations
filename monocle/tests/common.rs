@@ -94,13 +94,13 @@ pub fn create_synthetic_star_image(
         // Photon noise (Poisson, approximated as Gaussian)
         if config.include_photon_noise && *pixel > 0.0 {
             let photon_noise_std = (*pixel).sqrt();
-            let photon_noise = rng.gen_range(-3.0..3.0) * photon_noise_std / 3.0;
+            let photon_noise = rng.random_range(-3.0..3.0) * photon_noise_std / 3.0;
             *pixel += photon_noise;
         }
 
         // Read noise (Gaussian)
         if config.read_noise_std > 0.0 {
-            let read_noise = rng.gen_range(-3.0..3.0) * config.read_noise_std / 3.0;
+            let read_noise = rng.random_range(-3.0..3.0) * config.read_noise_std / 3.0;
             *pixel += read_noise;
         }
 

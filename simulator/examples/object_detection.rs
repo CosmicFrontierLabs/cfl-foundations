@@ -134,39 +134,31 @@ fn create_star_field(
     num_stars: usize,
     noise_level: f64,
 ) -> Array2<f64> {
-    use rand::distributions::{Distribution, Uniform};
     use rand::Rng;
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut image = Array2::zeros((height, width));
 
     // Add random noise
-    let noise_dist = Uniform::from(0.0..noise_level / 100.0);
-
     for i in 0..height {
         for j in 0..width {
-            image[[i, j]] = noise_dist.sample(&mut rng);
+            image[[i, j]] = rng.random_range(0.0..noise_level / 100.0);
         }
     }
 
-    // Position distribution - keep stars away from edges to avoid truncation
-    let x_dist = Uniform::from(5..width - 5);
-    let y_dist = Uniform::from(5..height - 5);
-
-    // Intensity distribution (uniform in this simple example)
-    // A more realistic simulation would use a log-normal distribution
-    // to better match the stellar luminosity function
-    let intensity_dist = Uniform::from(0.5..1.0);
-
     // Add stars
     for _ in 0..num_stars {
-        let x = x_dist.sample(&mut rng);
-        let y = y_dist.sample(&mut rng);
-        let intensity = intensity_dist.sample(&mut rng);
+        // Position distribution - keep stars away from edges to avoid truncation
+        let x = rng.random_range(5..width - 5);
+        let y = rng.random_range(5..height - 5);
+        // Intensity distribution (uniform in this simple example)
+        // A more realistic simulation would use a log-normal distribution
+        // to better match the stellar luminosity function
+        let intensity = rng.random_range(0.5..1.0);
 
         // Add a Gaussian-shaped star with random sigma (PSF width)
         // This simulates different seeing conditions or focus
-        add_gaussian_star(&mut image, x, y, intensity, rng.gen_range(1.0..2.5));
+        add_gaussian_star(&mut image, x, y, intensity, rng.random_range(1.0..2.5));
     }
 
     image

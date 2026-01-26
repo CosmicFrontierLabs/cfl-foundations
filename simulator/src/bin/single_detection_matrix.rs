@@ -155,7 +155,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         experiment_count: args.experiments,
                         coordinates: args.shared.coordinates,
                         star_finder: args.star_finder,
-                        seed: master_rng.gen(), // Generate unique seed for this experiment
+                        seed: master_rng.random(), // Generate unique seed for this experiment
                     };
 
                     all_experiments.push(params);
