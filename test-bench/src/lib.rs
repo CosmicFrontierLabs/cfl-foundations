@@ -8,6 +8,7 @@ pub mod camera_server;
 
 #[cfg(feature = "pi-fsm")]
 pub mod fsm_calibration;
+pub mod mjpeg;
 
 #[cfg(feature = "sdl2")]
 pub mod calibrate;

@@ -31,6 +31,7 @@ use tokio::sync::{broadcast, Mutex, Notify, RwLock};
 
 use crate::camera_init::ExposureArgs;
 use crate::embedded_assets::serve_fgs_frontend;
+use crate::mjpeg::{encode_ndarray_jpeg, MjpegBroadcaster, MjpegFrame};
 use clap::Args;
 
 /// Common command-line arguments for camera server binaries.
@@ -98,6 +99,9 @@ pub struct ZoomQueryParams {
 fn default_zoom_size() -> usize {
     64
 }
+
+/// Minimum interval between MJPEG frame publishes (5 fps max).
+const MJPEG_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// Shared tracking state that can be accessed from both the capture loop and HTTP handlers
 pub struct TrackingSharedState {
@@ -231,6 +235,8 @@ pub struct AppState<C: CameraInterface> {
     pub tracking_config: Option<TrackingConfig>,
     /// FSM control state (None if FSM not configured)
     pub fsm: Option<Arc<FsmSharedState>>,
+    /// MJPEG broadcaster for streaming camera frames
+    pub mjpeg: Arc<MjpegBroadcaster>,
 }
 
 #[derive(Debug, Clone)]
@@ -358,6 +364,16 @@ async fn jpeg_frame_endpoint<C: CameraInterface + 'static>(
         .header(header::CONTENT_TYPE, "image/jpeg")
         .body(Body::from(jpeg_bytes))
         .unwrap()
+}
+
+/// MJPEG streaming endpoint.
+///
+/// Returns a `multipart/x-mixed-replace` stream that browsers can display
+/// as a continuously updating image. Simply use `<img src="/mjpeg">` in HTML.
+async fn mjpeg_stream_endpoint<C: CameraInterface + 'static>(
+    State(state): State<Arc<AppState<C>>>,
+) -> Response {
+    state.mjpeg.subscribe().into_response()
 }
 
 async fn raw_frame_endpoint<C: CameraInterface + 'static>(
@@ -1120,6 +1136,7 @@ pub fn create_router<C: CameraInterface + 'static>(state: Arc<AppState<C>>) -> R
     Router::new()
         .route("/", get(camera_status_page::<C>))
         .route("/jpeg", get(jpeg_frame_endpoint::<C>))
+        .route("/mjpeg", get(mjpeg_stream_endpoint::<C>))
         .route("/raw", get(raw_frame_endpoint::<C>))
         .route("/fits", get(fits_frame_endpoint::<C>))
         .route("/annotated", get(annotated_frame_endpoint::<C>))
@@ -1177,6 +1194,8 @@ pub async fn run_server<C: CameraInterface + Send + 'static>(
         camera_geometry.height()
     );
 
+    let mjpeg = Arc::new(MjpegBroadcaster::new(4));
+
     let state = Arc::new(AppState {
         camera: Arc::new(Mutex::new(camera)),
         stats: Arc::new(Mutex::new(FrameStats::default())),
@@ -1192,6 +1211,7 @@ pub async fn run_server<C: CameraInterface + Send + 'static>(
         tracking: None,
         tracking_config: None,
         fsm: None,
+        mjpeg,
     });
 
     info!("Starting background capture loop...");
@@ -1236,6 +1256,7 @@ pub async fn run_server<C: CameraInterface + Send + 'static>(
 
 pub fn capture_loop_blocking<C: CameraInterface + Send + 'static>(state: Arc<AppState<C>>) {
     let mut camera = state.camera.blocking_lock();
+    let mut last_mjpeg_publish = std::time::Instant::now() - MJPEG_MIN_INTERVAL;
 
     let state_clone = state.clone();
     let result = camera.stream(&mut |frame, metadata| {
@@ -1280,7 +1301,20 @@ pub fn capture_loop_blocking<C: CameraInterface + Send + 'static>(state: Arc<App
         {
             let capture_timestamp = std::time::Instant::now();
             let mut latest = state_clone.latest_frame.blocking_write();
-            *latest = Some((frame_owned, metadata_owned, capture_timestamp));
+            *latest = Some((frame_owned.clone(), metadata_owned, capture_timestamp));
+        }
+
+        // Publish MJPEG frame (rate limited to 5fps, only encode if subscribers)
+        if state_clone.mjpeg.subscriber_count() > 0
+            && last_mjpeg_publish.elapsed() >= MJPEG_MIN_INTERVAL
+        {
+            if let Some(jpeg_data) = encode_ndarray_jpeg(&frame_owned, 80) {
+                state_clone.mjpeg.publish(MjpegFrame {
+                    jpeg_data,
+                    frame_number: frame_num,
+                });
+                last_mjpeg_publish = std::time::Instant::now();
+            }
         }
 
         true
@@ -1429,6 +1463,8 @@ pub async fn run_server_with_tracking<C: CameraInterface + Send + 'static>(
         ..Default::default()
     });
 
+    let mjpeg = Arc::new(MjpegBroadcaster::new(4));
+
     let state = Arc::new(AppState {
         camera: Arc::new(Mutex::new(camera)),
         stats: Arc::new(Mutex::new(FrameStats::default())),
@@ -1444,6 +1480,7 @@ pub async fn run_server_with_tracking<C: CameraInterface + Send + 'static>(
         tracking: Some(tracking_state),
         tracking_config: Some(tracking_config),
         fsm,
+        mjpeg,
     });
 
     info!("Starting background capture loop with tracking support...");
@@ -1524,6 +1561,7 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
     let pending_settings: Arc<StdMutex<Vec<CameraSettingsUpdate>>> =
         Arc::new(StdMutex::new(Vec::new()));
     let clear_roi_requested: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    let mut last_mjpeg_publish = std::time::Instant::now() - MJPEG_MIN_INTERVAL;
 
     loop {
         let mut camera = state.camera.blocking_lock();
@@ -1878,7 +1916,20 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
             {
                 let capture_timestamp = std::time::Instant::now();
                 let mut latest = state_clone.latest_frame.blocking_write();
-                *latest = Some((frame_owned, metadata_owned, capture_timestamp));
+                *latest = Some((frame_owned.clone(), metadata_owned, capture_timestamp));
+            }
+
+            // Publish MJPEG frame (rate limited to 5fps, only encode if subscribers)
+            if state_clone.mjpeg.subscriber_count() > 0
+                && last_mjpeg_publish.elapsed() >= MJPEG_MIN_INTERVAL
+            {
+                if let Some(jpeg_data) = encode_ndarray_jpeg(&frame_owned, 80) {
+                    state_clone.mjpeg.publish(MjpegFrame {
+                        jpeg_data,
+                        frame_number: frame_num,
+                    });
+                    last_mjpeg_publish = std::time::Instant::now();
+                }
             }
 
             true

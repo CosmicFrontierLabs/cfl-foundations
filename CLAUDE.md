@@ -115,6 +115,9 @@ gh pr checks <pr-number> --watch --fail-fast
 
 Do NOT use `sleep` commands to poll CI status - the `--watch` flag handles this properly.
 
+## Shell Commands
+- **NEVER use `sleep` commands** - Sleep is unreliable and wastes time. Use proper async mechanisms, `--watch` flags, or run commands in background and check output files later.
+
 ## ARM64 Builds and Deployment
 
 ### Self-Hosted Runner

@@ -141,8 +141,8 @@ fi
 # Auto-enable features based on device type if not explicitly set
 if [ -z "$FEATURES" ]; then
     if [ "$DEVICE_TYPE" = "nsv" ]; then
-        FEATURES="nsv455"
-        print_info "Auto-enabling 'nsv455' feature for NSV device"
+        FEATURES="nsv455,pi-fsm"
+        print_info "Auto-enabling 'nsv455,pi-fsm' features for NSV device"
     fi
 fi
 
@@ -199,7 +199,7 @@ fi
 
 # Step 1: Check SSH connection to build server
 print_info "Testing SSH connection to build server..."
-if ! ssh -o ConnectTimeout=5 "$BUILD_HOST" "echo 'Connection OK'" > /dev/null 2>&1; then
+if ! ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$BUILD_HOST" "echo 'Connection OK'" > /dev/null 2>&1; then
     print_error "Cannot connect to build server $BUILD_HOST"
     print_error "Check SSH keys and network connectivity"
     exit 1
@@ -209,7 +209,7 @@ print_success "SSH connection to build server verified"
 # Step 2: Check SSH connection to target (if deploying)
 if [ "$DEPLOY_TO_TARGET" = true ]; then
     print_info "Testing SSH connection to target device..."
-    if ! ssh -o ConnectTimeout=5 "$TARGET_HOST" "echo 'Connection OK'" > /dev/null 2>&1; then
+    if ! ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$TARGET_HOST" "echo 'Connection OK'" > /dev/null 2>&1; then
         print_error "Cannot connect to target device $TARGET_HOST"
         print_error "Check SSH keys and network connectivity"
         exit 1
@@ -375,8 +375,8 @@ if [ "$DEPLOY_TO_TARGET" = true ]; then
     # Copy binary from build server to target via local machine
     # (build server -> local -> target, since they may not have direct SSH access)
     TEMP_BINARY=$(mktemp)
-    scp "$BUILD_HOST:~/$REMOTE_BUILD_DIR/$PROJECT_NAME/target/release/$BINARY_NAME" "$TEMP_BINARY"
-    scp "$TEMP_BINARY" "$TARGET_HOST:~/bin/$BINARY_NAME"
+    scp -o StrictHostKeyChecking=accept-new "$BUILD_HOST:~/$REMOTE_BUILD_DIR/$PROJECT_NAME/target/release/$BINARY_NAME" "$TEMP_BINARY"
+    scp -o StrictHostKeyChecking=accept-new "$TEMP_BINARY" "$TARGET_HOST:~/bin/$BINARY_NAME"
     rm "$TEMP_BINARY"
 
     # Make executable

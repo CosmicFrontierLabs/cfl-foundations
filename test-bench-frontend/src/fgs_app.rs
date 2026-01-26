@@ -3,7 +3,7 @@ use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
 use crate::fgs::{
-    api::{calculate_backoff_delay, check_url_ok, fetch_text, FgsError, FgsServerClient},
+    api::{calculate_backoff_delay, FgsError, FgsServerClient},
     histogram::render_histogram,
     views::{FsmView, StarDetectionSettingsView, StatsView, TrackingView, ZoomView},
 };
@@ -80,13 +80,9 @@ pub struct FgsFrontend {
     stats: Option<CameraStats>,
     show_annotation: bool,
     log_scale_histogram: bool,
-    connection_status: String,
-    image_refresh_handle: Option<gloo_timers::callback::Interval>,
     stats_refresh_handle: Option<gloo_timers::callback::Interval>,
     tracking_refresh_handle: Option<gloo_timers::callback::Interval>,
-    image_failure_count: u32,
     stats_failure_count: u32,
-    is_loading_image: bool,
     // Zoom state
     zoom_center: Option<(u32, u32)>,
     zoom_auto_update: bool,
@@ -114,18 +110,16 @@ pub struct FgsFrontend {
     show_star_detection_settings: bool,
     // SVG overlay for star detection (much faster than re-encoding full image)
     overlay_svg: Option<String>,
+    // Last known frame dimensions (for MJPEG stream restart on size change)
+    last_frame_size: Option<(u32, u32)>,
 }
 
 pub enum Msg {
-    RefreshImage,
-    ImageLoaded(String),
     RefreshStats,
     ToggleAnnotation,
     ToggleLogScale,
     StatsLoaded(CameraStats),
-    ImageError,
     StatsError,
-    ResetImageInterval,
     ResetStatsInterval,
     // Zoom messages
     ImageClicked(i32, i32),
@@ -176,11 +170,6 @@ impl Component for FgsFrontend {
     type Properties = FgsFrontendProps;
 
     fn create(ctx: &Context<Self>) -> Self {
-        let image_link = ctx.link().clone();
-        let image_handle = gloo_timers::callback::Interval::new(100, move || {
-            image_link.send_message(Msg::RefreshImage);
-        });
-
         let stats_link = ctx.link().clone();
         let stats_handle = gloo_timers::callback::Interval::new(1000, move || {
             stats_link.send_message(Msg::RefreshStats);
@@ -192,17 +181,13 @@ impl Component for FgsFrontend {
         });
 
         Self {
-            image_url: format!("/jpeg?t={}", js_sys::Date::now()),
+            image_url: "/mjpeg".to_string(),
             stats: None,
             show_annotation: false,
             log_scale_histogram: false,
-            connection_status: "Connecting...".to_string(),
-            image_refresh_handle: Some(image_handle),
             stats_refresh_handle: Some(stats_handle),
             tracking_refresh_handle: Some(tracking_handle),
-            image_failure_count: 0,
             stats_failure_count: 0,
-            is_loading_image: false,
             zoom_center: None,
             zoom_auto_update: true,
             tracking_available: false,
@@ -223,50 +208,12 @@ impl Component for FgsFrontend {
             star_detection_pending: false,
             show_star_detection_settings: false,
             overlay_svg: None,
+            last_frame_size: None,
         }
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
-            Msg::RefreshImage => {
-                if self.is_loading_image {
-                    return false;
-                }
-                self.is_loading_image = true;
-                let link = ctx.link().clone();
-                // Always fetch /jpeg - much faster than /annotated for large sensors
-                let url = format!("/jpeg?t={}", js_sys::Date::now());
-                wasm_bindgen_futures::spawn_local(async move {
-                    if check_url_ok(&url).await {
-                        link.send_message(Msg::ImageLoaded(url));
-                    } else {
-                        link.send_message(Msg::ImageError);
-                    }
-                });
-                // Also fetch SVG overlay if star detection is enabled
-                let use_overlay = self
-                    .star_detection_settings
-                    .as_ref()
-                    .map(|s| s.enabled)
-                    .unwrap_or(false);
-                if use_overlay {
-                    let overlay_link = ctx.link().clone();
-                    wasm_bindgen_futures::spawn_local(async move {
-                        if let Some(svg) = fetch_text("/overlay-svg").await {
-                            overlay_link.send_message(Msg::OverlaySvgLoaded(svg));
-                        }
-                    });
-                }
-                false
-            }
-            Msg::ImageLoaded(url) => {
-                self.is_loading_image = false;
-                self.image_url = url;
-                self.connection_status = "Connected".to_string();
-                self.image_failure_count = 0;
-                ctx.link().send_message(Msg::ResetImageInterval);
-                true
-            }
             Msg::RefreshStats => {
                 let link = ctx.link().clone();
                 let client = FgsServerClient::for_web();
@@ -279,6 +226,19 @@ impl Component for FgsFrontend {
                 false
             }
             Msg::StatsLoaded(stats) => {
+                // Check for frame size changes (requires MJPEG stream restart)
+                let new_size = (stats.width, stats.height);
+                let size_changed = self
+                    .last_frame_size
+                    .map(|old| old != new_size)
+                    .unwrap_or(false);
+
+                if size_changed {
+                    // Restart MJPEG stream by adding cache-busting timestamp
+                    self.image_url = format!("/mjpeg?t={}", js_sys::Date::now());
+                }
+                self.last_frame_size = Some(new_size);
+
                 self.stats = Some(stats);
                 self.stats_failure_count = 0;
                 ctx.link().send_message(Msg::ResetStatsInterval);
@@ -292,26 +252,9 @@ impl Component for FgsFrontend {
                 self.log_scale_histogram = !self.log_scale_histogram;
                 true
             }
-            Msg::ImageError => {
-                self.is_loading_image = false;
-                self.connection_status = "Connection Error".to_string();
-                self.image_failure_count += 1;
-                ctx.link().send_message(Msg::ResetImageInterval);
-                true
-            }
             Msg::StatsError => {
                 self.stats_failure_count += 1;
                 ctx.link().send_message(Msg::ResetStatsInterval);
-                false
-            }
-            Msg::ResetImageInterval => {
-                let delay = calculate_backoff_delay(self.image_failure_count, 100, 10000);
-                let link = ctx.link().clone();
-                self.image_refresh_handle = None;
-                self.image_refresh_handle =
-                    Some(gloo_timers::callback::Interval::new(delay, move || {
-                        link.send_message(Msg::RefreshImage);
-                    }));
                 false
             }
             Msg::ResetStatsInterval => {
@@ -748,12 +691,6 @@ impl Component for FgsFrontend {
                 <div class="column left-panel">
                     <h2>{"Camera Info"}</h2>
                     <div class="metadata-item">
-                        <span class="metadata-label">{"Status:"}</span><br/>
-                        <span class={if self.connection_status == "Connected" { "" } else { "error" }}>
-                            {&self.connection_status}
-                        </span>
-                    </div>
-                    <div class="metadata-item">
                         <span class="metadata-label">{"Device:"}</span><br/>
                         {self.stats.as_ref()
                             .map(|s| s.device_name.as_str())
@@ -893,7 +830,6 @@ impl Component for FgsFrontend {
     }
 
     fn destroy(&mut self, _ctx: &Context<Self>) {
-        self.image_refresh_handle = None;
         self.stats_refresh_handle = None;
         self.tracking_refresh_handle = None;
     }
