@@ -51,6 +51,8 @@ pub struct SimulatorCamera {
     noise_seed: u64,
     /// Stars rendered in the last frame (with pixel positions)
     last_rendered_stars: Vec<StarInFrame>,
+    /// ROI offset alignment constraints (h_alignment, v_alignment)
+    roi_alignment: (usize, usize),
 }
 
 impl SimulatorCamera {
@@ -91,7 +93,15 @@ impl SimulatorCamera {
             frame_number: 0,
             noise_seed: 42,
             last_rendered_stars: Vec::new(),
+            roi_alignment: (1, 1), // Default: no alignment required
         }
+    }
+
+    /// Set ROI offset alignment constraints.
+    /// These simulate hardware requirements like on IMX455 where ROI offsets
+    /// must be multiples of certain values (e.g., 32 pixels).
+    pub fn set_roi_alignment(&mut self, h_alignment: usize, v_alignment: usize) {
+        self.roi_alignment = (h_alignment, v_alignment);
     }
 
     /// Create with a specific telescope and sensor configuration.
@@ -195,9 +205,25 @@ impl CameraInterface for SimulatorCamera {
     }
 
     /// Set a region of interest for frame capture.
-    /// Returns error if ROI extends beyond sensor dimensions.
+    /// Returns error if ROI extends beyond sensor dimensions or violates alignment.
     fn set_roi(&mut self, roi: AABB) -> CameraResult<()> {
         roi.validate_for_sensor(self.config.size)?;
+
+        // Check alignment constraints
+        let (h_align, v_align) = self.roi_alignment;
+        if h_align > 1 && roi.min_col % h_align != 0 {
+            return Err(CameraError::InvalidROI(format!(
+                "ROI horizontal offset {} must be aligned to {} pixels",
+                roi.min_col, h_align
+            )));
+        }
+        if v_align > 1 && roi.min_row % v_align != 0 {
+            return Err(CameraError::InvalidROI(format!(
+                "ROI vertical offset {} must be aligned to {} pixels",
+                roi.min_row, v_align
+            )));
+        }
+
         self.roi = Some(roi);
         Ok(())
     }
@@ -349,6 +375,10 @@ impl CameraInterface for SimulatorCamera {
 
     fn get_gain(&self) -> f64 {
         0.0
+    }
+
+    fn get_roi_offset_alignment(&self) -> (usize, usize) {
+        self.roi_alignment
     }
 
     fn set_gain(&mut self, _gain: f64) -> CameraResult<()> {
