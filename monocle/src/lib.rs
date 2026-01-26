@@ -1,7 +1,90 @@
 //! MONOCLE - Modular Orientation, Navigation & Optical Control Logic Engine
 //!
-//! Fine Guidance System state machine implementation based on the FGS ConOps.
-//! Processes images through states: Idle -> Acquiring -> Calibrating -> Tracking
+//! A Fine Guidance System (FGS) state machine implementation for real-time star tracking.
+//! Processes camera frames through a state machine: Idle → Acquiring → Calibrating → Tracking.
+//!
+//! # Overview
+//!
+//! The FGS automatically:
+//! 1. **Acquires** multiple full-frame images to build up signal
+//! 2. **Calibrates** by detecting stars and selecting the best guide star
+//! 3. **Tracks** the guide star in a small ROI window for high-speed updates
+//!
+//! # Quick Start
+//!
+//! ```text
+//! use monocle::{FineGuidanceSystem, FgsConfig, FgsEvent};
+//!
+//! // Create FGS with configuration
+//! let config = FgsConfig { /* ... */ };
+//! let mut fgs = FineGuidanceSystem::new(config);
+//!
+//! // Register callback for tracking events
+//! fgs.register_callback(|event| {
+//!     println!("FGS event: {:?}", event);
+//! });
+//!
+//! // Start the FGS
+//! fgs.process_event(FgsEvent::StartFgs).unwrap();
+//!
+//! // Process camera frames
+//! loop {
+//!     let frame = camera.capture_frame();
+//!     let (guidance, camera_updates) = fgs.process_frame(frame.view(), timestamp)?;
+//!
+//!     // Apply any camera setting changes (ROI updates)
+//!     monocle::apply_camera_settings(&mut camera, camera_updates)?;
+//!
+//!     // Use guidance update for control
+//!     if let Some(update) = guidance {
+//!         controller.update(update.x, update.y);
+//!     }
+//! }
+//! ```
+//!
+//! # State Machine
+//!
+//! ```text
+//!                    ┌──────┐
+//!                    │ Idle │
+//!                    └──┬───┘
+//!                       │ StartFgs
+//!                    ┌──▼──────────┐
+//!               ┌────│  Acquiring  │◄────────────┐
+//!               │    └──────┬──────┘             │
+//!               │           │ frames complete    │ SNR dropout
+//!               │    ┌──────▼──────┐             │
+//!               │    │ Calibrating │             │
+//!               │    └──────┬──────┘             │
+//!               │           │ guide star found   │
+//!               │    ┌──────▼──────┐             │
+//!               │    │  Tracking   ├─────────────┘
+//!               │    └──────┬──────┘
+//!               │           │ StopFgs
+//!               │    ┌──────▼──────┐
+//!               └────►    Idle     │
+//!                    └─────────────┘
+//! ```
+//!
+//! # Key Types
+//!
+//! - [`FineGuidanceSystem`] - Main state machine
+//! - [`FgsConfig`] - Configuration parameters
+//! - [`FgsEvent`] - Events that trigger state transitions
+//! - [`FgsState`] - Current state of the system
+//! - [`GuidanceUpdate`] - Position and shape update from tracking
+//! - [`FgsCallbackEvent`] - Events emitted to registered callbacks
+//!
+//! # Camera Integration
+//!
+//! The FGS does not directly control the camera. Instead, it returns
+//! [`CameraSettingsUpdate`] values that the caller must apply. This allows
+//! flexibility in camera implementations and avoids tight coupling.
+//!
+//! ```text
+//! let (guidance, camera_updates) = fgs.process_frame(frame, timestamp)?;
+//! apply_camera_settings(&mut camera, camera_updates)?;
+//! ```
 
 use ndarray::{Array2, ArrayView2};
 use shared::camera_interface::{CameraInterface, Timestamp};
@@ -18,12 +101,13 @@ pub mod filters;
 pub mod selection;
 pub mod state;
 
-use crate::callback::{CallbackId, FgsCallback, PositionEstimate, TrackingLostReason};
+use crate::callback::FgsCallback;
 use shared::image_proc::detection::aabb::AABB;
 
 // Re-export commonly used types for external use
-pub use crate::callback::FgsCallbackEvent;
-pub use crate::config::FgsConfig;
+pub use crate::callback::{CallbackId, FgsCallbackEvent, PositionEstimate, TrackingLostReason};
+pub use crate::config::{FgsConfig, GuideStarFilters};
+pub use crate::controllers::{LosControlOutput, LosController};
 pub use crate::state::{FgsEvent, FgsState};
 
 /// Camera settings update requested by FGS

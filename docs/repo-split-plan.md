@@ -407,7 +407,7 @@ These can be done today with minimal risk:
 1. ~~**Feature-gate ZMQ in `shared`**~~ ✅ Done (PR #580)
 2. ~~**Feature-gate NSV455 in `hardware`**~~ ✅ Done (PR #622) - All hardware drivers now feature-gated
 3. ~~**Extract `proto-control`**~~ ✅ Merged into `monocle_harness`
-4. **Document public API** for `monocle` - Prepare for publication
+4. ~~**Document public API** for `monocle`~~ ✅ Done (PR #623) - Added crate-level docs, state machine diagram, re-exports
 
 ---
 
