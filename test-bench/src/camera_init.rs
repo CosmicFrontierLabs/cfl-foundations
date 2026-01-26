@@ -62,12 +62,18 @@ impl OptionalExposureArgs {
     }
 }
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum, Default)]
 pub enum CameraType {
+    /// Mock camera - default when no hardware camera features are enabled
+    #[cfg_attr(not(any(feature = "playerone", feature = "nsv455")), default)]
     Mock,
+    /// PlayerOne astronomy camera - default when playerone feature is enabled
     #[cfg(feature = "playerone")]
+    #[cfg_attr(feature = "playerone", default)]
     Poa,
+    /// NSV455 V4L2 camera - default when nsv455 feature is enabled (and playerone is not)
     #[cfg(feature = "nsv455")]
+    #[cfg_attr(all(feature = "nsv455", not(feature = "playerone")), default)]
     Nsv,
 }
 
@@ -85,12 +91,14 @@ pub struct CameraArgs {
         short = 't',
         long,
         value_enum,
+        default_value_t = CameraType::default(),
         help = "Type of camera to use",
         long_help = "Camera type to initialize. Available types depend on compiled features:\n  \
             - mock: Simulated camera for testing (always available)\n  \
             - poa: PlayerOne astronomy camera (requires 'playerone' feature)\n  \
             - nsv: NSV455 V4L2 camera (requires 'nsv455' feature)\n\n\
-            Note: playerone and nsv455 features are mutually exclusive."
+            Note: playerone and nsv455 features are mutually exclusive.\n\
+            Default: Automatically selected based on compiled features."
     )]
     pub camera_type: CameraType,
 
