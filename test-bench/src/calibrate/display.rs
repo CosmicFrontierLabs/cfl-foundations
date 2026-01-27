@@ -342,6 +342,7 @@ pub fn run_display<P: PatternSource>(
         // Handle SDL events
         for event in event_pump.poll_iter() {
             use sdl2::event::Event;
+            use sdl2::event::WindowEvent;
             use sdl2::keyboard::Keycode;
             match event {
                 Event::Quit { .. }
@@ -350,6 +351,25 @@ pub fn run_display<P: PatternSource>(
                     ..
                 } => {
                     return Ok(());
+                }
+                // Re-assert fullscreen when focus is lost (e.g., system update UI pops up).
+                //
+                // Alternative approaches if this isn't sufficient:
+                // 1. Periodic raise(): Call canvas.window_mut().raise() every N frames
+                //    regardless of focus events (brute force, may cause flicker)
+                // 2. True exclusive fullscreen: Use .fullscreen() instead of .fullscreen_desktop()
+                //    at window creation - takes exclusive display control, but riskier if app crashes
+                // 3. API endpoint: Add /refocus HTTP endpoint to trigger raise() on demand
+                // 4. set_fullscreen(): Re-apply fullscreen_desktop mode after focus loss:
+                //    canvas.window_mut().set_fullscreen(sdl2::video::FullscreenType::Desktop)
+                //
+                // Note: On Wayland, compositors may ignore raise() for security reasons.
+                Event::Window {
+                    win_event: WindowEvent::FocusLost,
+                    ..
+                } => {
+                    tracing::warn!("Window focus lost, attempting to reclaim");
+                    canvas.window_mut().raise();
                 }
                 _ => {}
             }
