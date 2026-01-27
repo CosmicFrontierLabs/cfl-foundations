@@ -219,6 +219,16 @@ impl S330 {
     }
 }
 
+impl crate::FsmInterface for S330 {
+    fn move_to(&mut self, axis1_urad: f64, axis2_urad: f64) -> Result<(), String> {
+        S330::move_to(self, axis1_urad, axis2_urad).map_err(|e| format!("FSM move failed: {e}"))
+    }
+
+    fn get_position(&mut self) -> Result<(f64, f64), String> {
+        S330::get_position(self).map_err(|e| format!("FSM get_position failed: {e}"))
+    }
+}
+
 impl Drop for S330 {
     fn drop(&mut self) {
         if self.poweroff_on_drop {

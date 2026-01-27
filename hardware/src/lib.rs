@@ -19,6 +19,9 @@
 //! - `cross-platform` - Drivers that work on any OS (pi-fsm, exail, ftdi, exolambda)
 //! - `ci-testable` - Drivers with unit tests runnable in CI (no hardware needed)
 
+pub mod fsm_interface;
+pub use fsm_interface::FsmInterface;
+
 #[cfg(feature = "exail")]
 pub mod exail;
 
