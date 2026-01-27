@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use axum::extract::ws::WebSocketUpgrade;
 use axum::{
     body::Body,
     extract::State,
@@ -23,7 +24,7 @@ use test_bench::display_utils::{
     wait_for_oled_display, OLED_HEIGHT, OLED_PIXEL_PITCH_UM, OLED_WIDTH,
 };
 use test_bench::embedded_assets::serve_calibrate_frontend;
-use test_bench::mjpeg::MjpegBroadcaster;
+use test_bench::ws_stream::WsBroadcaster;
 use test_bench_shared::PatternCommand;
 use tokio::sync::RwLock;
 
@@ -141,8 +142,8 @@ struct AppState {
     gyro_emitter: Option<GyroEmitterHandle>,
     /// Plate scale in arcsec/pixel for gyro emission (configurable via web UI)
     plate_scale_arcsec_per_px: Arc<RwLock<f64>>,
-    /// MJPEG broadcaster for streaming pattern preview
-    mjpeg: Arc<MjpegBroadcaster>,
+    /// WebSocket broadcaster for streaming pattern preview (with proper close events)
+    ws_stream: Arc<WsBroadcaster>,
 }
 
 async fn pattern_page(State(state): State<Arc<AppState>>) -> Html<String> {
@@ -203,13 +204,12 @@ async fn jpeg_pattern_endpoint(State(state): State<Arc<AppState>>) -> Response {
         .unwrap()
 }
 
-/// MJPEG streaming endpoint for pattern preview.
+/// WebSocket streaming endpoint for pattern preview.
 ///
-/// Frames are published from the SDL renderer's on_rendered() callback,
-/// rate-limited to 5fps to avoid overwhelming clients.
-async fn mjpeg_stream_endpoint(State(state): State<Arc<AppState>>) -> Response {
-    let subscriber = state.mjpeg.subscribe();
-    subscriber.into_response()
+/// Provides proper connection lifecycle with close events when stream restarts.
+async fn ws_stream_endpoint(State(state): State<Arc<AppState>>, ws: WebSocketUpgrade) -> Response {
+    let broadcaster = state.ws_stream.clone();
+    ws.on_upgrade(move |socket| test_bench::ws_stream::ws_stream_handler(socket, broadcaster))
 }
 
 async fn get_schema() -> Json<SchemaResponse> {
@@ -446,7 +446,7 @@ async fn run_web_server(state: Arc<AppState>, port: u16, bind_address: String) -
         .route("/info", get(get_display_info))
         .route("/schema", get(get_schema))
         .route("/jpeg", get(jpeg_pattern_endpoint))
-        .route("/mjpeg", get(mjpeg_stream_endpoint))
+        .route("/ws-stream", get(ws_stream_endpoint))
         .route("/config", get(get_pattern_config))
         .route("/config", axum::routing::post(update_pattern_config))
         .route("/pattern", get(get_pattern_command))
@@ -570,7 +570,7 @@ fn main() -> Result<()> {
         display_index,
         gyro_emitter,
         plate_scale_arcsec_per_px: plate_scale,
-        mjpeg: Arc::new(MjpegBroadcaster::new(4)),
+        ws_stream: Arc::new(WsBroadcaster::new(4)),
     });
 
     let state_clone = state.clone();
@@ -579,8 +579,8 @@ fn main() -> Result<()> {
 
     let web_thread = std::thread::spawn(move || run_web_server(state_clone, port, bind_address));
 
-    let dynamic_source =
-        DynamicPattern::new(pattern, invert, display_update_rx).with_mjpeg(state.mjpeg.clone());
+    let dynamic_source = DynamicPattern::new(pattern, invert, display_update_rx)
+        .with_ws_stream(state.ws_stream.clone());
 
     let display_config = DisplayConfig {
         width,

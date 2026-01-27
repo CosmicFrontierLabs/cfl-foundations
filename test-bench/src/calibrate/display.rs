@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock as AsyncRwLock;
 
 use super::pattern::PatternConfig;
-use crate::mjpeg::{MjpegBroadcaster, MjpegFrame};
+use crate::ws_stream::{WsBroadcaster, WsFrame};
 
 /// Internal state for the watchdog, protected by mutex.
 struct WatchdogInner {
@@ -151,11 +151,8 @@ pub trait PatternSource: Send {
         None
     }
 
-    /// Store the rendered image (for MJPEG streaming, etc.).
-    fn store_rendered(&self, _img: &ImageBuffer<Rgb<u8>, Vec<u8>>) {}
-
-    /// Called when pattern rendering completes (for stats/logging).
-    fn on_rendered(&self) {}
+    /// Called when pattern rendering completes with the rendered image.
+    fn on_rendered(&mut self, _img: &ImageBuffer<Rgb<u8>, Vec<u8>>) {}
 }
 
 /// Dynamic pattern source for web server - pattern can change via API.
@@ -163,18 +160,16 @@ pub struct DynamicPattern {
     pattern: Arc<AsyncRwLock<PatternConfig>>,
     invert: Arc<AsyncRwLock<bool>>,
     update_rx: Receiver<()>,
-    /// Optional MJPEG broadcaster for streaming pattern preview
-    mjpeg: Option<Arc<MjpegBroadcaster>>,
-    /// Cache of last rendered image for MJPEG encoding
-    last_rendered: Arc<Mutex<Option<ImageBuffer<Rgb<u8>, Vec<u8>>>>>,
-    /// Frame counter for MJPEG
-    frame_number: Arc<Mutex<u64>>,
-    /// Last time we published an MJPEG frame (for rate limiting)
-    last_mjpeg_publish: Arc<Mutex<Instant>>,
+    /// Optional WebSocket broadcaster for streaming pattern preview
+    ws_stream: Option<Arc<WsBroadcaster>>,
+    /// Frame counter for streaming
+    frame_number: u64,
+    /// Last time we published a stream frame (for rate limiting)
+    last_stream_publish: Instant,
 }
 
-/// Minimum interval between MJPEG frame publishes (5 fps max).
-const MJPEG_MIN_INTERVAL: Duration = Duration::from_millis(200);
+/// Minimum interval between stream frame publishes (30 fps max).
+const STREAM_MIN_INTERVAL: Duration = Duration::from_millis(33);
 
 impl DynamicPattern {
     pub fn new(
@@ -186,46 +181,33 @@ impl DynamicPattern {
             pattern,
             invert,
             update_rx,
-            mjpeg: None,
-            last_rendered: Arc::new(Mutex::new(None)),
-            frame_number: Arc::new(Mutex::new(0)),
-            last_mjpeg_publish: Arc::new(Mutex::new(Instant::now() - MJPEG_MIN_INTERVAL)),
+            ws_stream: None,
+            frame_number: 0,
+            last_stream_publish: Instant::now() - STREAM_MIN_INTERVAL,
         }
     }
 
-    /// Set the MJPEG broadcaster for streaming rendered frames.
-    pub fn with_mjpeg(mut self, mjpeg: Arc<MjpegBroadcaster>) -> Self {
-        self.mjpeg = Some(mjpeg);
+    /// Set the WebSocket broadcaster for streaming rendered frames.
+    pub fn with_ws_stream(mut self, ws_stream: Arc<WsBroadcaster>) -> Self {
+        self.ws_stream = Some(ws_stream);
         self
     }
 
-    /// Store the rendered image and publish to MJPEG stream if rate limit allows.
-    pub fn set_last_rendered(&self, img: ImageBuffer<Rgb<u8>, Vec<u8>>) {
-        *self.last_rendered.lock().unwrap() = Some(img);
-    }
+    /// Encode and publish image to WebSocket stream (rate limited).
+    fn maybe_publish_stream(&mut self, img: &ImageBuffer<Rgb<u8>, Vec<u8>>) {
+        let has_subs = self
+            .ws_stream
+            .as_ref()
+            .map(|w| w.subscriber_count() > 0)
+            .unwrap_or(false);
 
-    /// Publish current rendered image to MJPEG stream (rate limited to 5fps).
-    fn maybe_publish_mjpeg(&self) {
-        let Some(ref mjpeg) = self.mjpeg else {
-            return;
-        };
-
-        // Skip if no subscribers
-        if mjpeg.subscriber_count() == 0 {
+        if !has_subs {
             return;
         }
 
-        // Rate limit check
-        let mut last_publish = self.last_mjpeg_publish.lock().unwrap();
-        if last_publish.elapsed() < MJPEG_MIN_INTERVAL {
+        if self.last_stream_publish.elapsed() < STREAM_MIN_INTERVAL {
             return;
         }
-
-        // Get the rendered image
-        let img_opt = self.last_rendered.lock().unwrap().clone();
-        let Some(img) = img_opt else {
-            return;
-        };
 
         // Encode as JPEG
         let mut jpeg_bytes = Vec::new();
@@ -239,19 +221,18 @@ impl DynamicPattern {
             return;
         }
 
-        // Get and increment frame number
-        let mut frame_num = self.frame_number.lock().unwrap();
-        *frame_num += 1;
+        self.frame_number += 1;
 
-        // Publish
-        mjpeg.publish(MjpegFrame {
-            jpeg_data: Bytes::from(jpeg_bytes),
-            frame_number: *frame_num,
-            width: img.width(),
-            height: img.height(),
-        });
+        if let Some(ref ws_stream) = self.ws_stream {
+            ws_stream.publish(WsFrame {
+                jpeg_data: Bytes::from(jpeg_bytes),
+                frame_number: self.frame_number,
+                width: img.width(),
+                height: img.height(),
+            });
+        }
 
-        *last_publish = Instant::now();
+        self.last_stream_publish = Instant::now();
     }
 }
 
@@ -266,12 +247,8 @@ impl PatternSource for DynamicPattern {
         Some(&mut self.update_rx)
     }
 
-    fn store_rendered(&self, img: &ImageBuffer<Rgb<u8>, Vec<u8>>) {
-        *self.last_rendered.lock().unwrap() = Some(img.clone());
-    }
-
-    fn on_rendered(&self) {
-        self.maybe_publish_mjpeg();
+    fn on_rendered(&mut self, img: &ImageBuffer<Rgb<u8>, Vec<u8>>) {
+        self.maybe_publish_stream(img);
     }
 }
 
@@ -347,8 +324,8 @@ pub fn run_display<P: PatternSource>(
         texture
             .update(None, img.as_raw(), (config.width * 3) as usize)
             .map_err(|e| anyhow::anyhow!("Failed to update texture: {e:?}"))?;
-        // Store for MJPEG streaming
-        source.store_rendered(&img);
+        // Stream the rendered image
+        source.on_rendered(&img);
     }
 
     canvas.clear();
@@ -393,8 +370,8 @@ pub fn run_display<P: PatternSource>(
                         texture
                             .update(None, img.as_raw(), (config.width * 3) as usize)
                             .map_err(|e| anyhow::anyhow!("Failed to update texture: {e:?}"))?;
-                        // Store for MJPEG streaming
-                        source.store_rendered(&img);
+                        // Stream the rendered image
+                        source.on_rendered(&img);
                     }
                 }
             }
@@ -418,11 +395,11 @@ pub fn run_display<P: PatternSource>(
                 .update(None, buffer_to_use, (config.width * 3) as usize)
                 .map_err(|e| anyhow::anyhow!("Failed to update texture: {e:?}"))?;
 
-            // Store for MJPEG streaming (will be rate-limited by on_rendered)
+            // Stream the rendered image (rate-limited in on_rendered)
             if let Some(anim_img) =
                 ImageBuffer::from_raw(config.width, config.height, buffer_to_use.to_vec())
             {
-                source.store_rendered(&anim_img);
+                source.on_rendered(&anim_img);
             }
         }
 
@@ -433,7 +410,6 @@ pub fn run_display<P: PatternSource>(
             .map_err(|e| anyhow::anyhow!("Failed to copy texture: {e}"))?;
         canvas.present();
 
-        source.on_rendered();
         frame_count += 1;
 
         // FPS reporting

@@ -7,6 +7,7 @@ use crate::fgs::{
     histogram::render_histogram,
     views::{FsmView, StarDetectionSettingsView, StatsView, TrackingView, ZoomView},
 };
+use crate::ws_image_stream::WsImageStream;
 
 pub use test_bench_shared::CameraStats;
 pub use test_bench_shared::{
@@ -76,7 +77,6 @@ pub struct FgsFrontendProps {
 }
 
 pub struct FgsFrontend {
-    image_url: String,
     stats: Option<CameraStats>,
     show_annotation: bool,
     log_scale_histogram: bool,
@@ -110,8 +110,8 @@ pub struct FgsFrontend {
     show_star_detection_settings: bool,
     // SVG overlay for star detection (much faster than re-encoding full image)
     overlay_svg: Option<String>,
-    // Last known frame dimensions (for MJPEG stream restart on size change)
-    last_frame_size: Option<(u32, u32)>,
+    // Current frame dimensions (from WebSocket stream)
+    frame_size: Option<(u32, u32)>,
 }
 
 pub enum Msg {
@@ -163,8 +163,8 @@ pub enum Msg {
     StarDetectionSettingsSaveFailed,
     // SVG overlay message
     OverlaySvgLoaded(String),
-    // MJPEG stream error (server disconnected due to frame size change)
-    StreamError,
+    // WebSocket stream frame size changed
+    FrameSizeChanged(u32, u32),
 }
 
 impl Component for FgsFrontend {
@@ -183,7 +183,6 @@ impl Component for FgsFrontend {
         });
 
         Self {
-            image_url: "/mjpeg".to_string(),
             stats: None,
             show_annotation: false,
             log_scale_histogram: false,
@@ -210,7 +209,7 @@ impl Component for FgsFrontend {
             star_detection_pending: false,
             show_star_detection_settings: false,
             overlay_svg: None,
-            last_frame_size: None,
+            frame_size: None,
         }
     }
 
@@ -228,19 +227,6 @@ impl Component for FgsFrontend {
                 false
             }
             Msg::StatsLoaded(stats) => {
-                // Check for frame size changes (requires MJPEG stream restart)
-                let new_size = (stats.width, stats.height);
-                let size_changed = self
-                    .last_frame_size
-                    .map(|old| old != new_size)
-                    .unwrap_or(false);
-
-                if size_changed {
-                    // Restart MJPEG stream by adding cache-busting timestamp
-                    self.image_url = format!("/mjpeg?t={}", js_sys::Date::now());
-                }
-                self.last_frame_size = Some(new_size);
-
                 self.stats = Some(stats);
                 self.stats_failure_count = 0;
                 ctx.link().send_message(Msg::ResetStatsInterval);
@@ -660,10 +646,10 @@ impl Component for FgsFrontend {
                 self.overlay_svg = Some(svg);
                 true
             }
-            Msg::StreamError => {
-                // Server disconnected the MJPEG stream (likely due to frame size change)
-                // Restart the stream with a cache-busting timestamp
-                self.image_url = format!("/mjpeg?t={}", js_sys::Date::now());
+            Msg::FrameSizeChanged(width, height) => {
+                // WebSocket stream reported new frame dimensions
+                // This triggers when the stream reconnects after server-side size change
+                self.frame_size = Some((width, height));
                 true
             }
         }
@@ -672,27 +658,16 @@ impl Component for FgsFrontend {
     fn view(&self, ctx: &Context<Self>) -> Html {
         let props = ctx.props();
 
-        let onclick = ctx.link().callback(|e: MouseEvent| {
-            let target = e.target().unwrap();
-            let element = target.dyn_ref::<web_sys::Element>().unwrap();
-            let rect = element.get_bounding_client_rect();
-            let x = e.client_x() - rect.left() as i32;
-            let y = e.client_y() - rect.top() as i32;
-            Msg::ImageClicked(x, y)
-        });
-
-        let ontouchstart = ctx.link().callback(|e: TouchEvent| {
-            e.prevent_default();
-            if let Some(touch) = e.touches().get(0) {
-                let target = e.target().unwrap();
-                let element = target.dyn_ref::<web_sys::Element>().unwrap();
-                let rect = element.get_bounding_client_rect();
-                let x = touch.client_x() - rect.left() as i32;
-                let y = touch.client_y() - rect.top() as i32;
-                return Msg::ImageClicked(x, y);
-            }
-            Msg::ImageClicked(0, 0)
-        });
+        // Callbacks for the WebSocket image stream component
+        let onclick = ctx
+            .link()
+            .callback(|(x, y): (i32, i32)| Msg::ImageClicked(x, y));
+        let ontouchstart = ctx
+            .link()
+            .callback(|(x, y): (i32, i32)| Msg::ImageClicked(x, y));
+        let on_size_change = ctx
+            .link()
+            .callback(|(width, height): (u32, u32)| Msg::FrameSizeChanged(width, height));
 
         html! {
             <>
@@ -780,15 +755,12 @@ impl Component for FgsFrontend {
                         <span id="frame-timestamp" style="color: #00aa00; font-size: 0.9em;"></span>
                     </div>
                     <div class="image-container" style="position: relative;">
-                        <img
-                            id="camera-frame"
-                            class="image-frame"
-                            src={self.image_url.clone()}
-                            alt="Camera Frame"
-                            onclick={onclick}
-                            ontouchstart={ontouchstart}
-                            onerror={ctx.link().callback(|_| Msg::StreamError)}
-                            style="cursor: crosshair; touch-action: pinch-zoom; display: block;"
+                        <WsImageStream
+                            id={"camera-frame".to_string()}
+                            class={"image-frame".to_string()}
+                            onclick={Some(onclick)}
+                            ontouchstart={Some(ontouchstart)}
+                            on_size_change={Some(on_size_change)}
                         />
                         {if let Some(svg) = &self.overlay_svg {
                             // The SVG needs width/height 100% to scale with the image

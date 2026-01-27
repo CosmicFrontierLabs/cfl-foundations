@@ -31,7 +31,9 @@ use tokio::sync::{broadcast, Mutex, Notify, RwLock};
 
 use crate::camera_init::ExposureArgs;
 use crate::embedded_assets::serve_fgs_frontend;
-use crate::mjpeg::{encode_ndarray_jpeg, MjpegBroadcaster, MjpegFrame};
+use crate::mjpeg::encode_ndarray_jpeg;
+use crate::ws_stream::{WsBroadcaster, WsFrame};
+use axum::extract::ws::WebSocketUpgrade;
 use clap::Args;
 
 /// Common command-line arguments for camera server binaries.
@@ -235,8 +237,8 @@ pub struct AppState<C: CameraInterface> {
     pub tracking_config: Option<TrackingConfig>,
     /// FSM control state (None if FSM not configured)
     pub fsm: Option<Arc<FsmSharedState>>,
-    /// MJPEG broadcaster for streaming camera frames
-    pub mjpeg: Arc<MjpegBroadcaster>,
+    /// WebSocket broadcaster for streaming camera frames (with proper close events)
+    pub ws_stream: Arc<WsBroadcaster>,
 }
 
 #[derive(Debug, Clone)]
@@ -366,14 +368,23 @@ async fn jpeg_frame_endpoint<C: CameraInterface + 'static>(
         .unwrap()
 }
 
-/// MJPEG streaming endpoint.
+/// WebSocket image streaming endpoint.
 ///
-/// Returns a `multipart/x-mixed-replace` stream that browsers can display
-/// as a continuously updating image. Simply use `<img src="/mjpeg">` in HTML.
-async fn mjpeg_stream_endpoint<C: CameraInterface + 'static>(
+/// Provides image streaming with proper connection lifecycle management.
+/// Clients receive binary frames with metadata and get clean close events
+/// when the stream needs to restart (e.g., frame size change).
+///
+/// Protocol:
+/// - First 4 bytes: width (u32 LE)
+/// - Next 4 bytes: height (u32 LE)
+/// - Next 8 bytes: frame_number (u64 LE)
+/// - Remaining: JPEG data
+async fn ws_stream_endpoint<C: CameraInterface + 'static>(
     State(state): State<Arc<AppState<C>>>,
+    ws: WebSocketUpgrade,
 ) -> Response {
-    state.mjpeg.subscribe().into_response()
+    let broadcaster = state.ws_stream.clone();
+    ws.on_upgrade(move |socket| crate::ws_stream::ws_stream_handler(socket, broadcaster))
 }
 
 async fn raw_frame_endpoint<C: CameraInterface + 'static>(
@@ -1136,7 +1147,7 @@ pub fn create_router<C: CameraInterface + 'static>(state: Arc<AppState<C>>) -> R
     Router::new()
         .route("/", get(camera_status_page::<C>))
         .route("/jpeg", get(jpeg_frame_endpoint::<C>))
-        .route("/mjpeg", get(mjpeg_stream_endpoint::<C>))
+        .route("/ws-stream", get(ws_stream_endpoint::<C>))
         .route("/raw", get(raw_frame_endpoint::<C>))
         .route("/fits", get(fits_frame_endpoint::<C>))
         .route("/annotated", get(annotated_frame_endpoint::<C>))
@@ -1194,7 +1205,7 @@ pub async fn run_server<C: CameraInterface + Send + 'static>(
         camera_geometry.height()
     );
 
-    let mjpeg = Arc::new(MjpegBroadcaster::new(4));
+    let ws_stream = Arc::new(WsBroadcaster::new(4));
 
     let state = Arc::new(AppState {
         camera: Arc::new(Mutex::new(camera)),
@@ -1211,7 +1222,7 @@ pub async fn run_server<C: CameraInterface + Send + 'static>(
         tracking: None,
         tracking_config: None,
         fsm: None,
-        mjpeg,
+        ws_stream,
     });
 
     info!("Starting background capture loop...");
@@ -1304,12 +1315,12 @@ pub fn capture_loop_blocking<C: CameraInterface + Send + 'static>(state: Arc<App
             *latest = Some((frame_owned.clone(), metadata_owned, capture_timestamp));
         }
 
-        // Publish MJPEG frame (rate limited to 5fps, only encode if subscribers)
-        if state_clone.mjpeg.subscriber_count() > 0
+        // Publish to WebSocket stream (rate limited, only encode if subscribers)
+        if state_clone.ws_stream.subscriber_count() > 0
             && last_mjpeg_publish.elapsed() >= MJPEG_MIN_INTERVAL
         {
             if let Some(jpeg_data) = encode_ndarray_jpeg(&frame_owned, 80) {
-                state_clone.mjpeg.publish(MjpegFrame {
+                state_clone.ws_stream.publish(WsFrame {
                     jpeg_data,
                     frame_number: frame_num,
                     width: frame_owned.ncols() as u32,
@@ -1465,7 +1476,7 @@ pub async fn run_server_with_tracking<C: CameraInterface + Send + 'static>(
         ..Default::default()
     });
 
-    let mjpeg = Arc::new(MjpegBroadcaster::new(4));
+    let ws_stream = Arc::new(WsBroadcaster::new(4));
 
     let state = Arc::new(AppState {
         camera: Arc::new(Mutex::new(camera)),
@@ -1482,7 +1493,7 @@ pub async fn run_server_with_tracking<C: CameraInterface + Send + 'static>(
         tracking: Some(tracking_state),
         tracking_config: Some(tracking_config),
         fsm,
-        mjpeg,
+        ws_stream,
     });
 
     info!("Starting background capture loop with tracking support...");
@@ -1921,12 +1932,12 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                 *latest = Some((frame_owned.clone(), metadata_owned, capture_timestamp));
             }
 
-            // Publish MJPEG frame (rate limited to 5fps, only encode if subscribers)
-            if state_clone.mjpeg.subscriber_count() > 0
+            // Publish to WebSocket stream (rate limited, only encode if subscribers)
+            if state_clone.ws_stream.subscriber_count() > 0
                 && last_mjpeg_publish.elapsed() >= MJPEG_MIN_INTERVAL
             {
                 if let Some(jpeg_data) = encode_ndarray_jpeg(&frame_owned, 80) {
-                    state_clone.mjpeg.publish(MjpegFrame {
+                    state_clone.ws_stream.publish(WsFrame {
                         jpeg_data,
                         frame_number: frame_num,
                         width: frame_owned.ncols() as u32,

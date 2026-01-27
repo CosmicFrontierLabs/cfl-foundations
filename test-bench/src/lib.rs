@@ -2,6 +2,7 @@ pub mod calibration_controller;
 pub mod camera_init;
 pub mod display_patterns;
 pub mod embedded_assets;
+pub mod ws_stream;
 
 #[cfg(feature = "pi-fsm")]
 pub mod camera_server;
