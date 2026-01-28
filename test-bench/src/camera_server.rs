@@ -1577,6 +1577,7 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
     let mut last_mjpeg_publish = std::time::Instant::now() - MJPEG_MIN_INTERVAL;
 
     loop {
+        let loop_iteration_start = std::time::Instant::now();
         let mut camera = state.camera.blocking_lock();
 
         let state_clone = state.clone();
@@ -1956,6 +1957,7 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
             std::mem::take(&mut *guard)
         };
         if !settings.is_empty() {
+            let apply_start = std::time::Instant::now();
             tracing::info!("Applying {} camera settings...", settings.len());
             if let Err(errors) = apply_camera_settings(&mut *camera, settings) {
                 for err in &errors {
@@ -1968,21 +1970,33 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                 // Request ROI clear to go back to full frame
                 clear_roi_requested.store(true, Ordering::SeqCst);
             }
+            tracing::info!(
+                "apply_camera_settings took {:.1}ms",
+                apply_start.elapsed().as_secs_f64() * 1000.0
+            );
         }
 
         // Clear ROI if requested
         if clear_roi_requested.swap(false, Ordering::SeqCst) {
+            let clear_start = std::time::Instant::now();
             tracing::info!("Clearing camera ROI...");
             if let Err(e) = camera.clear_roi() {
                 tracing::warn!("Failed to clear ROI: {e}");
             }
+            tracing::info!(
+                "clear_roi took {:.1}ms",
+                clear_start.elapsed().as_secs_f64() * 1000.0
+            );
         }
 
         drop(camera); // Release lock before sleeping on error
 
         match stream_result {
             Ok(_) => {
-                tracing::info!("Stream ended, restarting...");
+                tracing::info!(
+                    "Stream ended, restarting... (loop iteration took {:.1}ms)",
+                    loop_iteration_start.elapsed().as_secs_f64() * 1000.0
+                );
             }
             Err(e) => {
                 tracing::error!("Camera stream error: {e}, retrying in 1s...");

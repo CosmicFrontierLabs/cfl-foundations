@@ -92,6 +92,7 @@ impl NSV455Camera {
     }
 
     fn configure_device(&mut self, device: &mut Device) -> CameraResult<()> {
+        let configure_start = std::time::Instant::now();
         let control_map = self
             .control_map
             .get()
@@ -130,9 +131,14 @@ impl NSV455Camera {
             requested_height
         );
 
+        let set_format_start = std::time::Instant::now();
         device
             .set_format(&format)
             .map_err(|e| CameraError::ConfigError(format!("Failed to set format: {e}")))?;
+        tracing::info!(
+            "set_format took {:.1}ms",
+            set_format_start.elapsed().as_secs_f64() * 1000.0
+        );
 
         let actual_format = device
             .format()
@@ -182,6 +188,7 @@ impl NSV455Camera {
             actual_format.height as usize,
         );
 
+        let controls_start = std::time::Instant::now();
         control_map.set_control(device, ControlType::Gain, self.gain as i64)?;
 
         control_map.set_control(
@@ -203,9 +210,23 @@ impl NSV455Camera {
         control_map.set_control(device, ControlType::TestPattern, self.test_pattern as i64)?;
 
         if let Some(roi) = self.roi {
+            let roi_start = std::time::Instant::now();
             control_map.set_control(device, ControlType::ROIHOffset, roi.min_col as i64)?;
             control_map.set_control(device, ControlType::ROIVOffset, roi.min_row as i64)?;
+            tracing::info!(
+                "ROI offset controls took {:.1}ms",
+                roi_start.elapsed().as_secs_f64() * 1000.0
+            );
         }
+        tracing::info!(
+            "All controls took {:.1}ms",
+            controls_start.elapsed().as_secs_f64() * 1000.0
+        );
+
+        tracing::info!(
+            "configure_device total: {:.1}ms",
+            configure_start.elapsed().as_secs_f64() * 1000.0
+        );
 
         Ok(())
     }
@@ -335,7 +356,15 @@ impl CameraInterface for NSV455Camera {
         &mut self,
         callback: &mut dyn FnMut(&Array2<u16>, &FrameMetadata) -> bool,
     ) -> CameraResult<()> {
+        let stream_setup_start = std::time::Instant::now();
+
+        let open_start = std::time::Instant::now();
         let mut device = self.open_device()?;
+        tracing::info!(
+            "open_device took {:.1}ms",
+            open_start.elapsed().as_secs_f64() * 1000.0
+        );
+
         self.configure_device(&mut device)?;
 
         let actual_format = device
@@ -345,8 +374,18 @@ impl CameraInterface for NSV455Camera {
         let width = actual_format.width as usize;
         let height = actual_format.height as usize;
 
+        let mmap_start = std::time::Instant::now();
         let mut stream = MmapStream::new(&device, Type::VideoCapture)
             .map_err(|e| CameraError::HardwareError(format!("Failed to create stream: {e}")))?;
+        tracing::info!(
+            "MmapStream::new took {:.1}ms",
+            mmap_start.elapsed().as_secs_f64() * 1000.0
+        );
+
+        tracing::info!(
+            "Total stream setup: {:.1}ms (before first frame)",
+            stream_setup_start.elapsed().as_secs_f64() * 1000.0
+        );
 
         loop {
             let (buf, meta) = stream
