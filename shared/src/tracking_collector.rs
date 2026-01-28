@@ -5,20 +5,35 @@
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::tracking_message::TrackingMessage;
+
+/// Shared state between the collector and background reader thread.
+struct SharedState {
+    buffer: VecDeque<TrackingMessage>,
+    connected: bool,
+    error: Option<String>,
+}
+
+impl SharedState {
+    fn new() -> Self {
+        Self {
+            buffer: VecDeque::with_capacity(1024),
+            connected: false,
+            error: None,
+        }
+    }
+}
 
 /// Collects tracking measurements from an SSE endpoint.
 ///
 /// Connects to an HTTP SSE endpoint and buffers incoming TrackingMessage events.
 /// The connection runs in a background thread, allowing non-blocking polling.
 pub struct TrackingCollector {
-    buffer: Arc<Mutex<VecDeque<TrackingMessage>>>,
-    connected: Arc<Mutex<bool>>,
-    error: Arc<Mutex<Option<String>>>,
+    state: Arc<Mutex<SharedState>>,
 }
 
 impl TrackingCollector {
@@ -30,52 +45,30 @@ impl TrackingCollector {
     /// # Errors
     /// Returns an error if the connection fails or times out.
     pub fn connect_with_timeout(endpoint: &str, timeout: Duration) -> Result<Self, String> {
-        let buffer = Arc::new(Mutex::new(VecDeque::with_capacity(1024)));
-        let connected = Arc::new(Mutex::new(false));
-        let error = Arc::new(Mutex::new(None));
-        let connect_signal = Arc::new((Mutex::new(false), Condvar::new()));
+        let state = Arc::new(Mutex::new(SharedState::new()));
+        let signal: Arc<OnceLock<Result<(), String>>> = Arc::new(OnceLock::new());
 
-        let buffer_clone = buffer.clone();
-        let connected_clone = connected.clone();
-        let error_clone = error.clone();
-        let signal_clone = connect_signal.clone();
+        let state_clone = state.clone();
+        let signal_clone = signal.clone();
         let endpoint = endpoint.to_string();
 
         thread::spawn(move || {
-            Self::sse_reader_thread(
-                endpoint,
-                buffer_clone,
-                connected_clone,
-                error_clone,
-                signal_clone,
-            );
+            Self::sse_reader_thread(endpoint, state_clone, signal_clone);
         });
 
-        // Wait for connection signal or timeout
-        let (lock, cvar) = &*connect_signal;
-        let mut signaled = lock.lock().unwrap();
+        // Wait for initial connection result
         let start = Instant::now();
-        while !*signaled && start.elapsed() < timeout {
-            let remaining = timeout.saturating_sub(start.elapsed());
-            let result = cvar.wait_timeout(signaled, remaining).unwrap();
-            signaled = result.0;
+        while start.elapsed() < timeout {
+            if let Some(result) = signal.get() {
+                return match result {
+                    Ok(()) => Ok(Self { state }),
+                    Err(e) => Err(e.clone()),
+                };
+            }
+            thread::sleep(Duration::from_millis(10));
         }
 
-        // Check if connection failed
-        if let Some(err) = error.lock().unwrap().as_ref() {
-            return Err(err.clone());
-        }
-
-        // Check if we timed out without connecting
-        if !*connected.lock().unwrap() {
-            return Err(format!("Connection timed out after {timeout:?}"));
-        }
-
-        Ok(Self {
-            buffer,
-            connected,
-            error,
-        })
+        Err(format!("Connection timed out after {timeout:?}"))
     }
 
     /// Connect to an SSE endpoint with default 5 second timeout.
@@ -86,81 +79,12 @@ impl TrackingCollector {
         Self::connect_with_timeout(endpoint, Duration::from_secs(5))
     }
 
-    fn sse_reader_thread(
-        endpoint: String,
-        buffer: Arc<Mutex<VecDeque<TrackingMessage>>>,
-        connected: Arc<Mutex<bool>>,
-        error: Arc<Mutex<Option<String>>>,
-        connect_signal: Arc<(Mutex<bool>, Condvar)>,
-    ) {
-        let mut caller_waiting = true;
-
-        loop {
-            match ureq::get(&endpoint).call() {
-                Ok(response) => {
-                    *connected.lock().unwrap() = true;
-                    *error.lock().unwrap() = None;
-
-                    // Signal that connection is established
-                    if caller_waiting {
-                        let (lock, cvar) = &*connect_signal;
-                        *lock.lock().unwrap() = true;
-                        cvar.notify_all();
-                        caller_waiting = false;
-                    }
-
-                    let reader = BufReader::new(response.into_body().into_reader());
-
-                    for line in reader.lines() {
-                        match line {
-                            Ok(line) => {
-                                // SSE format: "data: <json>\n\n"
-                                if let Some(data) = line.strip_prefix("data: ") {
-                                    if let Ok(msg) = serde_json::from_str::<TrackingMessage>(data) {
-                                        let mut buf = buffer.lock().unwrap();
-                                        buf.push_back(msg);
-                                        // Cap buffer size to prevent memory growth
-                                        while buf.len() > 10000 {
-                                            buf.pop_front();
-                                        }
-                                    }
-                                }
-                                // Ignore event:, id:, retry:, and comment lines
-                            }
-                            Err(_) => {
-                                // Connection closed or read error
-                                *connected.lock().unwrap() = false;
-                                break;
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    *connected.lock().unwrap() = false;
-                    let err_msg = format!("SSE connection failed: {e}");
-                    *error.lock().unwrap() = Some(err_msg);
-
-                    // Signal failure on first attempt
-                    if caller_waiting {
-                        let (lock, cvar) = &*connect_signal;
-                        *lock.lock().unwrap() = true;
-                        cvar.notify_all();
-                        caller_waiting = false;
-                    }
-                }
-            }
-
-            // Reconnect after a delay
-            thread::sleep(Duration::from_secs(1));
-        }
-    }
-
     /// Poll for all currently available messages (non-blocking).
     ///
     /// Returns immediately with all pending messages, or an empty Vec if none.
     pub fn poll(&self) -> Vec<TrackingMessage> {
-        let mut buffer = self.buffer.lock().unwrap();
-        buffer.drain(..).collect()
+        let mut state = self.state.lock().unwrap();
+        state.buffer.drain(..).collect()
     }
 
     /// Collect messages for a specified duration.
@@ -176,18 +100,119 @@ impl TrackingCollector {
             thread::sleep(Duration::from_millis(10));
         }
 
-        // Final poll to catch any last messages
         messages.extend(self.poll());
         messages
     }
 
+    /// Collect exactly N messages or timeout.
+    ///
+    /// Blocks until `count` messages are collected or `timeout` elapses.
+    /// Optionally filters messages by minimum flux.
+    ///
+    /// Returns the collected messages. If fewer than `count` messages were
+    /// collected before timeout, returns what was collected.
+    pub fn collect_n(
+        &self,
+        count: usize,
+        timeout: Duration,
+        min_flux: Option<f64>,
+    ) -> Vec<TrackingMessage> {
+        let start = Instant::now();
+        let mut messages = Vec::with_capacity(count);
+
+        while messages.len() < count && start.elapsed() < timeout {
+            for msg in self.poll() {
+                if let Some(min) = min_flux {
+                    if msg.shape.flux >= min {
+                        messages.push(msg);
+                    }
+                } else {
+                    messages.push(msg);
+                }
+                if messages.len() >= count {
+                    break;
+                }
+            }
+            if messages.len() < count {
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        messages
+    }
+
+    /// Wait for at least one message to arrive.
+    ///
+    /// Returns true if a message was received within the timeout.
+    pub fn wait_for_message(&self, timeout: Duration) -> bool {
+        let start = Instant::now();
+        while start.elapsed() < timeout {
+            if !self.poll().is_empty() {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        false
+    }
+
     /// Check if the SSE connection is currently active.
     pub fn is_connected(&self) -> bool {
-        *self.connected.lock().unwrap()
+        self.state.lock().unwrap().connected
     }
 
     /// Get the last connection error, if any.
     pub fn last_error(&self) -> Option<String> {
-        self.error.lock().unwrap().clone()
+        self.state.lock().unwrap().error.clone()
+    }
+
+    fn sse_reader_thread(
+        endpoint: String,
+        state: Arc<Mutex<SharedState>>,
+        signal: Arc<OnceLock<Result<(), String>>>,
+    ) {
+        loop {
+            match ureq::get(&endpoint).call() {
+                Ok(response) => {
+                    {
+                        let mut s = state.lock().unwrap();
+                        s.connected = true;
+                        s.error = None;
+                    }
+                    let _ = signal.set(Ok(()));
+
+                    let reader = BufReader::new(response.into_body().into_reader());
+                    for line in reader.lines() {
+                        match line {
+                            Ok(line) => {
+                                if let Some(data) = line.strip_prefix("data: ") {
+                                    if let Ok(msg) = serde_json::from_str::<TrackingMessage>(data) {
+                                        let mut s = state.lock().unwrap();
+                                        s.buffer.push_back(msg);
+                                        while s.buffer.len() > 10000 {
+                                            s.buffer.pop_front();
+                                        }
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                state.lock().unwrap().connected = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let err_msg = format!("SSE connection failed: {e}");
+                    {
+                        let mut s = state.lock().unwrap();
+                        s.connected = false;
+                        s.error = Some(err_msg.clone());
+                    }
+                    let _ = signal.set(Err(err_msg));
+                }
+            }
+
+            thread::sleep(Duration::from_secs(1));
+        }
     }
 }
