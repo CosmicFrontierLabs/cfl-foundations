@@ -35,12 +35,10 @@ fn test_star_detection_on_correct_cycle() {
         centroid_radius_multiplier: 3.0,
         fwhm: 3.0,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment: 1,
-        roi_v_alignment: 1,
         noise_estimation_downsample: 1,
     };
 
-    let mut fgs = FineGuidanceSystem::new(config);
+    let mut fgs = FineGuidanceSystem::new(config, (1, 1));
 
     // Track when we enter each state
     let states = Arc::new(Mutex::new(Vec::new()));
@@ -122,12 +120,10 @@ fn test_position_accuracy() {
         centroid_radius_multiplier: 5.0,
         fwhm: 3.0,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment: 1,
-        roi_v_alignment: 1,
         noise_estimation_downsample: 1,
     };
 
-    let mut fgs = FineGuidanceSystem::new(config);
+    let mut fgs = FineGuidanceSystem::new(config, (1, 1));
 
     // Track reported positions
     let positions = Arc::new(Mutex::new(Vec::new()));
@@ -227,12 +223,10 @@ fn test_moving_star_tracking() {
         centroid_radius_multiplier: 3.0,
         fwhm: 3.0,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment: 1,
-        roi_v_alignment: 1,
         noise_estimation_downsample: 1,
     };
 
-    let mut fgs = FineGuidanceSystem::new(config);
+    let mut fgs = FineGuidanceSystem::new(config, (1, 1));
 
     let positions = Arc::new(Mutex::new(Vec::new()));
     let mismatch_count = Arc::new(Mutex::new(0usize));

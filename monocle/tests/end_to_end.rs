@@ -44,12 +44,10 @@ fn test_full_tracking_lifecycle() {
         centroid_radius_multiplier: 3.0,
         fwhm: 3.0,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment: 1,
-        roi_v_alignment: 1,
         noise_estimation_downsample: 1,
     };
 
-    let mut fgs = FineGuidanceSystem::new(config);
+    let mut fgs = FineGuidanceSystem::new(config, (1, 1));
 
     // Track events
     let events_received = Arc::new(Mutex::new(Vec::<FgsCallbackEvent>::new()));
@@ -285,12 +283,10 @@ fn test_tracking_loss_and_recovery() {
         centroid_radius_multiplier: 3.0,
         fwhm: 3.0,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment: 1,
-        roi_v_alignment: 1,
         noise_estimation_downsample: 1,
     };
 
-    let mut fgs = FineGuidanceSystem::new(config);
+    let mut fgs = FineGuidanceSystem::new(config, (1, 1));
 
     // Track lost events
     let lost_count = Arc::new(AtomicUsize::new(0));
@@ -383,12 +379,10 @@ fn test_image_sequence_processing() {
         centroid_radius_multiplier: 3.0,
         fwhm: 3.0,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment: 1,
-        roi_v_alignment: 1,
         noise_estimation_downsample: 1,
     };
 
-    let mut fgs = FineGuidanceSystem::new(config);
+    let mut fgs = FineGuidanceSystem::new(config, (1, 1));
 
     // Create a sequence of images with gradually moving stars
     let mut image_sequence = Vec::new();

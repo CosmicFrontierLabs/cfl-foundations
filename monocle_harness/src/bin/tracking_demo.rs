@@ -224,15 +224,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         centroid_radius_multiplier: args.centroid_multiplier,
         fwhm: 3.0,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment,
-        roi_v_alignment,
         noise_estimation_downsample: 16,
     };
 
     // Update config with camera's saturation value (95% of max to be conservative)
     config.filters.saturation_value = camera.saturation_value() * 0.95;
 
-    let mut fgs = FineGuidanceSystem::new(config);
+    let mut fgs = FineGuidanceSystem::new(config, (roi_h_alignment, roi_v_alignment));
 
     // Determine output filename
     let output_filename = args

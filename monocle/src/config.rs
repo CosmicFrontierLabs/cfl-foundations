@@ -106,8 +106,7 @@ pub struct GuideStarFilters {
 ///     centroid_radius_multiplier: 3.0,
 ///     fwhm: 7.0,
 ///     snr_dropout_threshold: 3.0,
-///     roi_h_alignment: 4,
-///     roi_v_alignment: 4,
+///     noise_estimation_downsample: 16,
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,22 +160,6 @@ pub struct FgsConfig {
     /// hysteresis (avoid rapid lock/unlock cycles). Typical range: 2.0-5.0.
     pub snr_dropout_threshold: f64,
 
-    /// Horizontal ROI offset alignment in pixels.
-    ///
-    /// Some cameras require ROI offsets to be multiples of this value due to
-    /// hardware constraints (e.g., MIPI lane alignment). Set to 1 if no alignment
-    /// is required. Query from camera with `get_roi_offset_alignment()`.
-    #[serde(default = "default_alignment")]
-    pub roi_h_alignment: usize,
-
-    /// Vertical ROI offset alignment in pixels.
-    ///
-    /// Some cameras require ROI offsets to be multiples of this value due to
-    /// hardware constraints. Set to 1 if no alignment is required. Query from
-    /// camera with `get_roi_offset_alignment()`.
-    #[serde(default = "default_alignment")]
-    pub roi_v_alignment: usize,
-
     /// Downsample factor for noise estimation during calibration.
     ///
     /// The noise estimation algorithm (Chen et al. 2015) is computationally expensive
@@ -193,10 +176,6 @@ pub struct FgsConfig {
     /// accuracy. Typical range: 8-32.
     #[serde(default = "default_noise_downsample")]
     pub noise_estimation_downsample: usize,
-}
-
-fn default_alignment() -> usize {
-    1
 }
 
 fn default_noise_downsample() -> usize {
@@ -219,68 +198,74 @@ fn round_to_nearest_aligned(value: usize, alignment: usize) -> usize {
     ((value + alignment / 2) / alignment) * alignment
 }
 
-impl FgsConfig {
-    /// Compute an aligned ROI bounding box centered as close as possible to the given position.
-    ///
-    /// The ROI offset is snapped to alignment boundaries (roi_h_alignment, roi_v_alignment)
-    /// while keeping the star as centered as possible within the ROI.
-    ///
-    /// # Arguments
-    /// * `center_x` - Ideal horizontal center position (column)
-    /// * `center_y` - Ideal vertical center position (row)
-    /// * `image_width` - Image width for boundary checking
-    /// * `image_height` - Image height for boundary checking
-    ///
-    /// # Returns
-    /// An AABB with aligned offsets, or None if the ROI would exceed image bounds
-    pub fn compute_aligned_roi(
-        &self,
-        center_x: f64,
-        center_y: f64,
-        image_width: usize,
-        image_height: usize,
-    ) -> Option<AABB> {
-        let roi_half = self.roi_size / 2;
+/// Compute an aligned ROI bounding box centered as close as possible to the given position.
+///
+/// The ROI offset is snapped to alignment boundaries while keeping the star as centered
+/// as possible within the ROI. This is a standalone function that takes alignment as
+/// parameters, allowing the caller to provide camera-specific hardware constraints.
+///
+/// # Arguments
+/// * `center_x` - Ideal horizontal center position (column)
+/// * `center_y` - Ideal vertical center position (row)
+/// * `roi_size` - Size of the ROI window (square)
+/// * `image_width` - Image width for boundary checking
+/// * `image_height` - Image height for boundary checking
+/// * `h_alignment` - Horizontal offset alignment (1 = no alignment required)
+/// * `v_alignment` - Vertical offset alignment (1 = no alignment required)
+///
+/// # Returns
+/// An AABB with aligned offsets, or None if the ROI would exceed image bounds
+pub fn compute_aligned_roi(
+    center_x: f64,
+    center_y: f64,
+    roi_size: usize,
+    image_width: usize,
+    image_height: usize,
+    h_alignment: usize,
+    v_alignment: usize,
+) -> Option<AABB> {
+    let roi_half = roi_size / 2;
 
-        // Compute ideal (unaligned) top-left corner
-        let ideal_min_col = (center_x.round() as usize).saturating_sub(roi_half);
-        let ideal_min_row = (center_y.round() as usize).saturating_sub(roi_half);
+    // Compute ideal (unaligned) top-left corner
+    let ideal_min_col = (center_x.round() as usize).saturating_sub(roi_half);
+    let ideal_min_row = (center_y.round() as usize).saturating_sub(roi_half);
 
-        // Snap to NEAREST alignment boundary (not just round down)
-        // This minimizes the offset of the star from the ROI center
-        let aligned_min_col = round_to_nearest_aligned(ideal_min_col, self.roi_h_alignment);
-        let aligned_min_row = round_to_nearest_aligned(ideal_min_row, self.roi_v_alignment);
+    // Snap to NEAREST alignment boundary (not just round down)
+    // This minimizes the offset of the star from the ROI center
+    let aligned_min_col = round_to_nearest_aligned(ideal_min_col, h_alignment);
+    let aligned_min_row = round_to_nearest_aligned(ideal_min_row, v_alignment);
 
-        // Compute max corners
-        let max_col = aligned_min_col + self.roi_size - 1;
-        let max_row = aligned_min_row + self.roi_size - 1;
+    // Compute max corners
+    let max_col = aligned_min_col + roi_size - 1;
+    let max_row = aligned_min_row + roi_size - 1;
 
-        // Boundary check
-        if max_col >= image_width || max_row >= image_height {
-            log::warn!(
-                "Aligned ROI ({aligned_min_col}, {aligned_min_row}) to ({max_col}, {max_row}) exceeds image bounds {image_width}x{image_height}"
-            );
-            return None;
-        }
-
-        log::debug!(
-            "ROI alignment: ideal center ({:.1}, {:.1}) -> aligned offset ({}, {}), star offset in ROI: ({:.1}, {:.1})",
-            center_x,
-            center_y,
-            aligned_min_col,
-            aligned_min_row,
-            center_x - aligned_min_col as f64,
-            center_y - aligned_min_row as f64
+    // Boundary check
+    if max_col >= image_width || max_row >= image_height {
+        log::warn!(
+            "Aligned ROI ({aligned_min_col}, {aligned_min_row}) to ({max_col}, {max_row}) exceeds image bounds {image_width}x{image_height}"
         );
-
-        Some(AABB::from_coords(
-            aligned_min_row,
-            aligned_min_col,
-            max_row,
-            max_col,
-        ))
+        return None;
     }
 
+    log::debug!(
+        "ROI alignment: ideal center ({:.1}, {:.1}) -> aligned offset ({}, {}), star offset in ROI: ({:.1}, {:.1})",
+        center_x,
+        center_y,
+        aligned_min_col,
+        aligned_min_row,
+        center_x - aligned_min_col as f64,
+        center_y - aligned_min_row as f64
+    );
+
+    Some(AABB::from_coords(
+        aligned_min_row,
+        aligned_min_col,
+        max_row,
+        max_col,
+    ))
+}
+
+impl FgsConfig {
     /// Validate configuration parameters
     ///
     /// Checks that configuration values are internally consistent, particularly

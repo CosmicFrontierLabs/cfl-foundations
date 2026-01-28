@@ -45,13 +45,11 @@ fn test_basic_setup() {
         centroid_radius_multiplier: 5.0,
         fwhm: 3.0,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment: 1,
-        roi_v_alignment: 1,
         noise_estimation_downsample: 1,
     };
 
     let _camera = create_jbt_hwk_camera();
-    let mut fgs = FineGuidanceSystem::new(fgs_config);
+    let mut fgs = FineGuidanceSystem::new(fgs_config, (1, 1));
 
     // Verify FGS starts in idle state
     assert!(matches!(fgs.state(), FgsState::Idle));

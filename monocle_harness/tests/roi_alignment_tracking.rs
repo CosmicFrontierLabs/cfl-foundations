@@ -5,7 +5,7 @@
 
 use monocle::{
     callback::FgsCallbackEvent,
-    config::{FgsConfig, GuideStarFilters},
+    config::{compute_aligned_roi, FgsConfig, GuideStarFilters},
     state::{FgsEvent, FgsState},
     FineGuidanceSystem,
 };
@@ -58,7 +58,6 @@ fn create_aligned_camera() -> SimulatorCamera {
     camera
 }
 
-/// Create FGS config with alignment constraints matching the camera
 fn create_fgs_config() -> FgsConfig {
     FgsConfig {
         acquisition_frames: 3,
@@ -78,10 +77,12 @@ fn create_fgs_config() -> FgsConfig {
         centroid_radius_multiplier: 3.0,
         fwhm: 3.0,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment: 32, // Match camera alignment
-        roi_v_alignment: 32, // Match camera alignment
         noise_estimation_downsample: 1,
     }
+}
+
+fn get_camera_alignment() -> (usize, usize) {
+    (32, 32)
 }
 
 #[test]
@@ -94,7 +95,7 @@ fn test_tracking_position_consistency_with_alignment() {
 
     let mut camera = create_aligned_camera();
     let config = create_fgs_config();
-    let mut fgs = FineGuidanceSystem::new(config);
+    let mut fgs = FineGuidanceSystem::new(config, get_camera_alignment());
 
     // Register callback to collect events
     fgs.register_callback(move |event| {
@@ -244,28 +245,9 @@ fn test_roi_alignment_offset_calculation() {
     // This test verifies the ROI alignment math directly
     use monocle::config::FgsConfig;
 
-    let config = FgsConfig {
-        acquisition_frames: 1,
-        filters: GuideStarFilters {
-            detection_threshold_sigma: 5.0,
-            snr_min: 5.0,
-            diameter_range: (2.0, 20.0),
-            aspect_ratio_max: 2.5,
-            saturation_value: 60000.0,
-            saturation_search_radius: 3.0,
-            minimum_edge_distance: 40.0,
-            bad_pixel_map: BadPixelMap::empty(),
-            minimum_bad_pixel_distance: 5.0,
-        },
-        roi_size: 64,
-        max_reacquisition_attempts: 3,
-        centroid_radius_multiplier: 3.0,
-        fwhm: 3.0,
-        snr_dropout_threshold: 3.0,
-        roi_h_alignment: 32,
-        roi_v_alignment: 32,
-        noise_estimation_downsample: 1,
-    };
+    let roi_size = 64usize;
+    let h_alignment = 32usize;
+    let v_alignment = 32usize;
 
     // Test various star positions and verify ROI alignment
     let test_cases = vec![
@@ -277,8 +259,7 @@ fn test_roi_alignment_offset_calculation() {
     ];
 
     for (star_x, star_y, desc) in test_cases {
-        let roi = config
-            .compute_aligned_roi(star_x, star_y, 512, 512)
+        let roi = compute_aligned_roi(star_x, star_y, roi_size, 512, 512, h_alignment, v_alignment)
             .expect(&format!("Should compute ROI for {}", desc));
 
         // Verify alignment
@@ -317,8 +298,8 @@ fn test_roi_alignment_offset_calculation() {
 
         // The star should be reasonably close to the center of the ROI
         // Maximum offset from center should be alignment/2 = 16 pixels
-        let center_offset_x = (star_in_roi_x - 32.0).abs();
-        let center_offset_y = (star_in_roi_y - 32.0).abs();
+        let center_offset_x = (star_in_roi_x - 32.0_f64).abs();
+        let center_offset_y = (star_in_roi_y - 32.0_f64).abs();
 
         println!(
             "{}: star at ({:.1}, {:.1}), ROI at ({}, {}), star in ROI at ({:.1}, {:.1}), center offset: ({:.1}, {:.1})",

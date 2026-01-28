@@ -15,9 +15,10 @@
 //! ```text
 //! use monocle::{FineGuidanceSystem, FgsConfig, FgsEvent};
 //!
-//! // Create FGS with configuration
+//! // Create FGS with configuration and camera ROI alignment
 //! let config = FgsConfig { /* ... */ };
-//! let mut fgs = FineGuidanceSystem::new(config);
+//! let roi_alignment = (16, 2);  // From camera hardware constraints
+//! let mut fgs = FineGuidanceSystem::new(config, roi_alignment);
 //!
 //! // Register callback for tracking events
 //! fgs.register_callback(|event| {
@@ -219,6 +220,9 @@ pub struct FineGuidanceSystem {
     state: FgsState,
     /// System configuration
     config: FgsConfig,
+    /// ROI offset alignment constraints from camera hardware (h, v).
+    /// Used when computing aligned ROI bounds for guide star tracking.
+    roi_alignment: (usize, usize),
     /// Selected guide star (populated during calibration)
     guide_star: Option<GuideStar>,
     /// Accumulated frame sum (stored as f64 to avoid overflow)
@@ -239,10 +243,17 @@ pub struct FineGuidanceSystem {
 
 impl FineGuidanceSystem {
     /// Create a new Fine Guidance System
-    pub fn new(config: FgsConfig) -> Self {
+    ///
+    /// # Arguments
+    /// * `config` - FGS configuration parameters
+    /// * `roi_alignment` - ROI offset alignment (h, v) from camera hardware constraints.
+    ///   Query from camera with `CameraInterface::get_roi_offset_alignment()`.
+    ///   Use `(1, 1)` if no alignment is required.
+    pub fn new(config: FgsConfig, roi_alignment: (usize, usize)) -> Self {
         Self {
             state: FgsState::Idle,
             config,
+            roi_alignment,
             guide_star: None,
             accumulated_frame: None,
             frames_accumulated: 0,
@@ -726,8 +737,11 @@ impl FineGuidanceSystem {
             self.frames_accumulated
         );
 
-        let (guide_star, detected_stars) =
-            selection::detect_and_select_guides(averaged_frame.view(), &self.config)?;
+        let (guide_star, detected_stars) = selection::detect_and_select_guides(
+            averaged_frame.view(),
+            &self.config,
+            self.roi_alignment,
+        )?;
 
         self.guide_star = guide_star;
         self.detected_stars = detected_stars;
@@ -893,15 +907,17 @@ mod tests {
             centroid_radius_multiplier: 5.0,
             fwhm: 3.0,
             snr_dropout_threshold: 3.0,
-            roi_h_alignment: 1,
-            roi_v_alignment: 1,
             noise_estimation_downsample: 1,
         }
     }
 
+    fn test_alignment() -> (usize, usize) {
+        (1, 1)
+    }
+
     #[test]
     fn test_state_transitions() {
-        let mut fgs = FineGuidanceSystem::new(test_config());
+        let mut fgs = FineGuidanceSystem::new(test_config(), test_alignment());
 
         // Should start in Idle
         assert_eq!(fgs.state(), &FgsState::Idle);
@@ -913,7 +929,7 @@ mod tests {
 
     #[test]
     fn test_process_frame() {
-        let mut fgs = FineGuidanceSystem::new(test_config());
+        let mut fgs = FineGuidanceSystem::new(test_config(), test_alignment());
         let dummy_frame = Array2::<u16>::zeros((100, 100));
 
         // Should do nothing in Idle state
@@ -925,7 +941,7 @@ mod tests {
 
     #[test]
     fn test_frame_accumulation() {
-        let mut fgs = FineGuidanceSystem::new(test_config());
+        let mut fgs = FineGuidanceSystem::new(test_config(), test_alignment());
 
         // Start FGS
         let _ = fgs.process_event(FgsEvent::StartFgs);
@@ -970,7 +986,7 @@ mod tests {
 
     #[test]
     fn test_frame_accumulation_abort() {
-        let mut fgs = FineGuidanceSystem::new(test_config());
+        let mut fgs = FineGuidanceSystem::new(test_config(), test_alignment());
 
         // Start FGS and accumulate some frames
         let _ = fgs.process_event(FgsEvent::StartFgs);
@@ -990,7 +1006,7 @@ mod tests {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
 
-        let fgs = FineGuidanceSystem::new(test_config());
+        let fgs = FineGuidanceSystem::new(test_config(), test_alignment());
         let counter = Arc::new(AtomicUsize::new(0));
         let counter_clone = counter.clone();
 
@@ -1037,7 +1053,7 @@ mod tests {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
 
-        let fgs = FineGuidanceSystem::new(test_config());
+        let fgs = FineGuidanceSystem::new(test_config(), test_alignment());
 
         let counter1 = Arc::new(AtomicUsize::new(0));
         let counter2 = Arc::new(AtomicUsize::new(0));

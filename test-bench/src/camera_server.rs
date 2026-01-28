@@ -147,7 +147,7 @@ impl Default for TrackingSharedState {
     }
 }
 
-/// Configuration for tracking mode (passed to the capture loop)
+/// Configuration for tracking mode (passed to the capture loop).
 #[derive(Clone)]
 pub struct TrackingConfig {
     pub acquisition_frames: usize,
@@ -158,10 +158,6 @@ pub struct TrackingConfig {
     pub fwhm: f64,
     pub bad_pixel_map: BadPixelMap,
     pub saturation_value: f64,
-    /// ROI horizontal offset alignment (from camera constraints)
-    pub roi_h_alignment: usize,
-    /// ROI vertical offset alignment (from camera constraints)
-    pub roi_v_alignment: usize,
 }
 
 impl Default for TrackingConfig {
@@ -175,8 +171,6 @@ impl Default for TrackingConfig {
             fwhm: 7.0,
             bad_pixel_map: BadPixelMap::empty(),
             saturation_value: 65535.0,
-            roi_h_alignment: 1,
-            roi_v_alignment: 1,
         }
     }
 }
@@ -1567,8 +1561,12 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
     // Store fixed config values that don't change at runtime
     let bad_pixel_map = tracking_config.bad_pixel_map.clone();
     let saturation_value = tracking_config.saturation_value;
-    let roi_h_alignment = tracking_config.roi_h_alignment;
-    let roi_v_alignment = tracking_config.roi_v_alignment;
+
+    // Get ROI alignment from camera (immutable hardware property)
+    let (roi_h_alignment, roi_v_alignment) = {
+        let camera = state.camera.blocking_lock();
+        camera.get_roi_offset_alignment()
+    };
 
     let fgs: Arc<StdMutex<Option<FineGuidanceSystem>>> = Arc::new(StdMutex::new(None));
     let pending_settings: Arc<StdMutex<Vec<CameraSettingsUpdate>>> =
@@ -1637,15 +1635,13 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                         centroid_radius_multiplier: 3.0,
                         fwhm: settings.fwhm,
                         snr_dropout_threshold: settings.snr_dropout_threshold,
-                        roi_h_alignment,
-                        roi_v_alignment,
                         noise_estimation_downsample: 16,
                     };
                     tracing::info!(
                         "Initializing Fine Guidance System with settings: acq_frames={}, roi={}, sigma={:.1}, snr_min={:.1}, fwhm={:.1}",
                         settings.acquisition_frames, settings.roi_size, settings.detection_threshold_sigma, settings.snr_min, settings.fwhm
                     );
-                    let mut new_fgs = FineGuidanceSystem::new(fgs_config);
+                    let mut new_fgs = FineGuidanceSystem::new(fgs_config, (roi_h_alignment, roi_v_alignment));
 
                     // Set up export (CSV and frame writer) if enabled
                     let export_settings = tracking_for_loop.export_settings.blocking_read().clone();

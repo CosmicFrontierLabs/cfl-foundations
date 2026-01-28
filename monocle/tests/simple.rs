@@ -35,12 +35,10 @@ fn test_single_stationary_star() {
         centroid_radius_multiplier: 3.0,
         fwhm: 3.0,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment: 1,
-        roi_v_alignment: 1,
         noise_estimation_downsample: 1,
     };
 
-    let mut fgs = FineGuidanceSystem::new(config);
+    let mut fgs = FineGuidanceSystem::new(config, (1, 1));
 
     // Create a frame with a single star using the shared renderer
     let image_config = SyntheticImageConfig {
@@ -121,8 +119,6 @@ fn test_guidance_update_timestamp_correlation() {
         centroid_radius_multiplier: 5.0,
         fwhm: 3.0,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment: 1,
-        roi_v_alignment: 1,
         noise_estimation_downsample: 1,
     };
 
@@ -138,7 +134,7 @@ fn test_guidance_update_timestamp_correlation() {
     let star = StarParams::with_fwhm(128.0, 128.0, 5000.0, 4.0);
     let frame = create_synthetic_star_image(&image_config, &[star]);
 
-    let mut fgs = FineGuidanceSystem::new(config);
+    let mut fgs = FineGuidanceSystem::new(config, (1, 1));
 
     // Start FGS
     let _ = fgs.process_event(FgsEvent::StartFgs);

@@ -155,13 +155,6 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    // Get ROI alignment constraints from camera
-    let (roi_h_alignment, roi_v_alignment) = camera.get_roi_offset_alignment();
-    info!(
-        "Camera ROI alignment constraints: h={}, v={}",
-        roi_h_alignment, roi_v_alignment
-    );
-
     let tracking_config = TrackingConfig {
         acquisition_frames: args.acquisition_frames,
         roi_size: args.roi_size,
@@ -171,8 +164,6 @@ async fn main() -> anyhow::Result<()> {
         fwhm: args.fwhm,
         bad_pixel_map,
         saturation_value: camera.saturation_value(),
-        roi_h_alignment,
-        roi_v_alignment,
     };
 
     // Initialize FSM if IP address provided

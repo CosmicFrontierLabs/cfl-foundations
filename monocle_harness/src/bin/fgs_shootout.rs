@@ -439,13 +439,11 @@ fn run_single_experiment(
         centroid_radius_multiplier: fgs_params.centroid_radius_multiplier,
         fwhm: pix_fwhm,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment,
-        roi_v_alignment,
         noise_estimation_downsample: 16,
     };
 
     // Create FGS
-    let mut fgs = FineGuidanceSystem::new(fgs_config);
+    let mut fgs = FineGuidanceSystem::new(fgs_config, (roi_h_alignment, roi_v_alignment));
 
     // Start FGS
     let (_update, _settings) = fgs

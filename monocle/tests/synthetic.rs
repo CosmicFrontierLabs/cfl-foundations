@@ -35,12 +35,10 @@ fn test_fgs_with_synthetic_frames() {
         centroid_radius_multiplier: 5.0,
         fwhm: 3.0,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment: 1,
-        roi_v_alignment: 1,
         noise_estimation_downsample: 1,
     };
 
-    let mut fgs = FineGuidanceSystem::new(config);
+    let mut fgs = FineGuidanceSystem::new(config, (1, 1));
 
     // Define synthetic stars - make them brighter
     let base_stars = vec![
@@ -119,12 +117,10 @@ fn test_fgs_acquisition_to_tracking_transition() {
         centroid_radius_multiplier: 3.0,
         fwhm: 3.0,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment: 1,
-        roi_v_alignment: 1,
         noise_estimation_downsample: 1,
     };
 
-    let mut fgs = FineGuidanceSystem::new(config);
+    let mut fgs = FineGuidanceSystem::new(config, (1, 1));
 
     // Track state transitions
     let mut states = Vec::new();
@@ -217,12 +213,10 @@ fn test_fgs_with_moving_stars() {
         centroid_radius_multiplier: 5.0,
         fwhm: 3.0,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment: 1,
-        roi_v_alignment: 1,
         noise_estimation_downsample: 1,
     };
 
-    let mut fgs = FineGuidanceSystem::new(config);
+    let mut fgs = FineGuidanceSystem::new(config, (1, 1));
 
     // Single very bright star for simplicity
     let base_star = vec![StarParams::with_fwhm(64.0, 64.0, 60000.0, 3.0)];
@@ -299,12 +293,10 @@ fn test_fgs_loses_tracking_with_large_motion() {
         centroid_radius_multiplier: 3.0,
         fwhm: 3.0,
         snr_dropout_threshold: 3.0,
-        roi_h_alignment: 1,
-        roi_v_alignment: 1,
         noise_estimation_downsample: 1,
     };
 
-    let mut fgs = FineGuidanceSystem::new(config);
+    let mut fgs = FineGuidanceSystem::new(config, (1, 1));
 
     let base_star = vec![StarParams::with_fwhm(64.0, 64.0, 60000.0, 3.0)];
 
