@@ -23,7 +23,7 @@ use test_bench::display_utils::{
     estimate_pixel_pitch_um, get_display_resolution, list_displays, resolve_display_index,
     wait_for_oled_display, OLED_HEIGHT, OLED_PIXEL_PITCH_UM, OLED_WIDTH,
 };
-use test_bench::embedded_assets::serve_calibrate_frontend;
+use test_bench::embedded_assets::{serve_calibrate_frontend, serve_calibrate_index_with_data};
 use test_bench::ws_stream::WsBroadcaster;
 use test_bench_shared::PatternCommand;
 use tokio::sync::RwLock;
@@ -146,26 +146,8 @@ struct AppState {
     ws_stream: Arc<WsBroadcaster>,
 }
 
-async fn pattern_page(State(state): State<Arc<AppState>>) -> Html<String> {
-    let html = format!(
-        r#"<!DOCTYPE html>
-<html>
-<head>
-    <title>Calibration Pattern Server</title>
-    <link rel="stylesheet" href="/static/shared-styles.css" />
-    <script type="module">
-        import init from '/static/calibrate_wasm.js';
-        init();
-    </script>
-</head>
-<body>
-    <div id="app" data-width="{}" data-height="{}"></div>
-</body>
-</html>"#,
-        state.width, state.height
-    );
-
-    Html(html)
+async fn pattern_page(State(state): State<Arc<AppState>>) -> Response {
+    serve_calibrate_index_with_data(state.width as usize, state.height as usize)
 }
 
 async fn jpeg_pattern_endpoint(State(state): State<Arc<AppState>>) -> Response {
@@ -451,10 +433,7 @@ async fn run_web_server(state: Arc<AppState>, port: u16, bind_address: String) -
         .route("/config", axum::routing::post(update_pattern_config))
         .route("/pattern", get(get_pattern_command))
         .route("/pattern", axum::routing::post(post_pattern_command))
-        .nest(
-            "/static",
-            Router::new().fallback(get(serve_calibrate_frontend)),
-        )
+        .fallback(get(serve_calibrate_frontend))
         .with_state(state.clone());
 
     let addr: SocketAddr = format!("{bind_address}:{port}")

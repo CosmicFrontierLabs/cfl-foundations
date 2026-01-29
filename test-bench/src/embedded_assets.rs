@@ -69,6 +69,43 @@ pub async fn serve_fgs_frontend(uri: Uri) -> Response {
     serve_embedded::<FgsAssets>(&uri)
 }
 
+/// Serve index.html with data attributes injected into the app div.
+///
+/// This replaces `<div id="app">` with `<div id="app" {data_attrs}>` so the
+/// frontend can access server-side metadata without an additional API call.
+fn serve_index_with_data<T: RustEmbed>(data_attrs: &str) -> Response {
+    match T::get("index.html") {
+        Some(content) => {
+            let html = String::from_utf8_lossy(&content.data);
+            let modified = html.replace(
+                r#"<div id="app">"#,
+                &format!(r#"<div id="app" {data_attrs}>"#),
+            );
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "text/html")],
+                Body::from(modified),
+            )
+                .into_response()
+        }
+        None => (StatusCode::NOT_FOUND, "index.html not found").into_response(),
+    }
+}
+
+/// Serve embedded FGS index.html with injected camera metadata.
+pub fn serve_fgs_index_with_data(device: &str, width: usize, height: usize) -> Response {
+    serve_index_with_data::<FgsAssets>(&format!(
+        r#"data-device="{device}" data-width="{width}" data-height="{height}""#
+    ))
+}
+
+/// Serve embedded calibrate index.html with injected display metadata.
+pub fn serve_calibrate_index_with_data(width: usize, height: usize) -> Response {
+    serve_index_with_data::<CalibrateAssets>(&format!(
+        r#"data-width="{width}" data-height="{height}""#
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

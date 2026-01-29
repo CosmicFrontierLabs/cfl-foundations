@@ -30,7 +30,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex, Notify, RwLock};
 
 use crate::camera_init::ExposureArgs;
-use crate::embedded_assets::serve_fgs_frontend;
+use crate::embedded_assets::{serve_fgs_frontend, serve_fgs_index_with_data};
 use crate::mjpeg::encode_ndarray_jpeg;
 use crate::ws_stream::{WsBroadcaster, WsFrame};
 use axum::extract::ws::WebSocketUpgrade;
@@ -495,29 +495,12 @@ async fn stats_endpoint<C: CameraInterface + 'static>(
 
 async fn camera_status_page<C: CameraInterface + 'static>(
     State(state): State<Arc<AppState<C>>>,
-) -> Html<String> {
+) -> Response {
     let width = state.camera_geometry.width();
     let height = state.camera_geometry.height();
     let camera_name = &state.camera_name;
 
-    let html = format!(
-        r#"<!DOCTYPE html>
-<html>
-<head>
-    <title>FGS Monitor</title>
-    <link rel="stylesheet" href="/static/shared-styles.css" />
-    <script type="module">
-        import init from '/static/fgs_wasm.js';
-        init();
-    </script>
-</head>
-<body>
-    <div id="app" data-device="{camera_name}" data-width="{width}" data-height="{height}"></div>
-</body>
-</html>"#
-    );
-
-    Html(html)
+    serve_fgs_index_with_data(camera_name, width, height)
 }
 
 async fn annotated_frame_endpoint<C: CameraInterface + 'static>(
@@ -1165,7 +1148,7 @@ pub fn create_router<C: CameraInterface + 'static>(state: Arc<AppState<C>>) -> R
         )
         .route("/fsm/status", get(fsm_status_endpoint::<C>))
         .route("/fsm/move", post(fsm_move_endpoint::<C>))
-        .nest("/static", Router::new().fallback(get(serve_fgs_frontend)))
+        .fallback(get(serve_fgs_frontend))
         .with_state(state)
         .layer(middleware::from_fn(logging_middleware))
 }
