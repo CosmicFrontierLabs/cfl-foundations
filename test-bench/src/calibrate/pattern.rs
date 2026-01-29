@@ -100,6 +100,11 @@ impl Default for PatternConfig {
 }
 
 impl PatternConfig {
+    /// Returns true if this pattern is RemoteControlled mode.
+    pub fn is_remote_controlled(&self) -> bool {
+        matches!(self, Self::RemoteControlled { .. })
+    }
+
     /// Returns true if this pattern requires per-frame regeneration.
     pub fn is_animated(&self) -> bool {
         matches!(

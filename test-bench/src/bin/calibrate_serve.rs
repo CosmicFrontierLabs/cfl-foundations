@@ -366,11 +366,22 @@ async fn update_pattern_config(
 /// Handle pattern commands via REST API.
 ///
 /// This endpoint accepts PatternCommand JSON and updates the RemoteControlled pattern state.
-/// The display must be in RemoteControlled mode for these commands to have visible effect.
+/// Returns 409 Conflict if the display is not in RemoteControlled mode.
 async fn post_pattern_command(
     State(state): State<Arc<AppState>>,
     Json(cmd): Json<PatternCommand>,
 ) -> Response {
+    // Check if we're in RemoteControlled mode
+    let is_remote = state.pattern.read().await.is_remote_controlled();
+    if !is_remote {
+        return Response::builder()
+            .status(StatusCode::CONFLICT)
+            .body(Body::from(
+                "Display is not in RemoteControlled mode. Use POST /config to switch modes first.",
+            ))
+            .unwrap();
+    }
+
     // Log the command
     match &cmd {
         PatternCommand::Spot {
