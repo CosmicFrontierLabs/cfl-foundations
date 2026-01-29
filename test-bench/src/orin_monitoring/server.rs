@@ -7,6 +7,7 @@ use axum::{
     Router,
 };
 use hardware::orin::{JetsonOrinMonitor, MonitoringError};
+use shared_wasm::HealthInfo;
 use std::sync::Arc;
 use tokio::time::{interval, Duration};
 use tracing::{error, info};
@@ -95,7 +96,7 @@ async fn metrics_handler(State(metrics): State<Arc<PrometheusMetrics>>) -> Respo
 }
 
 async fn health_handler() -> Response {
-    let health_info = test_bench_shared::HealthInfo {
+    let health_info = HealthInfo {
         status: "healthy".to_string(),
         service: "jetson-orin-monitoring".to_string(),
         timestamp: std::time::SystemTime::now()

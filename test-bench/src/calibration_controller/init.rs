@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use crate::tracking_collector::TrackingCollector;
-use test_bench_shared::CalibrateServerClient;
+use shared_wasm::CalibrateServerClient;
 
 use super::communication::discover_sensor_info;
 use super::grid::generate_centered_grid;

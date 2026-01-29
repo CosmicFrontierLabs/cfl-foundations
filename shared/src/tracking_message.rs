@@ -4,7 +4,7 @@
 //! (e.g., cam_track publishing to calibration subscribers).
 
 use serde::{Deserialize, Serialize};
-use test_bench_shared::{SpotShape, Timestamp};
+use shared_wasm::{SpotShape, Timestamp};
 
 use crate::system_info::SensorInfo;
 

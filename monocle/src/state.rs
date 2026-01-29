@@ -1,6 +1,6 @@
 use ndarray::ArrayView2;
 use serde::{Deserialize, Serialize};
-use test_bench_shared::Timestamp;
+use shared_wasm::Timestamp;
 
 /// Fine Guidance System states
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

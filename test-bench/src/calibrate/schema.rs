@@ -1,7 +1,7 @@
 use super::pattern::PatternConfig;
 
 // Re-export shared types
-pub use test_bench_shared::{ControlSpec, PatternSpec, SchemaResponse};
+pub use shared_wasm::{ControlSpec, PatternSpec, SchemaResponse};
 
 /// Generate the schema for all web-accessible patterns.
 pub fn get_pattern_schemas() -> SchemaResponse {

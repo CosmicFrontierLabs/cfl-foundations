@@ -1,6 +1,6 @@
 use ndarray::Array2;
+use shared_wasm::{SpotShape, Timestamp};
 use std::sync::Arc;
-use test_bench_shared::{SpotShape, Timestamp};
 
 /// Position estimate for tracking callbacks
 #[derive(Debug, Clone)]

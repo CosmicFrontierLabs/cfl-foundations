@@ -1,4 +1,4 @@
-use test_bench_shared::RingBuffer;
+use shared_wasm::RingBuffer;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
@@ -9,8 +9,8 @@ use crate::fgs::{
 };
 use crate::ws_image_stream::WsImageStream;
 
-pub use test_bench_shared::CameraStats;
-pub use test_bench_shared::{
+pub use shared_wasm::CameraStats;
+pub use shared_wasm::{
     ExportSettings, ExportStatus, FsmMoveRequest, FsmStatus, StarDetectionSettings,
     TrackingEnableRequest, TrackingSettings, TrackingState, TrackingStatus,
 };

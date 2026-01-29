@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use shared::image_size::PixelShape;
-use test_bench_shared::PatternCommand;
+use shared_wasm::PatternCommand;
 
 use super::shared::{compute_normalization_factor, render_gaussian_spot, BlendMode};
 

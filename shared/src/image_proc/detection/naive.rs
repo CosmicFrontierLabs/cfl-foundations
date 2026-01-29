@@ -30,8 +30,8 @@ use std::collections::HashSet;
 
 use crate::image_proc::centroid::compute_centroid_from_mask;
 use meter_math::Locatable2d;
+use shared_wasm::SpotShape;
 use starfield::image::starfinders::StellarSource;
-use test_bench_shared::SpotShape;
 
 /// Star detection result with sub-pixel position and shape characterization.
 ///

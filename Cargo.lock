@@ -3243,7 +3243,7 @@ dependencies = [
  "rand_chacha 0.9.0",
  "serde",
  "shared",
- "test-bench-shared",
+ "shared-wasm",
 ]
 
 [[package]]
@@ -5048,9 +5048,9 @@ dependencies = [
  "scilib",
  "serde",
  "serde_json",
+ "shared-wasm",
  "starfield",
  "tempfile",
- "test-bench-shared",
  "thiserror 1.0.69",
  "tiny-skia",
  "tracing",
@@ -5059,6 +5059,17 @@ dependencies = [
  "url",
  "urlencoding",
  "usvg",
+]
+
+[[package]]
+name = "shared-wasm"
+version = "0.1.0"
+dependencies = [
+ "gloo-net 0.6.0",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -5529,9 +5540,9 @@ dependencies = [
  "serde",
  "serde_json",
  "shared",
+ "shared-wasm",
  "simulator",
  "tempfile",
- "test-bench-shared",
  "thiserror 1.0.69",
  "tiny-skia",
  "tokio",
@@ -5555,22 +5566,11 @@ dependencies = [
  "js-sys",
  "serde",
  "serde_json",
- "test-bench-shared",
+ "shared-wasm",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
  "yew",
-]
-
-[[package]]
-name = "test-bench-shared"
-version = "0.1.0"
-dependencies = [
- "gloo-net 0.6.0",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
 ]
 
 [[package]]

@@ -5,7 +5,7 @@ use axum::{
     middleware::{self, Next},
     response::{
         sse::{Event, KeepAlive, Sse},
-        Html, Response,
+        Response,
     },
     routing::{get, post},
     Json, Router,
@@ -23,6 +23,11 @@ use shared::camera_interface::{CameraInterface, FrameMetadata, SensorGeometry};
 use shared::frame_writer::{FrameFormat, FrameWriterHandle};
 use shared::image_proc::u16_to_gray_image;
 use shared::tracking_message::TrackingMessage;
+use shared_wasm::{
+    CameraStats, CameraTimingStats, ExportSettings, ExportStatus, FrameExportMetadata,
+    FsmMoveRequest, FsmStatus, RawFrameResponse, TrackingEnableRequest, TrackingPosition,
+    TrackingSettings, TrackingState, TrackingStatus,
+};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -112,13 +117,13 @@ pub struct TrackingSharedState {
     /// Signal to request restart of capture loop (e.g., when toggling tracking)
     pub restart_requested: AtomicBool,
     /// Current tracking state (serialized as JSON for thread-safe access)
-    pub status: RwLock<test_bench_shared::TrackingStatus>,
+    pub status: RwLock<TrackingStatus>,
     /// Total tracking updates
     pub total_updates: AtomicU64,
     /// Runtime-adjustable tracking settings
-    pub settings: RwLock<test_bench_shared::TrackingSettings>,
+    pub settings: RwLock<TrackingSettings>,
     /// Export settings (CSV and frame export)
-    pub export_settings: RwLock<test_bench_shared::ExportSettings>,
+    pub export_settings: RwLock<ExportSettings>,
     /// Export statistics
     pub export_csv_records: AtomicU64,
     pub export_frames_written: AtomicU64,
@@ -135,10 +140,10 @@ impl Default for TrackingSharedState {
         Self {
             enabled: AtomicBool::new(false),
             restart_requested: AtomicBool::new(false),
-            status: RwLock::new(test_bench_shared::TrackingStatus::default()),
+            status: RwLock::new(TrackingStatus::default()),
             total_updates: AtomicU64::new(0),
-            settings: RwLock::new(test_bench_shared::TrackingSettings::default()),
-            export_settings: RwLock::new(test_bench_shared::ExportSettings::default()),
+            settings: RwLock::new(TrackingSettings::default()),
+            export_settings: RwLock::new(ExportSettings::default()),
             export_csv_records: AtomicU64::new(0),
             export_frames_written: AtomicU64::new(0),
             export_last_error: RwLock::new(None),
@@ -412,7 +417,7 @@ async fn raw_frame_endpoint<C: CameraInterface + 'static>(
 
     let encoded = base64::engine::general_purpose::STANDARD.encode(img.as_raw());
 
-    let response = test_bench_shared::RawFrameResponse {
+    let response = RawFrameResponse {
         width,
         height,
         timestamp_sec: metadata.timestamp.seconds,
@@ -465,14 +470,14 @@ async fn stats_endpoint<C: CameraInterface + 'static>(
         stats.total_pipeline_ms.iter().sum::<f32>() / stats.total_pipeline_ms.len() as f32
     };
 
-    let response = test_bench_shared::CameraStats {
+    let response = CameraStats {
         total_frames: stats.total_frames,
         avg_fps,
         temperatures: stats.last_temperatures.clone(),
         histogram: stats.histogram.clone(),
         histogram_mean: stats.histogram_mean,
         histogram_max: stats.histogram_max,
-        timing: Some(test_bench_shared::CameraTimingStats {
+        timing: Some(CameraTimingStats {
             avg_capture_ms,
             avg_analysis_ms,
             avg_render_ms,
@@ -872,7 +877,7 @@ async fn tracking_events_endpoint<C: CameraInterface + 'static>(
 
 async fn tracking_enable_endpoint<C: CameraInterface + 'static>(
     State(state): State<Arc<AppState<C>>>,
-    Json(req): Json<test_bench_shared::TrackingEnableRequest>,
+    Json(req): Json<TrackingEnableRequest>,
 ) -> Response {
     match &state.tracking {
         Some(tracking) => {
@@ -888,7 +893,7 @@ async fn tracking_enable_endpoint<C: CameraInterface + 'static>(
             let mut status = tracking.status.write().await;
             status.enabled = req.enabled;
             if !req.enabled {
-                status.state = test_bench_shared::TrackingState::Idle;
+                status.state = TrackingState::Idle;
                 status.position = None;
                 status.num_guide_stars = 0;
             }
@@ -929,7 +934,7 @@ async fn tracking_settings_get_endpoint<C: CameraInterface + 'static>(
 
 async fn tracking_settings_post_endpoint<C: CameraInterface + 'static>(
     State(state): State<Arc<AppState<C>>>,
-    Json(new_settings): Json<test_bench_shared::TrackingSettings>,
+    Json(new_settings): Json<TrackingSettings>,
 ) -> Response {
     match &state.tracking {
         Some(tracking) => {
@@ -967,7 +972,7 @@ async fn export_status_endpoint<C: CameraInterface + 'static>(
         Some(tracking) => {
             let settings = tracking.export_settings.read().await.clone();
             let last_error = tracking.export_last_error.read().await.clone();
-            let status = test_bench_shared::ExportStatus {
+            let status = ExportStatus {
                 csv_records_written: tracking.export_csv_records.load(Ordering::SeqCst),
                 frames_exported: tracking.export_frames_written.load(Ordering::SeqCst),
                 settings,
@@ -988,7 +993,7 @@ async fn export_status_endpoint<C: CameraInterface + 'static>(
 
 async fn export_settings_post_endpoint<C: CameraInterface + 'static>(
     State(state): State<Arc<AppState<C>>>,
-    Json(new_settings): Json<test_bench_shared::ExportSettings>,
+    Json(new_settings): Json<ExportSettings>,
 ) -> Response {
     match &state.tracking {
         Some(tracking) => {
@@ -1035,7 +1040,7 @@ async fn fsm_status_endpoint<C: CameraInterface + 'static>(
     match &state.fsm {
         Some(fsm_state) => {
             let last_error = fsm_state.last_error.read().await.clone();
-            let status = test_bench_shared::FsmStatus {
+            let status = FsmStatus {
                 connected: true,
                 x_urad: fsm_state.get_x(),
                 y_urad: fsm_state.get_y(),
@@ -1060,7 +1065,7 @@ async fn fsm_status_endpoint<C: CameraInterface + 'static>(
 
 async fn fsm_move_endpoint<C: CameraInterface + 'static>(
     State(state): State<Arc<AppState<C>>>,
-    Json(request): Json<test_bench_shared::FsmMoveRequest>,
+    Json(request): Json<FsmMoveRequest>,
 ) -> Response {
     match &state.fsm {
         Some(fsm_state) => {
@@ -1085,7 +1090,7 @@ async fn fsm_move_endpoint<C: CameraInterface + 'static>(
                     fsm_state.set_y(y);
                     *fsm_state.last_error.write().await = None;
 
-                    let status = test_bench_shared::FsmStatus {
+                    let status = FsmStatus {
                         connected: true,
                         x_urad: x,
                         y_urad: y,
@@ -1442,7 +1447,7 @@ pub async fn run_server_with_tracking<C: CameraInterface + Send + 'static>(
     );
 
     let tracking_state = Arc::new(TrackingSharedState {
-        settings: RwLock::new(test_bench_shared::TrackingSettings {
+        settings: RwLock::new(TrackingSettings {
             acquisition_frames: tracking_config.acquisition_frames,
             roi_size: tracking_config.roi_size,
             detection_threshold_sigma: tracking_config.detection_threshold_sigma,
@@ -1510,17 +1515,17 @@ pub async fn run_server_with_tracking<C: CameraInterface + Send + 'static>(
     Ok(())
 }
 
-fn convert_fgs_state_to_shared(state: &FgsState) -> test_bench_shared::TrackingState {
+fn convert_fgs_state_to_shared(state: &FgsState) -> TrackingState {
     match state {
-        FgsState::Idle => test_bench_shared::TrackingState::Idle,
-        FgsState::Acquiring { frames_collected } => test_bench_shared::TrackingState::Acquiring {
+        FgsState::Idle => TrackingState::Idle,
+        FgsState::Acquiring { frames_collected } => TrackingState::Acquiring {
             frames_collected: *frames_collected,
         },
-        FgsState::Calibrating => test_bench_shared::TrackingState::Calibrating,
-        FgsState::Tracking { frames_processed } => test_bench_shared::TrackingState::Tracking {
+        FgsState::Calibrating => TrackingState::Calibrating,
+        FgsState::Tracking { frames_processed } => TrackingState::Tracking {
             frames_processed: *frames_processed,
         },
-        FgsState::Reacquiring { attempts } => test_bench_shared::TrackingState::Reacquiring {
+        FgsState::Reacquiring { attempts } => TrackingState::Reacquiring {
             attempts: *attempts,
         },
     }
@@ -1696,7 +1701,7 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                                     num_guide_stars
                                 );
                                 let mut status = tracking_cb.status.blocking_write();
-                                status.position = Some(test_bench_shared::TrackingPosition {
+                                status.position = Some(TrackingPosition {
                                     track_id: *track_id,
                                     x: initial_position.x,
                                     y: initial_position.y,
@@ -1726,7 +1731,7 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                                 );
                                 tracking_cb.total_updates.fetch_add(1, Ordering::SeqCst);
                                 let mut status = tracking_cb.status.blocking_write();
-                                status.position = Some(test_bench_shared::TrackingPosition {
+                                status.position = Some(TrackingPosition {
                                     track_id: *track_id,
                                     x: position.x,
                                     y: position.y,
@@ -1789,7 +1794,7 @@ pub fn capture_loop_with_tracking<C: CameraInterface + Send + 'static>(state: Ar
                                     let png_path = export_dir.join(format!("frame_{frame_number:06}.png"));
 
                                     // Also write JSON metadata
-                                    let metadata = test_bench_shared::FrameExportMetadata {
+                                    let metadata = FrameExportMetadata {
                                         frame_number: *frame_number,
                                         timestamp_sec: timestamp.seconds,
                                         timestamp_nanos: timestamp.nanos,

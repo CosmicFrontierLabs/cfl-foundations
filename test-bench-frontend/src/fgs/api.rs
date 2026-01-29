@@ -1,6 +1,6 @@
 use gloo_net::http::Request;
 
-pub use test_bench_shared::{FgsError, FgsServerClient};
+pub use shared_wasm::{FgsError, FgsServerClient};
 
 /// Check if a URL returns a successful response (for image loading).
 pub async fn check_url_ok(url: &str) -> bool {

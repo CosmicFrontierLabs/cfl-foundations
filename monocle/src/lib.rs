@@ -91,9 +91,9 @@ use ndarray::{Array2, ArrayView2};
 use shared::camera_interface::CameraInterface;
 use shared::image_proc::detection::StarDetection;
 use shared::image_proc::source_snr::calculate_snr_at_position;
+use shared_wasm::{SpotShape, Timestamp};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use test_bench_shared::{SpotShape, Timestamp};
 
 pub mod callback;
 pub mod config;

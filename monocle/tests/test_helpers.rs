@@ -1,5 +1,5 @@
+use shared_wasm::Timestamp;
 use std::time::Duration;
-use test_bench_shared::Timestamp;
 
 /// Helper function to create a test timestamp
 pub fn test_timestamp() -> Timestamp {

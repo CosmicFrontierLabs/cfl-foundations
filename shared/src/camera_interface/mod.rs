@@ -9,12 +9,12 @@ pub mod ring_buffer;
 use crate::image_proc::detection::AABB;
 use crate::image_size::PixelShape;
 use ndarray::{Array2, ArrayView2};
+pub use shared_wasm::Timestamp;
 use starfield::Equatorial;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::time::Duration;
-pub use test_bench_shared::Timestamp;
 
 /// Error type for camera operations
 #[derive(Debug)]

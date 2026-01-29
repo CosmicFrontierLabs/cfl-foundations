@@ -3,7 +3,7 @@ use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
 // Re-export shared types
-pub use test_bench_shared::{
+pub use shared_wasm::{
     CalibrateError, CalibrateServerClient, ControlSpec, DisplayInfo, PatternConfigRequest,
     PatternConfigResponse, PatternSpec, SchemaResponse,
 };

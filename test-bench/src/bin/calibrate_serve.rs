@@ -10,6 +10,7 @@ use axum::{
 };
 use clap::Parser;
 use serde::Deserialize;
+use shared_wasm::{PatternCommand, PatternConfigResponse};
 use std::net::SocketAddr;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -25,7 +26,6 @@ use test_bench::display_utils::{
 };
 use test_bench::embedded_assets::{serve_calibrate_frontend, serve_calibrate_index_with_data};
 use test_bench::ws_stream::WsBroadcaster;
-use test_bench_shared::PatternCommand;
 use tokio::sync::RwLock;
 
 #[derive(Parser, Debug)]
@@ -254,15 +254,13 @@ async fn get_display_info(
     })
 }
 
-async fn get_pattern_config(
-    State(state): State<Arc<AppState>>,
-) -> Json<test_bench_shared::PatternConfigResponse> {
+async fn get_pattern_config(State(state): State<Arc<AppState>>) -> Json<PatternConfigResponse> {
     let pattern_config = state.pattern.read().await.clone();
     let invert = *state.invert.read().await;
 
     let (pattern_id, values) = pattern_to_dynamic(&pattern_config);
 
-    Json(test_bench_shared::PatternConfigResponse {
+    Json(PatternConfigResponse {
         pattern_id,
         values,
         invert,

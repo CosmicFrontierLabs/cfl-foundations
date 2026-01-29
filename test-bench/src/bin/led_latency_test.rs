@@ -76,6 +76,7 @@ use ndarray::{Array1, Array2, Axis};
 use shared::camera_interface::{CameraInterface, FrameMetadata};
 use shared::frame_writer::{FrameFormat, FrameWriterHandle};
 use shared::image_proc::detection::AABB;
+use shared_wasm::Timestamp;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -377,10 +378,7 @@ fn run_baseline_measurement(
     Ok(avg_baseline_per_row)
 }
 
-fn timestamp_diff_s(
-    first: &test_bench_shared::Timestamp,
-    current: &test_bench_shared::Timestamp,
-) -> f64 {
+fn timestamp_diff_s(first: &Timestamp, current: &Timestamp) -> f64 {
     let first_us = first
         .seconds
         .saturating_mul(1_000_000)
@@ -424,7 +422,7 @@ fn run_latency_characterization(
 
     // Capture phase - prioritize timing, minimize processing
     let mut captured_frames: Vec<CapturedFrame> = Vec::with_capacity(num_frames);
-    let mut first_timestamp: Option<test_bench_shared::Timestamp> = None;
+    let mut first_timestamp: Option<Timestamp> = None;
     let mut first_instant: Option<std::time::Instant> = None;
     let mut frame_count = 0;
 

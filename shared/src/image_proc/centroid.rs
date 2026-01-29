@@ -5,7 +5,7 @@
 
 use ndarray::ArrayView2;
 use serde::{Deserialize, Serialize};
-pub use test_bench_shared::SpotShape;
+pub use shared_wasm::SpotShape;
 
 /// Maximum intensity value for 16-bit unsigned images (2^16 - 1)
 pub const SATURATION_16BIT: f64 = 65535.0;

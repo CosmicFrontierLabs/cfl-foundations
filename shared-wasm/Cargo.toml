@@ -1,5 +1,5 @@
 [package]
-name = "test-bench-shared"
+name = "shared-wasm"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

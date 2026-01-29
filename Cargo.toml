@@ -8,7 +8,7 @@ members = [
     "test-bench",
     "test-bench-frontend",
     "hardware",
-    "test-bench-shared",
+    "shared-wasm",
 ]
 resolver = "2"
 

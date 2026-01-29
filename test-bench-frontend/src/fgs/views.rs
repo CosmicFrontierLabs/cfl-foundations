@@ -1,4 +1,4 @@
-use test_bench_shared::{
+use shared_wasm::{
     CameraStats, ExportStatus, FsmStatus, StarDetectionSettings, TrackingSettings, TrackingState,
     TrackingStatus,
 };
