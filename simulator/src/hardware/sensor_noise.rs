@@ -69,3 +69,134 @@ pub fn generate_sensor_noise(
         Some(rng_seed),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hardware::sensor::models::IMX455;
+
+    #[test]
+    fn test_generate_sensor_noise_dimensions() {
+        let sensor = IMX455.clone().with_dimensions(100, 80);
+        let exposure = Duration::from_millis(100);
+        let temperature = Temperature::from_celsius(-10.0);
+
+        let noise = generate_sensor_noise(&sensor, &exposure, temperature, Some(42));
+
+        assert_eq!(noise.shape(), &[80, 100]);
+    }
+
+    #[test]
+    fn test_generate_sensor_noise_reproducible_with_seed() {
+        let sensor = IMX455.clone().with_dimensions(64, 64);
+        let exposure = Duration::from_millis(50);
+        let temperature = Temperature::from_celsius(-20.0);
+
+        let noise1 = generate_sensor_noise(&sensor, &exposure, temperature, Some(12345));
+        let noise2 = generate_sensor_noise(&sensor, &exposure, temperature, Some(12345));
+
+        assert_eq!(noise1, noise2);
+    }
+
+    #[test]
+    fn test_generate_sensor_noise_different_seeds_differ() {
+        let sensor = IMX455.clone().with_dimensions(64, 64);
+        let exposure = Duration::from_millis(50);
+        let temperature = Temperature::from_celsius(-20.0);
+
+        let noise1 = generate_sensor_noise(&sensor, &exposure, temperature, Some(111));
+        let noise2 = generate_sensor_noise(&sensor, &exposure, temperature, Some(222));
+
+        assert_ne!(noise1, noise2);
+    }
+
+    #[test]
+    fn test_generate_sensor_noise_statistical_properties() {
+        let sensor = IMX455.clone().with_dimensions(256, 256);
+        let exposure = Duration::from_millis(100);
+        let temperature = Temperature::from_celsius(-10.0);
+
+        let noise = generate_sensor_noise(&sensor, &exposure, temperature, Some(99));
+
+        let n = noise.len() as f64;
+        let mean: f64 = noise.iter().sum::<f64>() / n;
+        let variance: f64 = noise.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
+        let std_dev = variance.sqrt();
+
+        // Mean includes dark current offset, so just check it's finite and reasonable
+        assert!(
+            mean.is_finite() && mean.abs() < 100.0,
+            "Mean should be finite and reasonable, got {}",
+            mean
+        );
+
+        // Standard deviation should be positive and reasonable for sensor noise
+        assert!(
+            std_dev > 0.5 && std_dev < 50.0,
+            "Std dev should be reasonable, got {}",
+            std_dev
+        );
+    }
+
+    #[test]
+    fn test_generate_sensor_noise_temperature_affects_noise() {
+        let sensor = IMX455.clone().with_dimensions(128, 128);
+        let exposure = Duration::from_secs(1);
+
+        // Cold sensor should have less dark current noise
+        // Use temperatures within the sensor's valid range (-20 to +20)
+        let cold_temp = Temperature::from_celsius(-20.0);
+        let warm_temp = Temperature::from_celsius(20.0);
+
+        let cold_noise = generate_sensor_noise(&sensor, &exposure, cold_temp, Some(42));
+        let warm_noise = generate_sensor_noise(&sensor, &exposure, warm_temp, Some(42));
+
+        let cold_variance: f64 = {
+            let mean = cold_noise.iter().sum::<f64>() / cold_noise.len() as f64;
+            cold_noise.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / cold_noise.len() as f64
+        };
+
+        let warm_variance: f64 = {
+            let mean = warm_noise.iter().sum::<f64>() / warm_noise.len() as f64;
+            warm_noise.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / warm_noise.len() as f64
+        };
+
+        // Warm sensor should have higher variance due to dark current
+        assert!(
+            warm_variance > cold_variance,
+            "Warm sensor variance ({}) should exceed cold sensor variance ({})",
+            warm_variance,
+            cold_variance
+        );
+    }
+
+    #[test]
+    fn test_generate_sensor_noise_exposure_affects_dark_current() {
+        let sensor = IMX455.clone().with_dimensions(128, 128);
+        let temperature = Temperature::from_celsius(0.0);
+
+        let short_exposure = Duration::from_millis(10);
+        let long_exposure = Duration::from_secs(10);
+
+        let short_noise = generate_sensor_noise(&sensor, &short_exposure, temperature, Some(42));
+        let long_noise = generate_sensor_noise(&sensor, &long_exposure, temperature, Some(42));
+
+        let short_variance: f64 = {
+            let mean = short_noise.iter().sum::<f64>() / short_noise.len() as f64;
+            short_noise.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / short_noise.len() as f64
+        };
+
+        let long_variance: f64 = {
+            let mean = long_noise.iter().sum::<f64>() / long_noise.len() as f64;
+            long_noise.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / long_noise.len() as f64
+        };
+
+        // Longer exposure should accumulate more dark current noise
+        assert!(
+            long_variance > short_variance,
+            "Long exposure variance ({}) should exceed short exposure variance ({})",
+            long_variance,
+            short_variance
+        );
+    }
+}
