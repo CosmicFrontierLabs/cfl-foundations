@@ -399,13 +399,9 @@ impl FineGuidanceSystem {
                 )
             })?;
 
-            log::info!("Calibration complete with guide star, entering Tracking");
             log::info!(
-                "Requesting camera ROI: x1={}, x2={}, y1={}, y2={} for star at ({:.2}, {:.2})",
-                roi.min_col,
-                roi.max_col,
-                roi.min_row,
-                roi.max_row,
+                "Calibration complete, entering Tracking with {} for star at ({:.2}, {:.2})",
+                roi,
                 guide_star.x,
                 guide_star.y
             );

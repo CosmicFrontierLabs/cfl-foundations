@@ -683,7 +683,7 @@ mod tests {
             max_col: (max_pos.1 + roi_size / 2).min(size - 1),
         };
 
-        println!("Setting ROI: {:?}", roi);
+        println!("Setting ROI: {}", roi);
         camera.set_roi(roi.clone()).expect("Failed to set ROI");
 
         // Capture multiple frames with ROI

@@ -355,6 +355,21 @@ impl Default for AABB {
     }
 }
 
+impl std::fmt::Display for AABB {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ROI[x={}..{}, y={}..{}, {}x{}]",
+            self.min_col,
+            self.max_col,
+            self.min_row,
+            self.max_row,
+            self.width(),
+            self.height()
+        )
+    }
+}
+
 /// Find the union (bounding box) of multiple AABBs.
 ///
 /// Creates the smallest AABB that contains all input AABBs. Useful for
@@ -716,5 +731,12 @@ mod tests {
 
         // Round-trip conversion
         assert_eq!(aabbs_to_tuples(&tuples_to_aabbs(&tuples)), tuples);
+    }
+
+    #[test]
+    fn test_aabb_display() {
+        let aabb = AABB::from_coords(10, 20, 73, 83);
+        let display = format!("{}", aabb);
+        assert_eq!(display, "ROI[x=20..83, y=10..73, 64x64]");
     }
 }

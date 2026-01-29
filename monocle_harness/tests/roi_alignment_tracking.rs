@@ -123,7 +123,7 @@ fn test_tracking_position_consistency_with_alignment() {
                 for update in camera_updates {
                     match update {
                         monocle::CameraSettingsUpdate::SetROI(roi) => {
-                            println!("Setting ROI: {:?}", roi);
+                            println!("Setting ROI: {}", roi);
                             if let Err(e) = camera.set_roi(*roi) {
                                 println!("Failed to set ROI: {}", e);
                             }
