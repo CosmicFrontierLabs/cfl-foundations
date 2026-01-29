@@ -11,8 +11,8 @@ use ratatui::{
     },
     Frame,
 };
-use shared::algo::min_max_scan::MinMaxScan;
 use shared::optical_alignment::OpticalAlignment;
+use shared_wasm::StatsScan;
 
 use super::types::App;
 
@@ -175,7 +175,7 @@ pub fn ui(frame: &mut Frame, app: &App) {
 
     // Diameter stats
     let diameters: Vec<f64> = app.points.iter().map(|p| p.avg_diameter).collect();
-    if let Ok((min_dia, max_dia)) = MinMaxScan::new(&diameters).min_max() {
+    if let Ok((min_dia, max_dia)) = StatsScan::new(&diameters).min_max() {
         let avg_dia: f64 = diameters.iter().sum::<f64>() / diameters.len() as f64;
         info_lines.push(Line::from(format!(
             "Diameter: min={min_dia:.1}px max={max_dia:.1}px avg={avg_dia:.1}px (good<{good_threshold:.1}px)"

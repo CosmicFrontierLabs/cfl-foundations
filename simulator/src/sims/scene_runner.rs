@@ -15,7 +15,6 @@ use core::f64;
 use image::DynamicImage;
 use log::{debug, info, warn};
 use meter_math::icp::{icp_match_indices, Locatable2d};
-use shared::algo::MinMaxScan;
 use shared::frame_writer::{FrameFormat, FrameWriterHandle};
 use shared::image_proc::airy::PixelScaledAiryDisk;
 use shared::image_proc::detection::{detect_stars_unified, StarFinder};
@@ -23,6 +22,7 @@ use shared::image_proc::histogram_stretch::sigma_stretch;
 use shared::image_proc::image::array2_to_gray_image;
 use shared::image_proc::{draw_stars_with_x_markers, stretch_histogram, u16_to_u8_scaled};
 use shared::viz::histogram::{Histogram, HistogramConfig, Scale};
+use shared_wasm::StatsScan;
 use starfield::catalogs::{StarCatalog, StarData};
 use starfield::image::starfinders::StellarSource;
 use starfield::Equatorial;
@@ -392,7 +392,7 @@ pub fn run_experiment<T: StarCatalog>(
                             .map(|(_, tgt_idx)| projected_stars[*tgt_idx].star.magnitude)
                             .collect();
 
-                        let mag_scan = MinMaxScan::new(&magnitudes);
+                        let mag_scan = StatsScan::new(&magnitudes);
                         let (brightest_mag, faintest_mag) =
                             mag_scan.min_max().unwrap_or((f64::NAN, f64::NAN));
 
@@ -680,7 +680,7 @@ pub fn debug_stats(
     let num_bins = 25;
     let electron_image = render_result.mean_electron_image();
     let electron_values: Vec<f64> = electron_image.iter().copied().collect();
-    let electron_scan = MinMaxScan::new(&electron_values);
+    let electron_scan = StatsScan::new(&electron_values);
     let (min_val, max_val) = electron_scan.min_max().unwrap_or((0.0, 1.0));
 
     // Skip if all values are the same

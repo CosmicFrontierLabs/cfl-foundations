@@ -59,9 +59,9 @@
 
 use clap::{Parser, Subcommand};
 use ndarray::Array2;
-use shared::algo::min_max_scan::MinMaxScan;
 use shared::image_proc::airy::PixelScaledAiryDisk;
 use shared::units::{LengthExt, Wavelength};
+use shared_wasm::StatsScan;
 use starfield::image::starfinders::{
     DAOStarFinder, DAOStarFinderConfig, IRAFStarFinder, IRAFStarFinderConfig, StellarSource,
 };
@@ -166,7 +166,7 @@ fn test_iraf_single(
     image: &Array2<f64>,
 ) -> Option<f64> {
     // Scale image like in the original test
-    let max_scan = MinMaxScan::new(image.as_slice().unwrap());
+    let max_scan = StatsScan::new(image.as_slice().unwrap());
     let max_val = max_scan
         .max()
         .expect("Failed to compute max value: image contains NaN or is empty");

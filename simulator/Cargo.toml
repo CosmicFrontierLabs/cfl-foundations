@@ -46,6 +46,7 @@ scilib = "1.0"                                                    # Scientific c
 chrono = "0.4.41"
 uom = "0.37.0"
 meter-math = { version = "0.1.0", path = "../meter-math" }
+shared-wasm = { version = "0.1.0", path = "../shared-wasm" }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] } # Benchmarking

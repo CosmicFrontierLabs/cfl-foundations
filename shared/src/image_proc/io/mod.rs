@@ -25,9 +25,9 @@
 //! then save in standard image formats. Handles coordinate transformations
 //! and provides both automatic and fixed scaling options.
 
-use crate::algo::MinMaxScan;
 use anyhow::{Context as AnyhowContext, Result};
 use ndarray::Array2;
+use shared_wasm::StatsScan;
 use std::error::Error;
 use std::path::Path;
 
@@ -128,7 +128,7 @@ pub fn save_u16_image<P: AsRef<Path>>(image: &Array2<u16>, path: P) -> Result<()
 pub fn u16_to_u8_auto_scale(image: &Array2<u16>) -> Array2<u8> {
     // Find max value for proper scaling
     let values: Vec<f64> = image.iter().map(|&x| x as f64).collect();
-    let scan = MinMaxScan::new(&values);
+    let scan = StatsScan::new(&values);
     let max_value = scan.max().unwrap_or(0.0) as u16;
 
     if max_value == 0 {

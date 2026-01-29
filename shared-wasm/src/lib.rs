@@ -8,11 +8,13 @@ mod calibrate_client;
 mod fgs_client;
 mod http_client;
 mod ring_buffer;
+pub mod stats_scan;
 
 pub use calibrate_client::{CalibrateError, CalibrateServerClient, PatternConfigRequest};
 pub use fgs_client::{FgsError, FgsServerClient};
 pub use http_client::HttpClientError;
 pub use ring_buffer::RingBuffer;
+pub use stats_scan::{StatsError, StatsScan};
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

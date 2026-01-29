@@ -5066,6 +5066,7 @@ name = "shared-wasm"
 version = "0.1.0"
 dependencies = [
  "gloo-net 0.6.0",
+ "num-traits",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -5176,6 +5177,7 @@ dependencies = [
  "rustfft",
  "scilib",
  "shared",
+ "shared-wasm",
  "starfield",
  "tempfile",
  "thiserror 1.0.69",

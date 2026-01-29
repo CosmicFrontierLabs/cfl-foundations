@@ -4,8 +4,8 @@
 //! and reports which bright stars are missing from the binary catalog.
 
 use clap::Parser;
-use shared::algo::MinMaxScan;
 use shared::viz::histogram::create_magnitude_histogram;
+use shared_wasm::StatsScan;
 use starfield::catalogs::binary_catalog::{BinaryCatalog, MinimalStar};
 use starfield::catalogs::hipparcos::HipparcosCatalog;
 use starfield::catalogs::{StarCatalog, StarPosition};
@@ -288,7 +288,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Detailed statistics
     let magnitudes: Vec<f64> = brightest_2000.iter().map(|s| s.magnitude).collect();
-    let mag_scan = MinMaxScan::new(&magnitudes);
+    let mag_scan = StatsScan::new(&magnitudes);
     let min_mag = mag_scan.min().unwrap_or(f64::INFINITY);
     let max_mag = mag_scan.max().unwrap_or(f64::NEG_INFINITY);
     let mean_mag = magnitudes.iter().sum::<f64>() / magnitudes.len() as f64;
@@ -371,7 +371,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Print magnitude statistics for binary catalog
     let all_mags: Vec<f64> = binary_catalog.stars().iter().map(|s| s.magnitude).collect();
     if !all_mags.is_empty() {
-        let all_mag_scan = MinMaxScan::new(&all_mags);
+        let all_mag_scan = StatsScan::new(&all_mags);
         if let Ok((min_mag, max_mag)) = all_mag_scan.min_max() {
             println!("Binary catalog magnitude range: {min_mag:.2} to {max_mag:.2}");
         }

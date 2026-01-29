@@ -14,10 +14,10 @@
 //! - Analysis of any systematic bias in X or Y directions
 
 use ndarray::Array2;
-use shared::algo::min_max_scan::MinMaxScan;
 use shared::image_proc::airy::PixelScaledAiryDisk;
 use shared::image_proc::detection::StarFinder;
 use shared::units::{Length, LengthExt};
+use shared_wasm::StatsScan;
 use starfield::image::starfinders::StellarSource;
 
 /// Generate a 2D Gaussian PSF with specified parameters
@@ -60,7 +60,7 @@ fn run_single_star_test(
     create_gaussian(&mut image, position_x, position_y, 1.0, sigma);
 
     // Convert f64 image to u16 for detection (scale to use full u16 range)
-    let max_scan = MinMaxScan::new(image.as_slice().unwrap());
+    let max_scan = StatsScan::new(image.as_slice().unwrap());
     let max_val = max_scan
         .max()
         .expect("Failed to compute max value: image contains NaN or is empty");
@@ -169,7 +169,7 @@ fn run_subpixel_grid_test(image_size: usize, sigma: f64, detector: &StarFinder) 
             create_gaussian(&mut image, position_x, position_y, 1.0, sigma);
 
             // Convert f64 image to u16 for detection
-            let max_scan = MinMaxScan::new(image.as_slice().unwrap());
+            let max_scan = StatsScan::new(image.as_slice().unwrap());
             let max_val = max_scan
                 .max()
                 .expect("Failed to compute max value: image contains NaN or is empty");
@@ -276,11 +276,11 @@ fn run_subpixel_grid_test(image_size: usize, sigma: f64, detector: &StarFinder) 
         );
 
         // For X/Y errors, find the actual range
-        let x_scan = MinMaxScan::new(&errors_x);
+        let x_scan = StatsScan::new(&errors_x);
         let (x_min, x_max) = x_scan
             .min_max()
             .expect("Failed to compute x error bounds: errors contain NaN");
-        let y_scan = MinMaxScan::new(&errors_y);
+        let y_scan = StatsScan::new(&errors_y);
         let (y_min, y_max) = y_scan
             .min_max()
             .expect("Failed to compute y error bounds: errors contain NaN");
@@ -478,7 +478,7 @@ fn test_sigma_effect(image_size: usize, detector: &StarFinder) {
         create_gaussian(&mut image, position_x, position_y, 1.0, *sigma);
 
         // Convert f64 image to u16 for detection
-        let max_scan = MinMaxScan::new(image.as_slice().unwrap());
+        let max_scan = StatsScan::new(image.as_slice().unwrap());
         let max_val = max_scan
             .max()
             .expect("Failed to compute max value: image contains NaN or is empty");

@@ -12,7 +12,7 @@
 use clap::Parser;
 use ndarray::{Array1, Array2};
 use plotters::prelude::*;
-use shared::algo::MinMaxScan;
+use shared_wasm::StatsScan;
 use simulator::hardware::SatelliteConfig;
 use simulator::image_proc::render::quantize_image;
 use simulator::photometry::{spectrum::Spectrum, zodiacal::SolarAngularCoordinates, ZodiacalLight};
@@ -174,7 +174,7 @@ fn create_spectrum_plot(
     }
 
     // Find data bounds for scaling
-    let irradiance_scan = MinMaxScan::new(&irradiances);
+    let irradiance_scan = StatsScan::new(&irradiances);
     let (min_irradiance, max_irradiance) = irradiance_scan.min_max().unwrap_or((0.0, 1.0));
     let min_wavelength = *wavelengths.first().unwrap();
     let max_wavelength = *wavelengths.last().unwrap();

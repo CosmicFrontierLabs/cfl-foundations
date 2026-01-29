@@ -13,8 +13,8 @@
 use clap::Parser;
 use plotters::prelude::*;
 use rayon::prelude::*;
-use shared::algo::MinMaxScan;
 use shared::units::{LengthExt, Wavelength};
+use shared_wasm::StatsScan;
 use simulator::photometry::color::SpectralClass;
 use simulator::photometry::spectrum::Spectrum;
 use simulator::photometry::stellar::BlackbodyStellarSpectrum;
@@ -287,7 +287,7 @@ fn generate_stellar_plot(args: &Args) -> Result<(), Box<dyn Error>> {
             })
         })
         .collect();
-    let irr_scan = MinMaxScan::new(&all_irradiances);
+    let irr_scan = StatsScan::new(&all_irradiances);
     let max_irr = irr_scan.max().unwrap_or(1.0);
 
     // Draw each spectrum
