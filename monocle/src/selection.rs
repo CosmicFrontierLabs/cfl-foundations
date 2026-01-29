@@ -3,7 +3,7 @@ use shared::image_proc::detection::{detect_stars, StarDetection};
 use shared::image_proc::downsample_f64;
 use shared::image_proc::noise::quantify::estimate_noise_level;
 
-use crate::config::{compute_aligned_roi, FgsConfig};
+use crate::config::FgsConfig;
 use crate::filters;
 use crate::GuideStar;
 
@@ -65,7 +65,6 @@ pub fn calculate_detection_stats(detections: &[StarDetection]) -> Option<StarDet
 /// # Arguments
 /// * `averaged_frame` - Averaged acquisition frames
 /// * `config` - FGS configuration
-/// * `roi_alignment` - ROI offset alignment (h, v) from camera hardware constraints
 ///
 /// # Returns
 /// * `Ok((guide_star, all_detections))` - Selected guide star (if any) and all detected stars
@@ -73,7 +72,6 @@ pub fn calculate_detection_stats(detections: &[StarDetection]) -> Option<StarDet
 pub fn detect_and_select_guides(
     averaged_frame: ArrayView2<f64>,
     config: &FgsConfig,
-    roi_alignment: (usize, usize),
 ) -> Result<(Option<GuideStar>, Vec<StarDetection>), String> {
     use shared::image_proc::noise::quantify::estimate_background;
     use std::time::Instant;
@@ -349,8 +347,6 @@ pub fn detect_and_select_guides(
         stats.log("Final candidates (sorted by flux)");
     }
 
-    let (image_height, image_width) = averaged_frame.dim();
-
     let guide_star = candidates.into_iter().next().and_then(|star| {
         let aperture = star.diameter / 2.0;
         let snr = filters::calculate_snr(
@@ -366,32 +362,11 @@ pub fn detect_and_select_guides(
         })
         .ok()?;
 
-        // Compute aligned ROI centered on star position
-        let (h_alignment, v_alignment) = roi_alignment;
-        let roi = compute_aligned_roi(
-            star.x,
-            star.y,
-            config.roi_size,
-            image_width,
-            image_height,
-            h_alignment,
-            v_alignment,
-        )
-        .or_else(|| {
-            log::warn!(
-                "Could not compute aligned ROI for star at ({:.1}, {:.1})",
-                star.x,
-                star.y
-            );
-            None
-        })?;
-
         Some(GuideStar {
             id: 0,
             x: star.x,
             y: star.y,
             snr,
-            roi,
             shape: star.to_shape(),
         })
     });

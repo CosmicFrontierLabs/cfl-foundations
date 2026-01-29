@@ -107,7 +107,7 @@ use shared::image_proc::detection::aabb::AABB;
 
 // Re-export commonly used types for external use
 pub use crate::callback::{CallbackId, FgsCallbackEvent, PositionEstimate, TrackingLostReason};
-pub use crate::config::{FgsConfig, GuideStarFilters};
+pub use crate::config::{compute_aligned_roi, FgsConfig, GuideStarFilters};
 pub use crate::controllers::{LosControlOutput, LosController};
 pub use crate::state::{FgsEvent, FgsState};
 
@@ -184,18 +184,16 @@ pub struct GuideStar {
     pub y: f64,
     /// Signal-to-noise ratio
     pub snr: f64,
-    /// Region of interest for tracking (bounding box in pixel coordinates)
-    pub roi: AABB,
     /// Shape characterization (flux, moments, diameter)
     pub shape: SpotShape,
 }
 
 impl GuideStar {
-    /// Compute the center position relative to the ROI coordinates
-    pub fn roi_center(&self) -> (f64, f64) {
-        let roi_center_x = self.x - self.roi.min_col as f64;
-        let roi_center_y = self.y - self.roi.min_row as f64;
-        (roi_center_x, roi_center_y)
+    /// Compute the star's position relative to an ROI's origin
+    pub fn position_in_roi(&self, roi: &AABB) -> (f64, f64) {
+        let x_in_roi = self.x - roi.min_col as f64;
+        let y_in_roi = self.y - roi.min_row as f64;
+        (x_in_roi, y_in_roi)
     }
 }
 
@@ -225,6 +223,8 @@ pub struct FineGuidanceSystem {
     roi_alignment: (usize, usize),
     /// Selected guide star (populated during calibration)
     guide_star: Option<GuideStar>,
+    /// Current tracking ROI (computed after guide star selection)
+    current_roi: Option<AABB>,
     /// Accumulated frame sum (stored as f64 to avoid overflow)
     accumulated_frame: Option<Array2<f64>>,
     /// Number of frames accumulated
@@ -255,6 +255,7 @@ impl FineGuidanceSystem {
             config,
             roi_alignment,
             guide_star: None,
+            current_roi: None,
             accumulated_frame: None,
             frames_accumulated: 0,
             detected_stars: Vec::new(),
@@ -378,18 +379,39 @@ impl FineGuidanceSystem {
         self.detect_and_select_guides(frame)?;
 
         if let Some(guide_star) = &self.guide_star {
-            log::info!("Calibration complete with guide star, entering Tracking");
+            // Compute aligned ROI for the selected guide star
+            let (frame_height, frame_width) = frame.dim();
+            let (h_alignment, v_alignment) = self.roi_alignment;
 
-            // Request camera ROI to be set for tracking the guide star
+            let roi = compute_aligned_roi(
+                guide_star.x,
+                guide_star.y,
+                self.config.roi_size,
+                frame_width,
+                frame_height,
+                h_alignment,
+                v_alignment,
+            )
+            .ok_or_else(|| {
+                format!(
+                    "Could not compute aligned ROI for star at ({:.1}, {:.1})",
+                    guide_star.x, guide_star.y
+                )
+            })?;
+
+            log::info!("Calibration complete with guide star, entering Tracking");
             log::info!(
                 "Requesting camera ROI: x1={}, x2={}, y1={}, y2={} for star at ({:.2}, {:.2})",
-                guide_star.roi.min_col,
-                guide_star.roi.max_col,
-                guide_star.roi.min_row,
-                guide_star.roi.max_row,
+                roi.min_col,
+                roi.max_col,
+                roi.min_row,
+                roi.max_row,
                 guide_star.x,
                 guide_star.y
             );
+
+            // Store the computed ROI
+            self.current_roi = Some(roi);
 
             // Increment track ID for new tracking session
             self.current_track_id += 1;
@@ -401,7 +423,7 @@ impl FineGuidanceSystem {
                 FgsState::Tracking {
                     frames_processed: 0,
                 },
-                vec![CameraSettingsUpdate::SetROI(guide_star.roi)],
+                vec![CameraSettingsUpdate::SetROI(roi)],
             ))
         } else {
             log::warn!("No suitable guide stars found, returning to Idle");
@@ -549,6 +571,7 @@ impl FineGuidanceSystem {
     /// Clear guide star and calibration data for fresh acquisition
     fn clear_acquisition_state(&mut self) {
         self.guide_star = None;
+        self.current_roi = None;
         self.accumulated_frame = None;
         self.frames_accumulated = 0;
         self.detected_stars.clear();
@@ -737,11 +760,8 @@ impl FineGuidanceSystem {
             self.frames_accumulated
         );
 
-        let (guide_star, detected_stars) = selection::detect_and_select_guides(
-            averaged_frame.view(),
-            &self.config,
-            self.roi_alignment,
-        )?;
+        let (guide_star, detected_stars) =
+            selection::detect_and_select_guides(averaged_frame.view(), &self.config)?;
 
         self.guide_star = guide_star;
         self.detected_stars = detected_stars;
@@ -778,9 +798,13 @@ impl FineGuidanceSystem {
             .as_ref()
             .ok_or("No guide star available for tracking")?;
 
+        let roi_bounds = self
+            .current_roi
+            .as_ref()
+            .ok_or("No ROI available for tracking")?;
+
         // Check if we're receiving an ROI frame that matches expected size
         let (frame_height, frame_width) = frame.dim();
-        let roi_bounds = &guide_star.roi;
         let expected_roi_height = roi_bounds.max_row - roi_bounds.min_row + 1;
         let expected_roi_width = roi_bounds.max_col - roi_bounds.min_col + 1;
 
@@ -818,7 +842,7 @@ impl FineGuidanceSystem {
         // Create circular mask centered on expected position within ROI
         let roi_height = roi_max_row - roi_min_row + 1;
         let roi_width = roi_max_col - roi_min_col + 1;
-        let (roi_center_x, roi_center_y) = guide_star.roi_center();
+        let (roi_center_x, roi_center_y) = guide_star.position_in_roi(roi_bounds);
 
         let mask =
             Self::create_circular_mask((roi_height, roi_width), roi_center_x, roi_center_y, radius);
