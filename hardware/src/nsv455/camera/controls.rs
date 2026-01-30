@@ -143,9 +143,11 @@ impl ControlMap {
             value: control_value,
         };
 
-        device
-            .set_control(ctrl)
-            .map_err(|e| CameraError::ConfigError(format!("Failed to set control: {e}")))?;
+        device.set_control(ctrl).map_err(|e| {
+            CameraError::ConfigError(format!(
+                "Failed to set control {control_type:?} to {value}: {e}"
+            ))
+        })?;
 
         Ok(())
     }
