@@ -30,6 +30,7 @@ rayon = "1.7"
 indicatif = "0.17"
 log = "0.4.28"
 meter-math = { version = "0.1.0", path = "../meter-math" }
+shared-wasm = { version = "0.1.0", path = "../shared-wasm" }
 
 [dev-dependencies]
 approx = "0.5"

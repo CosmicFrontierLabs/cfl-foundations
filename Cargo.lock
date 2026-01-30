@@ -3292,6 +3292,7 @@ dependencies = [
  "rand_chacha 0.9.0",
  "rayon",
  "shared",
+ "shared-wasm",
  "simulator",
  "starfield",
 ]

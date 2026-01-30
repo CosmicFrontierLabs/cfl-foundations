@@ -4,6 +4,7 @@
 //! showing frame arrival times and estimated vs actual positions.
 
 use plotters::prelude::*;
+use shared_wasm::StatsScan;
 use std::collections::VecDeque;
 use std::fs;
 use std::path::Path;
@@ -290,10 +291,9 @@ impl TrackingPlotter {
             .collect();
 
         // Calculate statistics
-        let mean = res_values.iter().sum::<f64>() / res_values.len() as f64;
-        let variance =
-            res_values.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / res_values.len() as f64;
-        let std_dev = variance.sqrt();
+        let stats = StatsScan::new(&res_values);
+        let mean = stats.mean().unwrap_or(0.0);
+        let std_dev = stats.std_dev(&res_values).unwrap_or(0.0);
 
         // Determine histogram bounds
         let min_val = res_values.iter().fold(f64::INFINITY, |a, &b| a.min(b));

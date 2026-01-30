@@ -74,6 +74,7 @@ pub fn generate_sensor_noise(
 mod tests {
     use super::*;
     use crate::hardware::sensor::models::IMX455;
+    use shared_wasm::StatsScan;
 
     #[test]
     fn test_generate_sensor_noise_dimensions() {
@@ -117,11 +118,11 @@ mod tests {
         let temperature = Temperature::from_celsius(-10.0);
 
         let noise = generate_sensor_noise(&sensor, &exposure, temperature, Some(99));
+        let noise_vec: Vec<f64> = noise.iter().cloned().collect();
 
-        let n = noise.len() as f64;
-        let mean: f64 = noise.iter().sum::<f64>() / n;
-        let variance: f64 = noise.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
-        let std_dev = variance.sqrt();
+        let stats = StatsScan::new(&noise_vec);
+        let mean = stats.mean().unwrap();
+        let std_dev = stats.std_dev(&noise_vec).unwrap();
 
         // Mean includes dark current offset, so just check it's finite and reasonable
         assert!(
@@ -151,15 +152,14 @@ mod tests {
         let cold_noise = generate_sensor_noise(&sensor, &exposure, cold_temp, Some(42));
         let warm_noise = generate_sensor_noise(&sensor, &exposure, warm_temp, Some(42));
 
-        let cold_variance: f64 = {
-            let mean = cold_noise.iter().sum::<f64>() / cold_noise.len() as f64;
-            cold_noise.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / cold_noise.len() as f64
-        };
+        let cold_vec: Vec<f64> = cold_noise.iter().cloned().collect();
+        let warm_vec: Vec<f64> = warm_noise.iter().cloned().collect();
 
-        let warm_variance: f64 = {
-            let mean = warm_noise.iter().sum::<f64>() / warm_noise.len() as f64;
-            warm_noise.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / warm_noise.len() as f64
-        };
+        let cold_stats = StatsScan::new(&cold_vec);
+        let warm_stats = StatsScan::new(&warm_vec);
+
+        let cold_variance = cold_stats.variance(&cold_vec).unwrap();
+        let warm_variance = warm_stats.variance(&warm_vec).unwrap();
 
         // Warm sensor should have higher variance due to dark current
         assert!(
@@ -181,15 +181,14 @@ mod tests {
         let short_noise = generate_sensor_noise(&sensor, &short_exposure, temperature, Some(42));
         let long_noise = generate_sensor_noise(&sensor, &long_exposure, temperature, Some(42));
 
-        let short_variance: f64 = {
-            let mean = short_noise.iter().sum::<f64>() / short_noise.len() as f64;
-            short_noise.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / short_noise.len() as f64
-        };
+        let short_vec: Vec<f64> = short_noise.iter().cloned().collect();
+        let long_vec: Vec<f64> = long_noise.iter().cloned().collect();
 
-        let long_variance: f64 = {
-            let mean = long_noise.iter().sum::<f64>() / long_noise.len() as f64;
-            long_noise.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / long_noise.len() as f64
-        };
+        let short_stats = StatsScan::new(&short_vec);
+        let long_stats = StatsScan::new(&long_vec);
+
+        let short_variance = short_stats.variance(&short_vec).unwrap();
+        let long_variance = long_stats.variance(&long_vec).unwrap();
 
         // Longer exposure should accumulate more dark current noise
         assert!(

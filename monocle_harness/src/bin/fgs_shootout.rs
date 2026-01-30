@@ -23,6 +23,7 @@ use shared::camera_interface::CameraInterface;
 use shared::range_arg::RangeArg;
 use shared::units::Temperature;
 use shared::units::{Length, LengthExt, TemperatureExt};
+use shared_wasm::StatsScan;
 use simulator::{
     hardware::SatelliteConfig,
     shared_args::{SensorModel, TelescopeModel},
@@ -545,16 +546,14 @@ fn run_single_experiment(
         let x_errors: Vec<f64> = tracking_points.iter().map(|p| p.x_error_pixels).collect();
         let y_errors: Vec<f64> = tracking_points.iter().map(|p| p.y_error_pixels).collect();
 
-        let mean_x = x_errors.iter().sum::<f64>() / x_errors.len() as f64;
-        let mean_y = y_errors.iter().sum::<f64>() / y_errors.len() as f64;
+        let x_stats = StatsScan::new(&x_errors);
+        let y_stats = StatsScan::new(&y_errors);
 
-        let var_x =
-            x_errors.iter().map(|x| (x - mean_x).powi(2)).sum::<f64>() / x_errors.len() as f64;
-        let var_y =
-            y_errors.iter().map(|y| (y - mean_y).powi(2)).sum::<f64>() / y_errors.len() as f64;
-
-        let std_x = var_x.sqrt();
-        let std_y = var_y.sqrt();
+        // Unwrap is safe: tracking_points is non-empty per the if guard
+        let mean_x = x_stats.mean().expect("non-empty data");
+        let mean_y = y_stats.mean().expect("non-empty data");
+        let std_x = x_stats.std_dev(&x_errors).expect("non-empty data");
+        let std_y = y_stats.std_dev(&y_errors).expect("non-empty data");
 
         (mean_x, mean_y, std_x, std_y)
     } else {
