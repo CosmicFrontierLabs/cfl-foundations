@@ -241,9 +241,118 @@ fn test_tracking_position_consistency_with_alignment() {
 }
 
 #[test]
+fn test_reset_and_reacquire() {
+    // Enable logging
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let mut camera = create_aligned_camera();
+    let config = create_fgs_config();
+    let mut fgs = FineGuidanceSystem::new(config.clone(), get_camera_alignment());
+
+    // Collect track IDs to verify we get different tracks
+    let track_ids: Arc<Mutex<Vec<u32>>> = Arc::new(Mutex::new(Vec::new()));
+    let track_ids_clone = track_ids.clone();
+
+    fgs.register_callback(move |event| {
+        if let FgsCallbackEvent::TrackingStarted { track_id, .. } = event {
+            track_ids_clone.lock().unwrap().push(*track_id);
+        }
+    });
+
+    // First tracking session
+    println!("=== First tracking session ===");
+    let _ = fgs.process_event(FgsEvent::StartFgs);
+    assert!(matches!(fgs.state(), FgsState::Acquiring { .. }));
+
+    // Process frames until tracking
+    for frame_count in 1..=30 {
+        let (frame, metadata) = camera.capture_frame().expect("Failed to capture frame");
+        let result = fgs.process_frame(frame.view(), metadata.timestamp);
+
+        if let Ok((_, camera_updates)) = result {
+            for update in camera_updates {
+                match update {
+                    monocle::CameraSettingsUpdate::SetROI(roi) => {
+                        let _ = camera.set_roi(roi);
+                    }
+                    monocle::CameraSettingsUpdate::ClearROI => {
+                        let _ = camera.clear_roi();
+                    }
+                }
+            }
+        }
+
+        if matches!(fgs.state(), FgsState::Tracking { frames_processed } if *frames_processed > 3) {
+            println!("First session locked on after {} frames", frame_count);
+            break;
+        }
+    }
+
+    assert!(
+        matches!(fgs.state(), FgsState::Tracking { .. }),
+        "First session should reach Tracking state"
+    );
+
+    // Reset the FGS (simulating tracking disable)
+    println!("=== Resetting FGS ===");
+    let reset_updates = fgs.reset();
+    assert_eq!(fgs.state(), &FgsState::Idle, "Should be Idle after reset");
+
+    // Apply camera updates from reset (clear ROI)
+    for update in reset_updates {
+        if matches!(update, monocle::CameraSettingsUpdate::ClearROI) {
+            let _ = camera.clear_roi();
+            println!("Cleared ROI from reset");
+        }
+    }
+
+    // Second tracking session
+    println!("=== Second tracking session ===");
+    let _ = fgs.process_event(FgsEvent::StartFgs);
+    assert!(matches!(fgs.state(), FgsState::Acquiring { .. }));
+
+    // Process frames until tracking again
+    for frame_count in 1..=30 {
+        let (frame, metadata) = camera.capture_frame().expect("Failed to capture frame");
+        let result = fgs.process_frame(frame.view(), metadata.timestamp);
+
+        if let Ok((_, camera_updates)) = result {
+            for update in camera_updates {
+                match update {
+                    monocle::CameraSettingsUpdate::SetROI(roi) => {
+                        let _ = camera.set_roi(roi);
+                    }
+                    monocle::CameraSettingsUpdate::ClearROI => {
+                        let _ = camera.clear_roi();
+                    }
+                }
+            }
+        }
+
+        if matches!(fgs.state(), FgsState::Tracking { frames_processed } if *frames_processed > 3) {
+            println!("Second session locked on after {} frames", frame_count);
+            break;
+        }
+    }
+
+    assert!(
+        matches!(fgs.state(), FgsState::Tracking { .. }),
+        "Second session should reach Tracking state"
+    );
+
+    // Verify we got two distinct tracking sessions
+    let ids = track_ids.lock().unwrap();
+    assert_eq!(ids.len(), 2, "Should have two TrackingStarted events");
+    assert_ne!(ids[0], ids[1], "Track IDs should be different");
+    println!(
+        "Successfully locked on twice with track IDs: {} and {}",
+        ids[0], ids[1]
+    );
+}
+
+#[test]
 fn test_roi_alignment_offset_calculation() {
     // This test verifies the ROI alignment math directly
-    use monocle::config::FgsConfig;
 
     let roi_size = 64usize;
     let h_alignment = 32usize;

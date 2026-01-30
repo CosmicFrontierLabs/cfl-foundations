@@ -304,6 +304,26 @@ impl FineGuidanceSystem {
             .len()
     }
 
+    /// Reset the FGS to Idle state and return camera settings to apply.
+    ///
+    /// This should be called when tracking is disabled to properly clean up.
+    /// Returns `ClearROI` if the system was in a state with an active ROI.
+    pub fn reset(&mut self) -> Vec<CameraSettingsUpdate> {
+        let needs_roi_clear = self.current_roi.is_some();
+
+        // Clear all tracking state
+        self.state = FgsState::Idle;
+        self.clear_acquisition_state();
+
+        if needs_roi_clear {
+            log::info!("FGS reset, clearing ROI");
+            vec![CameraSettingsUpdate::ClearROI]
+        } else {
+            log::info!("FGS reset");
+            vec![]
+        }
+    }
+
     /// Emit an event to all registered callbacks
     fn emit_event(&self, event: &FgsCallbackEvent) {
         let callbacks = self
@@ -1096,5 +1116,77 @@ mod tests {
 
         assert_eq!(counter1.load(Ordering::SeqCst), 1);
         assert_eq!(counter2.load(Ordering::SeqCst), 10);
+    }
+
+    #[test]
+    fn test_reset_from_idle() {
+        let mut fgs = FineGuidanceSystem::new(test_config(), test_alignment());
+
+        // Reset from Idle should return no camera updates (no ROI to clear)
+        let updates = fgs.reset();
+        assert!(updates.is_empty());
+        assert_eq!(fgs.state(), &FgsState::Idle);
+    }
+
+    #[test]
+    fn test_reset_from_acquiring() {
+        let mut fgs = FineGuidanceSystem::new(test_config(), test_alignment());
+
+        // Start FGS and accumulate a frame
+        let _ = fgs.process_event(FgsEvent::StartFgs);
+        let frame = Array2::<u16>::from_elem((10, 10), 100);
+        let _ = fgs.process_frame(frame.view(), test_timestamp());
+        assert!(matches!(fgs.state(), FgsState::Acquiring { .. }));
+        assert_eq!(fgs.frames_accumulated, 1);
+
+        // Reset should clear state and return no ROI update (no ROI active in Acquiring)
+        let updates = fgs.reset();
+        assert!(updates.is_empty());
+        assert_eq!(fgs.state(), &FgsState::Idle);
+        assert_eq!(fgs.frames_accumulated, 0);
+        assert!(fgs.accumulated_frame.is_none());
+    }
+
+    #[test]
+    fn test_reset_clears_roi() {
+        let mut fgs = FineGuidanceSystem::new(test_config(), test_alignment());
+
+        // Manually set an ROI to simulate tracking state
+        fgs.current_roi = Some(shared::image_proc::AABB {
+            min_row: 100,
+            max_row: 132,
+            min_col: 200,
+            max_col: 232,
+        });
+        fgs.state = FgsState::Tracking {
+            frames_processed: 5,
+        };
+
+        // Reset should return ClearROI since an ROI was active
+        let updates = fgs.reset();
+        assert_eq!(updates.len(), 1);
+        assert!(matches!(updates[0], CameraSettingsUpdate::ClearROI));
+        assert_eq!(fgs.state(), &FgsState::Idle);
+        assert!(fgs.current_roi.is_none());
+    }
+
+    #[test]
+    fn test_reset_clears_guide_star() {
+        let mut fgs = FineGuidanceSystem::new(test_config(), test_alignment());
+
+        // Set up some state
+        fgs.guide_star = Some(GuideStar {
+            id: 1,
+            x: 500.0,
+            y: 500.0,
+            shape: test_shape(),
+            snr: 20.0,
+        });
+        fgs.state = FgsState::Calibrating;
+
+        // Reset should clear everything
+        let _ = fgs.reset();
+        assert_eq!(fgs.state(), &FgsState::Idle);
+        assert!(fgs.guide_star.is_none());
     }
 }
