@@ -8,10 +8,11 @@
 
 use std::time::{Duration, Instant};
 
+use clap::Args;
 use tracing::info;
 
 use super::e727::{Axis, SpaParam, E727};
-use super::gcs::{GcsResult, DEFAULT_PORT};
+use super::gcs::{GcsResult, DEFAULT_FSM_IP, DEFAULT_PORT};
 
 /// Polling interval when waiting for voltage changes.
 const VOLTAGE_POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -21,6 +22,12 @@ const BIAS_VOLTAGE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Timeout for piezo voltages to reach 0V during shutdown.
 const SHUTDOWN_VOLTAGE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Duration for slewing to center during shutdown.
+const SHUTDOWN_SLEW_DURATION: Duration = Duration::from_millis(250);
+
+/// Interval between position commands during shutdown slew.
+const SHUTDOWN_SLEW_INTERVAL: Duration = Duration::from_millis(10);
 
 /// PI S-330 Fast Steering Mirror driver.
 ///
@@ -243,12 +250,16 @@ impl S330 {
     /// Execute the S-330 shutdown sequence.
     ///
     /// This performs a safe shutdown:
-    /// 1. Disable servo mode for axes 1 and 2
-    /// 2. Set piezo output voltage to 0V for axes 1 and 2
-    /// 3. Wait for voltages to reach 0V
-    /// 4. Set fixed voltage to 0V for axis 3
+    /// 1. Smoothly slew to center position over 250ms
+    /// 2. Disable servo mode for axes 1 and 2
+    /// 3. Set piezo output voltage to 0V for axes 1 and 2
+    /// 4. Wait for voltages to reach 0V
+    /// 5. Set fixed voltage to 0V for axis 3
     fn shutdown_sequence(&mut self) -> GcsResult<()> {
         info!("S-330 shutdown sequence starting...");
+
+        // Slew smoothly to center position before disabling servos
+        self.slew_to_center()?;
 
         // a. Disable servo mode for axes 1 and 2
         info!("Disabling servos on axes 1 and 2...");
@@ -287,5 +298,93 @@ impl S330 {
 
         info!("S-330 shutdown sequence complete");
         Ok(())
+    }
+
+    /// Smoothly slew to center position over SHUTDOWN_SLEW_DURATION.
+    ///
+    /// Sends position commands every SHUTDOWN_SLEW_INTERVAL, linearly interpolating
+    /// from current position to center. This prevents jarring motion when powering down.
+    fn slew_to_center(&mut self) -> GcsResult<()> {
+        // Get current position and travel ranges
+        let (start_x, start_y) = self.get_position()?;
+        let ((min_x, max_x), (min_y, max_y)) = self.get_travel_ranges()?;
+
+        // Calculate center position
+        let center_x = (min_x + max_x) / 2.0;
+        let center_y = (min_y + max_y) / 2.0;
+
+        info!(
+            "Slewing to center ({:.1}, {:.1}) from ({:.1}, {:.1}) µrad...",
+            center_x, center_y, start_x, start_y
+        );
+
+        let start_time = Instant::now();
+        let total_duration_secs = SHUTDOWN_SLEW_DURATION.as_secs_f64();
+
+        loop {
+            let elapsed = start_time.elapsed();
+            if elapsed >= SHUTDOWN_SLEW_DURATION {
+                break;
+            }
+
+            // Linear interpolation factor (0.0 to 1.0)
+            let t = elapsed.as_secs_f64() / total_duration_secs;
+
+            // Interpolate position
+            let x = start_x + (center_x - start_x) * t;
+            let y = start_y + (center_y - start_y) * t;
+
+            self.move_to(x, y)?;
+            std::thread::sleep(SHUTDOWN_SLEW_INTERVAL);
+        }
+
+        // Final move to exact center
+        self.move_to(center_x, center_y)?;
+        info!("Slew to center complete");
+
+        Ok(())
+    }
+}
+
+/// Command-line arguments for FSM (Fast Steering Mirror) connection.
+///
+/// Use with `#[command(flatten)]` in your CLI args struct.
+#[derive(Args, Debug, Clone)]
+pub struct FsmArgs {
+    /// PI E-727 FSM controller IP address.
+    #[arg(
+        long,
+        default_value = DEFAULT_FSM_IP,
+        help = "PI E-727 FSM controller IP address",
+        long_help = "IP address of the PI E-727 piezo controller for the S-330 Fast Steering \
+            Mirror. The controller connects via ethernet on GCS port 50000."
+    )]
+    pub fsm_ip: String,
+
+    /// Disable FSM servos on program exit for safety.
+    #[arg(
+        long,
+        default_value = "true",
+        help = "Disable FSM servos on program exit",
+        long_help = "When true (default), the FSM servos are disabled on program exit for safety. \
+            Set to false to keep the FSM powered and holding position after the program exits."
+    )]
+    pub fsm_shutdown_on_exit: bool,
+}
+
+impl FsmArgs {
+    /// Connect to the FSM using the configured IP and shutdown settings.
+    ///
+    /// Returns the connected S330 instance with poweroff-on-drop configured
+    /// according to `fsm_shutdown_on_exit`.
+    pub fn connect(&self) -> Result<S330, String> {
+        let mut fsm = S330::connect_ip(&self.fsm_ip)
+            .map_err(|e| format!("Failed to connect to FSM at {}: {}", self.fsm_ip, e))?;
+
+        if !self.fsm_shutdown_on_exit {
+            fsm.set_poweroff_on_drop(false);
+        }
+
+        Ok(fsm)
     }
 }

@@ -3,16 +3,14 @@
 //! Connects to E-727 via TCP, queries device information and axis status.
 
 use anyhow::Result;
-use hardware::pi::E727;
+use hardware::pi::{DEFAULT_FSM_IP, E727};
 use tracing::info;
-
-const PI_IP: &str = "192.168.15.210";
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    info!("Connecting to PI E-727 at {}...", PI_IP);
-    let mut fsm = E727::connect_ip(PI_IP)?;
+    info!("Connecting to PI E-727 at {}...", DEFAULT_FSM_IP);
+    let mut fsm = E727::connect_ip(DEFAULT_FSM_IP)?;
 
     info!("Device ID: {}", fsm.idn()?);
     info!("Available axes: {:?}", fsm.axes());

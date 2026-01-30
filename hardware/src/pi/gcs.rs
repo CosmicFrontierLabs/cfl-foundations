@@ -62,6 +62,9 @@ use super::e727::PiErrorCode;
 /// network settings (parameters 0x11000800+).
 pub const DEFAULT_PORT: u16 = 50000;
 
+/// Default IP address for the E-727 controller on the isolated FSM network.
+pub const DEFAULT_FSM_IP: &str = "192.168.15.201";
+
 /// Default timeout for operations (matches Python driver's 7 second default).
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(7);
 

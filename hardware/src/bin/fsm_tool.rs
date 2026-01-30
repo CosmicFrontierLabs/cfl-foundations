@@ -16,16 +16,13 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 use hardware::pi::{
-    Axis, GcsDevice, PiErrorCode, RecordChannel, RecordTrigger, SpaParam, E727,
+    Axis, GcsDevice, PiErrorCode, RecordChannel, RecordTrigger, SpaParam, DEFAULT_FSM_IP, E727,
     RECORDER_SAMPLE_RATE_HZ, S330,
 };
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use strum::IntoEnumIterator;
 use tracing::info;
-
-/// Default E-727 IP address
-const DEFAULT_IP: &str = "192.168.15.210";
 
 /// Parse axis string (e.g. "1", "2") into Axis enum.
 fn parse_axis(s: &str) -> Result<Axis> {
@@ -39,7 +36,7 @@ fn parse_axis(s: &str) -> Result<Axis> {
 #[command(version)]
 struct Args {
     /// E-727 IP address
-    #[arg(long, global = true, default_value = DEFAULT_IP)]
+    #[arg(long, global = true, default_value = DEFAULT_FSM_IP)]
     ip: String,
 
     #[command(subcommand)]

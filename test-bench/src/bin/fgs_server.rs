@@ -6,12 +6,56 @@
 
 use anyhow::Context;
 use clap::Parser;
-use hardware::pi::S330;
+use hardware::pi::FsmArgs;
 use shared::config_storage::ConfigStorage;
 use std::sync::Arc;
 use test_bench::camera_init::{initialize_camera, CameraArgs};
 use test_bench::camera_server::{CommonServerArgs, FsmSharedState, TrackingConfig};
 use tracing::info;
+
+/// Initialize FSM connection with proper error handling.
+///
+/// Returns None if any step fails, logging warnings for each failure.
+fn initialize_fsm(args: &FsmArgs) -> Option<Arc<FsmSharedState>> {
+    let mut fsm = match args.connect() {
+        Ok(fsm) => fsm,
+        Err(e) => {
+            tracing::warn!("Failed to connect to FSM: {}, FSM disabled", e);
+            return None;
+        }
+    };
+
+    info!("FSM connected, getting travel ranges...");
+    let (x_range, y_range) = match fsm.get_travel_ranges() {
+        Ok(ranges) => ranges,
+        Err(e) => {
+            tracing::warn!("Failed to get FSM travel ranges: {}, FSM disabled", e);
+            return None;
+        }
+    };
+    info!(
+        "FSM travel ranges: X=[{:.1}, {:.1}], Y=[{:.1}, {:.1}] µrad",
+        x_range.0, x_range.1, y_range.0, y_range.1
+    );
+
+    let (x, y) = match fsm.get_position() {
+        Ok(pos) => pos,
+        Err(e) => {
+            tracing::warn!("Failed to get FSM position: {}, FSM disabled for safety", e);
+            return None;
+        }
+    };
+    info!("FSM position: ({:.1}, {:.1}) µrad", x, y);
+
+    Some(Arc::new(FsmSharedState {
+        fsm: std::sync::Mutex::new(fsm),
+        x_urad: std::sync::atomic::AtomicU64::new(x.to_bits()),
+        y_urad: std::sync::atomic::AtomicU64::new(y.to_bits()),
+        x_range,
+        y_range,
+        last_error: tokio::sync::RwLock::new(None),
+    }))
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -99,16 +143,8 @@ struct Args {
     )]
     fwhm: f64,
 
-    #[arg(
-        long,
-        help = "PI E-727 FSM controller IP address (enables FSM control)",
-        long_help = "IP address of the PI E-727 piezo controller for the S-330 Fast Steering \
-            Mirror. When specified, the web UI will include X/Y position sliders for manual \
-            FSM control. The FSM is initialized with autozero and servo enable on startup.\n\n\
-            Example: --fsm-ip 192.168.15.210",
-        value_name = "IP"
-    )]
-    fsm_ip: Option<String>,
+    #[command(flatten)]
+    fsm: FsmArgs,
 }
 
 #[tokio::main]
@@ -166,47 +202,9 @@ async fn main() -> anyhow::Result<()> {
         saturation_value: camera.saturation_value(),
     };
 
-    // Initialize FSM if IP address provided
-    let fsm_state = if let Some(ref fsm_ip) = args.fsm_ip {
-        info!("Connecting to FSM at {}...", fsm_ip);
-        match S330::connect_ip(fsm_ip) {
-            Ok(mut fsm) => {
-                info!("FSM connected, getting travel ranges...");
-                match fsm.get_travel_ranges() {
-                    Ok((x_range, y_range)) => {
-                        info!(
-                            "FSM travel ranges: X=[{:.1}, {:.1}], Y=[{:.1}, {:.1}] µrad",
-                            x_range.0, x_range.1, y_range.0, y_range.1
-                        );
-                        let (x, y) = fsm.get_position().unwrap_or((0.0, 0.0));
-                        Some(Arc::new(FsmSharedState {
-                            fsm: std::sync::Mutex::new(fsm),
-                            x_urad: std::sync::atomic::AtomicU64::new(x.to_bits()),
-                            y_urad: std::sync::atomic::AtomicU64::new(y.to_bits()),
-                            x_range,
-                            y_range,
-                            last_error: tokio::sync::RwLock::new(None),
-                        }))
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to get FSM travel ranges: {}, FSM disabled", e);
-                        None
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::error!(
-                    "Failed to connect to FSM at {}: {}, FSM disabled",
-                    fsm_ip,
-                    e
-                );
-                None
-            }
-        }
-    } else {
-        None
-    };
-
+    // Initialize FSM connection
+    info!("Connecting to FSM at {}...", args.fsm.fsm_ip);
+    let fsm_state = initialize_fsm(&args.fsm);
     if fsm_state.is_some() {
         info!("FSM control enabled");
     }

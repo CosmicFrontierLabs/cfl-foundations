@@ -8,7 +8,7 @@
 //! and receives centroid positions via SSE from fgs_server.
 
 use clap::Parser;
-use hardware::pi::S330;
+use hardware::pi::FsmArgs;
 use shared_wasm::{CalibrateServerClient, FgsServerClient};
 use std::fs::File;
 use std::io::Write;
@@ -43,22 +43,8 @@ use tracing::{error, info, warn};
         - fgs_server running and tracking a stable star/spot"
 )]
 struct Args {
-    #[arg(
-        long,
-        default_value = "192.168.15.201",
-        help = "PI E-727 controller IP address",
-        long_help = "IP address of the PI E-727 piezo controller for the S-330 Fast Steering \
-            Mirror. The controller connects directly via ethernet on GCS port 50000."
-    )]
-    fsm_ip: String,
-
-    #[arg(
-        long,
-        help = "Keep FSM powered on after calibration",
-        long_help = "By default, the S-330 driver disables servos on drop for safety. \
-            Set this flag to keep the FSM powered and holding position after calibration."
-    )]
-    keep_powered: bool,
+    #[command(flatten)]
+    fsm: FsmArgs,
 
     #[arg(
         long,
@@ -89,18 +75,6 @@ struct Args {
     /// Calibration parameters (swing range, num steps, samples, etc.)
     #[command(flatten)]
     calibration: FsmCalibrationConfig,
-}
-
-/// Connect to FSM and configure power-off behavior
-fn connect_fsm(ip: &str, keep_powered: bool) -> Result<S330, String> {
-    let mut fsm =
-        S330::connect_ip(ip).map_err(|e| format!("Failed to connect to FSM at {ip}: {e}"))?;
-
-    if keep_powered {
-        fsm.set_poweroff_on_drop(false);
-    }
-
-    Ok(fsm)
 }
 
 /// Write raw calibration data to CSV file
@@ -178,7 +152,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("FSM Calibration Controller");
     info!("==========================");
-    info!("FSM IP:            {}", args.fsm_ip);
+    info!("FSM IP:            {}", args.fsm.fsm_ip);
     info!("FGS server:        {}", args.fgs_server_url);
     info!(
         "Swing range:       {:.1} µrad",
@@ -194,7 +168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.calibration.samples_per_position
     );
     info!("Discard samples:   {}", args.calibration.discard_samples);
-    info!("Keep powered:      {}", args.keep_powered);
+    info!("Shutdown on exit:  {}", args.fsm.fsm_shutdown_on_exit);
     info!("Calibrate serve:   {}", args.calibrate_serve_url);
     if let Some(ref path) = args.output_csv {
         info!("Output CSV:        {:?}", path);
@@ -240,8 +214,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Connect to FSM via direct ethernet
-    info!("Connecting to FSM at {}...", args.fsm_ip);
-    let mut fsm = match connect_fsm(&args.fsm_ip, args.keep_powered) {
+    info!("Connecting to FSM at {}...", args.fsm.fsm_ip);
+    let mut fsm = match args.fsm.connect() {
         Ok(f) => f,
         Err(e) => {
             error!("Failed to connect to FSM: {e}");
