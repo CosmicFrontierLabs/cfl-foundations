@@ -6,6 +6,7 @@
 //! The S-330 is a 2-axis tip/tilt mirror with piezo actuators. This driver wraps
 //! the E727 controller and provides S-330-specific initialization and configuration.
 
+use std::cell::OnceCell;
 use std::time::{Duration, Instant};
 
 use clap::Args;
@@ -36,6 +37,8 @@ const SHUTDOWN_SLEW_INTERVAL: Duration = Duration::from_millis(10);
 pub struct S330 {
     e727: E727,
     poweroff_on_drop: bool,
+    /// Cached travel range: ((x_min, x_max), (y_min, y_max)) in µrad
+    cached_travel_ranges: OnceCell<((f64, f64), (f64, f64))>,
 }
 
 impl S330 {
@@ -52,6 +55,7 @@ impl S330 {
         let mut s330 = Self {
             e727,
             poweroff_on_drop: true,
+            cached_travel_ranges: OnceCell::new(),
         };
         s330.init()?;
         Ok(s330)
@@ -215,10 +219,18 @@ impl S330 {
     /// Get the travel range for both tilt axes.
     ///
     /// Returns `((min_axis1, max_axis1), (min_axis2, max_axis2))` in µrad (microradians).
+    ///
+    /// The result is cached after the first call since travel ranges don't change.
     pub fn get_travel_ranges(&mut self) -> GcsResult<((f64, f64), (f64, f64))> {
+        if let Some(&ranges) = self.cached_travel_ranges.get() {
+            return Ok(ranges);
+        }
+
         let range_axis1 = self.e727.get_travel_range(Axis::Axis1)?;
         let range_axis2 = self.e727.get_travel_range(Axis::Axis2)?;
-        Ok((range_axis1, range_axis2))
+        let ranges = (range_axis1, range_axis2);
+        let _ = self.cached_travel_ranges.set(ranges);
+        Ok(ranges)
     }
 
     /// Get the physical unit string for the tilt axes (typically "µrad").
