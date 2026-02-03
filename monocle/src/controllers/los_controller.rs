@@ -10,9 +10,22 @@
 //! 4. Use `set_hold(true)` to pause control (maintains last output)
 //! 5. Set command setpoint with `set_command()` to jog the centroid
 //!
-//! # Units
-//! - Input: centroid position in pixels
-//! - Output: FSM command in microradians
+//! # Units and Coordinate Frame
+//!
+//! - **Input**: Centroid position [pixels, absolute on sensor]
+//! - **Output**: Correction signal [sensor-frame]
+//!
+//! The output is in a "sensor-aligned frame" where axes correspond to sensor X/Y.
+//! The controller coefficients encode both control dynamics and an implicit scale
+//! factor from the original design. To convert to physical FSM coordinates, the
+//! output must be transformed through a calibration matrix that accounts for the
+//! actual sensor-to-FSM geometry (rotation, scale, axis inversion).
+//!
+//! # Important: Integrating Dynamics
+//!
+//! The first state acts as an integrator (A[0,0] ≈ 1.0), so output accumulates
+//! over time for non-zero error. External systems should NOT additionally
+//! integrate the output - use it directly as a position offset.
 
 use nalgebra::{Matrix5, RowVector5, Vector5};
 
@@ -97,50 +110,71 @@ impl AxisController {
         self.state = Vector5::zeros();
     }
 
-    /// Compute one step of the controller
+    /// Compute one step of the controller.
+    ///
+    /// Implements the discrete-time state-space equations:
+    /// ```text
+    /// y[k] = C * x[k] + D * u[k]     (output equation)
+    /// x[k+1] = A * x[k] + B * u[k]   (state update)
+    /// ```
     ///
     /// # Arguments
-    /// * `error` - The tracking error (command - measurement) in pixels
+    /// * `error` - Tracking error (command - measurement) [pixels]
     ///
     /// # Returns
-    /// The control output in microradians
+    /// Correction signal [sensor-frame] - must be transformed to FSM coordinates
     fn update(&mut self, error: f64) -> f64 {
-        // Compute output: u = C * x + D * error
+        // Output: y = C * x + D * error
+        // Note: D = 0, so first output for new error is always based on prior state
         let output = (self.c * self.state)[0] + coefficients::D * error;
 
-        // Compute next state: x[k+1] = A * x[k] + B * error
+        // State update: x[k+1] = A * x[k] + B * error
+        // State[0] is an integrator (A[0,0] ≈ 1.0), accumulates B[0] * error per step
         self.state = self.a * self.state + self.b * error;
 
         output
     }
 }
 
-/// LOS Feedback Controller output
+/// LOS Feedback Controller output.
+///
+/// Contains correction signals in sensor-aligned frame. These are NOT directly
+/// usable as FSM commands - they must be transformed through a calibration matrix
+/// to account for sensor-to-FSM geometry (rotation, scale, axis inversion).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LosControlOutput {
-    /// X-axis FSM command in microradians
+    /// X-axis correction signal [sensor-frame]
     pub u_x: f64,
-    /// Y-axis FSM command in microradians
+    /// Y-axis correction signal [sensor-frame]
     pub u_y: f64,
 }
 
 /// Line of Sight Feedback Controller
 ///
 /// Implements a discrete-time state-space feedback controller for stabilizing
-/// the line of sight. Uses separate X and Y axis controllers.
+/// the line of sight. Uses separate X and Y axis controllers operating in
+/// sensor pixel coordinates.
+///
+/// # Coordinate Frame
+///
+/// - **Input**: Centroid position [pixels, absolute on sensor]
+/// - **Output**: Correction signal [sensor-frame]
+///
+/// The output must be transformed through a calibration matrix to convert
+/// from sensor-aligned coordinates to physical FSM coordinates.
 #[derive(Debug, Clone)]
 pub struct LosController {
-    /// X-axis controller
+    /// X-axis controller (sensor X direction)
     x_controller: AxisController,
-    /// Y-axis controller
+    /// Y-axis controller (sensor Y direction)
     y_controller: AxisController,
     /// Control enable flag
     enabled: bool,
     /// Hold flag - when true, output is frozen at last value
     hold: bool,
-    /// Command setpoint X in pixels
+    /// Command setpoint X [pixels, absolute on sensor]
     command_x: f64,
-    /// Command setpoint Y in pixels
+    /// Command setpoint Y [pixels, absolute on sensor]
     command_y: f64,
     /// Previous output (used for hold mode)
     previous_output: LosControlOutput,
@@ -195,36 +229,44 @@ impl LosController {
         self.hold
     }
 
-    /// Set the command setpoint in pixels
+    /// Set the command setpoint.
     ///
-    /// The controller will try to drive the measured centroid to this position.
+    /// The controller will drive the measured centroid toward this position.
+    ///
+    /// # Arguments
+    /// * `x` - Target X position [pixels, absolute on sensor]
+    /// * `y` - Target Y position [pixels, absolute on sensor]
     pub fn set_command(&mut self, x: f64, y: f64) {
         self.command_x = x;
         self.command_y = y;
     }
 
-    /// Get current command setpoint
+    /// Get current command setpoint.
+    ///
+    /// # Returns
+    /// (x, y) target position [pixels, absolute on sensor]
     pub fn command(&self) -> (f64, f64) {
         (self.command_x, self.command_y)
     }
 
-    /// Reset the controller state
+    /// Reset the controller state.
     ///
-    /// Clears internal state and previous output.
+    /// Clears internal integrator state and previous output.
+    /// After reset, output will be zero until error accumulates.
     pub fn reset(&mut self) {
         self.x_controller.reset();
         self.y_controller.reset();
         self.previous_output = LosControlOutput::default();
     }
 
-    /// Update the controller with new measurements
+    /// Update the controller with new measurements.
     ///
     /// # Arguments
-    /// * `meas_x` - Measured centroid X position in pixels
-    /// * `meas_y` - Measured centroid Y position in pixels
+    /// * `meas_x` - Measured centroid X position [pixels, absolute on sensor]
+    /// * `meas_y` - Measured centroid Y position [pixels, absolute on sensor]
     ///
     /// # Returns
-    /// Control output with FSM commands in microradians
+    /// Correction signal [sensor-frame] - must be transformed to FSM coordinates
     pub fn update(&mut self, meas_x: f64, meas_y: f64) -> LosControlOutput {
         // Hold mode: return previous output without updating state
         if self.hold {
@@ -237,11 +279,14 @@ impl LosController {
             return LosControlOutput::default();
         }
 
-        // Compute errors
-        let error_x = self.command_x - meas_x;
-        let error_y = self.command_y - meas_y;
+        // Compute tracking errors [pixels]
+        // Positive error = centroid is left/below setpoint
+        let error_x = self.command_x - meas_x; // [pixels]
+        let error_y = self.command_y - meas_y; // [pixels]
 
-        // Update controllers
+        // Run state-space compensator for each axis
+        // Input: error [pixels]
+        // Output: correction signal [sensor-frame]
         let u_x = self.x_controller.update(error_x);
         let u_y = self.y_controller.update(error_y);
 
