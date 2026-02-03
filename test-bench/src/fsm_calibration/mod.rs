@@ -33,20 +33,20 @@ pub use matrix::{
     build_transform_matrix, invert_matrix, FsmDegenerateAxesError, FsmSingularMatrixError,
 };
 // Re-export FsmTransform from shared crate
-pub use shared::fsm_transform::{FsmTransform, FsmTransformError};
+pub use shared::fsm_transform::{FsmTransform, FsmTransformLoadError, SingularMatrixError};
 
 /// Extension trait for creating FsmTransform from calibration data
 pub trait FsmTransformFromCalibration {
     /// Create a transform from calibration results
     fn from_calibration(
         calibration: &FsmAxisCalibration,
-    ) -> Result<FsmTransform, FsmTransformError>;
+    ) -> Result<FsmTransform, SingularMatrixError>;
 }
 
 impl FsmTransformFromCalibration for FsmTransform {
     fn from_calibration(
         calibration: &FsmAxisCalibration,
-    ) -> Result<FsmTransform, FsmTransformError> {
+    ) -> Result<FsmTransform, SingularMatrixError> {
         FsmTransform::new(
             [
                 calibration.fsm_to_sensor[(0, 0)],

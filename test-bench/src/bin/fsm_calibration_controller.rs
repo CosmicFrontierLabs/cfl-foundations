@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use test_bench::fsm_calibration::{
     CalibrationRawData, FsmAxisCalibration, FsmCalibrationConfig, FsmTransform,
-    StaticCalibrationError, StaticStepExecutor,
+    FsmTransformFromCalibration, StaticCalibrationError, StaticStepExecutor,
 };
 use test_bench::tracking_collector::TrackingCollector;
 use tracing::{error, info, warn};

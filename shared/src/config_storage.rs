@@ -4,7 +4,7 @@
 //! All config is stored in ~/.cf_config/ by default.
 
 use crate::bad_pixel_map::BadPixelMap;
-use crate::fsm_transform::{FsmTransform, FsmTransformError};
+use crate::fsm_transform::{FsmTransform, FsmTransformLoadError};
 use crate::optical_alignment::OpticalAlignment;
 use std::path::{Path, PathBuf};
 
@@ -197,7 +197,7 @@ impl ConfigStorage {
     ///
     /// Returns None if no transform exists.
     /// Returns Some(Err) if the file exists but cannot be loaded.
-    pub fn get_fsm_transform(&self) -> Option<Result<FsmTransform, FsmTransformError>> {
+    pub fn get_fsm_transform(&self) -> Option<Result<FsmTransform, FsmTransformLoadError>> {
         let path = self.fsm_transform_path();
 
         if !path.exists() {
@@ -214,7 +214,7 @@ impl ConfigStorage {
     pub fn save_fsm_transform(
         &self,
         transform: &FsmTransform,
-    ) -> Result<PathBuf, FsmTransformError> {
+    ) -> Result<PathBuf, FsmTransformLoadError> {
         std::fs::create_dir_all(&self.root_path)?;
 
         let path = self.fsm_transform_path();

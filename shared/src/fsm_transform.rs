@@ -13,18 +13,23 @@ use thiserror::Error;
 /// Minimum determinant for matrix inversion
 const MIN_DETERMINANT: f64 = 1e-10;
 
+/// Error when transform matrix is singular (cannot compute inverse)
+#[derive(Error, Debug)]
+#[error("singular matrix: determinant {0} below threshold")]
+pub struct SingularMatrixError(pub f64);
+
 /// Invert a 2x2 matrix, returning error if singular
-fn invert_matrix(m: &Matrix2<f64>) -> Result<Matrix2<f64>, FsmTransformError> {
+fn invert_matrix(m: &Matrix2<f64>) -> Result<Matrix2<f64>, SingularMatrixError> {
     let det = m.determinant();
     if det.abs() < MIN_DETERMINANT {
-        return Err(FsmTransformError::SingularMatrix(det));
+        return Err(SingularMatrixError(det));
     }
     Ok(m.try_inverse().unwrap())
 }
 
-/// Error during transform operations
+/// Error during transform load/save operations
 #[derive(Error, Debug)]
-pub enum FsmTransformError {
+pub enum FsmTransformLoadError {
     /// IO error during save/load
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -34,8 +39,8 @@ pub enum FsmTransformError {
     Json(#[from] serde_json::Error),
 
     /// Transform matrix is singular (cannot compute inverse)
-    #[error("singular matrix: determinant {0} below threshold")]
-    SingularMatrix(f64),
+    #[error("singular matrix: {0}")]
+    SingularMatrix(#[from] SingularMatrixError),
 }
 
 /// Persistent FSM calibration transform
@@ -87,7 +92,7 @@ impl FsmTransform {
     pub fn new(
         fsm_to_sensor: [f64; 4],
         intercept_pixels: [f64; 2],
-    ) -> Result<Self, FsmTransformError> {
+    ) -> Result<Self, SingularMatrixError> {
         let matrix = Matrix2::new(
             fsm_to_sensor[0],
             fsm_to_sensor[1],
@@ -124,7 +129,7 @@ impl FsmTransform {
     ///
     /// # Errors
     /// Returns error if file cannot be read, JSON is invalid, or matrix is singular
-    pub fn load(path: impl AsRef<Path>) -> Result<Self, FsmTransformError> {
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, FsmTransformLoadError> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
         let transform: Self = serde_json::from_reader(reader)?;
@@ -137,7 +142,7 @@ impl FsmTransform {
     }
 
     /// Save transform to a JSON file
-    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), FsmTransformError> {
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), FsmTransformLoadError> {
         let file = File::create(path)?;
         let writer = BufWriter::new(file);
         serde_json::to_writer_pretty(writer, self)?;
@@ -433,7 +438,7 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            FsmTransformError::SingularMatrix(_)
+            FsmTransformLoadError::SingularMatrix(_)
         ));
 
         // Cleanup
