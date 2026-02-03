@@ -393,9 +393,6 @@ impl Component for CalibrateFrontend {
                             onerror={ctx.link().callback(|_| Msg::ImageError)}
                         />
                     </div>
-                    <div style="margin-top: 10px;">
-                        <LogViewer max_height="200px" />
-                    </div>
                 </div>
 
                 <div class="column right-panel">
@@ -423,6 +420,9 @@ impl Component for CalibrateFrontend {
                         <br/><br/>
                         {"Animated patterns (Static, Circling Pixel, Wiggling Gaussian) will continuously regenerate."}
                     </div>
+
+                    <h2 style="margin-top: 30px;">{"Logs"}</h2>
+                    <LogViewer max_height="200px" />
                 </div>
             </>
         }

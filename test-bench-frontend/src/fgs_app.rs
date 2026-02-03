@@ -777,9 +777,6 @@ impl Component for FgsFrontend {
                             html! {}
                         }}
                     </div>
-                    <div style="margin-top: 10px;">
-                        <LogViewer max_height="200px" />
-                    </div>
                 </div>
 
                 <div class="column right-panel">
@@ -809,6 +806,9 @@ impl Component for FgsFrontend {
                     </div>
                     <canvas id="histogram-canvas" width="300" height="150" style="width: 100%;"></canvas>
                     <div id="histogram-info" style="font-size: 0.7em; color: #00aa00; margin-top: 5px;"></div>
+
+                    <h2 style="margin-top: 30px;">{"Logs"}</h2>
+                    <LogViewer max_height="200px" />
                 </div>
             </>
         }
