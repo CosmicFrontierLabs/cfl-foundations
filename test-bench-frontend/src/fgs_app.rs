@@ -6,6 +6,7 @@ use crate::fgs::{
     api::{calculate_backoff_delay, FgsError, FgsServerClient},
     histogram::render_histogram,
     views::{FsmView, StarDetectionSettingsView, StatsView, TrackingView, ZoomView},
+    LogViewer,
 };
 use crate::ws_image_stream::WsImageStream;
 
@@ -775,6 +776,9 @@ impl Component for FgsFrontend {
                         } else {
                             html! {}
                         }}
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <LogViewer max_height="200px" />
                     </div>
                 </div>
 

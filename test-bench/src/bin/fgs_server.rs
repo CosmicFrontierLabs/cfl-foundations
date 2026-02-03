@@ -149,7 +149,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    let log_broadcaster = test_bench::ws_log_stream::init_tracing();
 
     let args = Args::parse();
 
@@ -210,11 +210,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     info!("Starting unified camera server with tracking support...");
-    test_bench::camera_server::run_server_with_tracking(
+    test_bench::camera_server::run_server(
         camera,
         args.server,
         tracking_config,
         fsm_state,
+        log_broadcaster,
     )
     .await
 }

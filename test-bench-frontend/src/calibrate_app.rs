@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
+use crate::fgs::LogViewer;
+
 // Re-export shared types
 pub use shared_wasm::{
     CalibrateError, CalibrateServerClient, ControlSpec, DisplayInfo, PatternConfigRequest,
@@ -390,6 +392,9 @@ impl Component for CalibrateFrontend {
                             onload={ctx.link().callback(|_| Msg::ImageLoaded)}
                             onerror={ctx.link().callback(|_| Msg::ImageError)}
                         />
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <LogViewer max_height="200px" />
                     </div>
                 </div>
 

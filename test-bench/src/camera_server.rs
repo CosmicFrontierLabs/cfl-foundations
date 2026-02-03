@@ -37,6 +37,7 @@ use tokio::sync::{broadcast, Mutex, Notify, RwLock};
 use crate::camera_init::ExposureArgs;
 use crate::embedded_assets::{serve_fgs_frontend, serve_fgs_index_with_data};
 use crate::mjpeg::encode_ndarray_jpeg;
+use crate::ws_log_stream::{ws_log_handler, LogBroadcaster};
 use crate::ws_stream::{WsBroadcaster, WsFrame};
 use axum::extract::ws::WebSocketUpgrade;
 use clap::Args;
@@ -238,6 +239,8 @@ pub struct AppState<C: CameraInterface> {
     pub fsm: Option<Arc<FsmSharedState>>,
     /// WebSocket broadcaster for streaming camera frames (with proper close events)
     pub ws_stream: Arc<WsBroadcaster>,
+    /// WebSocket broadcaster for log streaming
+    pub log_broadcaster: Arc<LogBroadcaster>,
 }
 
 #[derive(Debug, Clone)]
@@ -1125,6 +1128,17 @@ async fn fsm_move_endpoint<C: CameraInterface + 'static>(
     }
 }
 
+/// WebSocket endpoint for log streaming.
+///
+/// Streams log entries to connected clients as JSON messages.
+async fn ws_log_endpoint<C: CameraInterface + 'static>(
+    State(state): State<Arc<AppState<C>>>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    let broadcaster = state.log_broadcaster.clone();
+    ws.on_upgrade(move |socket| ws_log_handler(socket, broadcaster))
+}
+
 pub fn create_router<C: CameraInterface + 'static>(state: Arc<AppState<C>>) -> Router {
     Router::new()
         .route("/", get(camera_status_page::<C>))
@@ -1153,98 +1167,10 @@ pub fn create_router<C: CameraInterface + 'static>(state: Arc<AppState<C>>) -> R
         )
         .route("/fsm/status", get(fsm_status_endpoint::<C>))
         .route("/fsm/move", post(fsm_move_endpoint::<C>))
+        .route("/logs", get(ws_log_endpoint::<C>))
         .fallback(get(serve_fgs_frontend))
         .with_state(state)
         .layer(middleware::from_fn(logging_middleware))
-}
-
-pub async fn run_server<C: CameraInterface + Send + 'static>(
-    mut camera: C,
-    args: CommonServerArgs,
-) -> anyhow::Result<()> {
-    use tracing::info;
-
-    let exposure = args.exposure.as_duration();
-    camera
-        .set_exposure(exposure)
-        .map_err(|e| anyhow::anyhow!("Failed to set exposure: {e}"))?;
-    info!("Set camera exposure to {}ms", args.exposure.exposure_ms);
-
-    camera
-        .set_gain(args.gain)
-        .map_err(|e| anyhow::anyhow!("Failed to set gain: {e}"))?;
-    info!("Set camera gain to {}", args.gain);
-
-    let bit_depth = camera.get_bit_depth();
-    info!("Camera bit depth: {}", bit_depth);
-
-    let camera_name = camera.name().to_string();
-    let camera_geometry = camera.geometry();
-    info!(
-        "Camera: {} ({}x{})",
-        camera_name,
-        camera_geometry.width(),
-        camera_geometry.height()
-    );
-
-    let ws_stream = Arc::new(WsBroadcaster::new(4));
-
-    let state = Arc::new(AppState {
-        camera: Arc::new(Mutex::new(camera)),
-        stats: Arc::new(Mutex::new(FrameStats::default())),
-        latest_frame: Arc::new(RwLock::new(None)),
-        latest_annotated: Arc::new(RwLock::new(None)),
-        latest_overlay_svg: Arc::new(RwLock::new(None)),
-        annotated_notify: Arc::new(Notify::new()),
-        zoom_region: Arc::new(RwLock::new(None)),
-        zoom_notify: Arc::new(Notify::new()),
-        bit_depth: bit_depth.as_u8(),
-        camera_name,
-        camera_geometry,
-        tracking: None,
-        tracking_config: None,
-        fsm: None,
-        ws_stream,
-    });
-
-    info!("Starting background capture loop...");
-    let capture_state = state.clone();
-    std::thread::spawn(move || {
-        capture_loop_blocking(capture_state);
-    });
-
-    info!("Starting background analysis loop...");
-    let analysis_state = state.clone();
-    tokio::spawn(async move {
-        analysis_loop(analysis_state).await;
-    });
-
-    let app = create_router(state);
-
-    let addr: SocketAddr = format!("{}:{}", args.bind_address, args.port)
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Invalid bind address: {e}"))?;
-
-    info!("Starting server on http://{}", addr);
-    info!("Access camera status at http://{}", addr);
-    info!("JPEG endpoint: http://{}/jpeg", addr);
-    info!("Raw data endpoint: http://{}/raw", addr);
-    info!("Stats endpoint: http://{}/stats", addr);
-    info!("Annotated endpoint (JPEG): http://{}/annotated", addr);
-    info!(
-        "Annotated endpoint (uncompressed GRAY8): http://{}/annotated_raw",
-        addr
-    );
-
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .await
-    .map_err(|e| anyhow::anyhow!("Server error: {e}"))?;
-
-    Ok(())
 }
 
 pub fn capture_loop_blocking<C: CameraInterface + Send + 'static>(state: Arc<AppState<C>>) {
@@ -1414,12 +1340,16 @@ pub async fn analysis_loop<C: CameraInterface + Send + 'static>(state: Arc<AppSt
     }
 }
 
-/// Run the camera server with tracking support enabled
-pub async fn run_server_with_tracking<C: CameraInterface + Send + 'static>(
+/// Run the camera server.
+///
+/// Starts an HTTP server with camera streaming, tracking, FSM control,
+/// and log streaming endpoints.
+pub async fn run_server<C: CameraInterface + Send + 'static>(
     mut camera: C,
     args: CommonServerArgs,
     tracking_config: TrackingConfig,
     fsm: Option<Arc<FsmSharedState>>,
+    log_broadcaster: Arc<LogBroadcaster>,
 ) -> anyhow::Result<()> {
     use tracing::info;
 
@@ -1476,6 +1406,7 @@ pub async fn run_server_with_tracking<C: CameraInterface + Send + 'static>(
         tracking_config: Some(tracking_config),
         fsm,
         ws_stream,
+        log_broadcaster,
     });
 
     info!("Starting background capture loop with tracking support...");

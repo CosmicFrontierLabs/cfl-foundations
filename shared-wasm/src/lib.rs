@@ -577,3 +577,56 @@ pub struct SpotShape {
     /// Estimated object diameter in pixels
     pub diameter: f64,
 }
+
+// ==================== Log Streaming Types ====================
+
+/// Log level for streamed log entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+impl LogLevel {
+    /// Get CSS color for this log level.
+    pub fn color(&self) -> &'static str {
+        match self {
+            LogLevel::Trace => "#888888",
+            LogLevel::Debug => "#00aaaa",
+            LogLevel::Info => "#00ff00",
+            LogLevel::Warn => "#ffaa00",
+            LogLevel::Error => "#ff4444",
+        }
+    }
+}
+
+impl std::fmt::Display for LogLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LogLevel::Trace => write!(f, "TRACE"),
+            LogLevel::Debug => write!(f, "DEBUG"),
+            LogLevel::Info => write!(f, "INFO"),
+            LogLevel::Warn => write!(f, "WARN"),
+            LogLevel::Error => write!(f, "ERROR"),
+        }
+    }
+}
+
+/// A log entry for WebSocket streaming.
+///
+/// Serialized as JSON for transmission over WebSocket.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogEntry {
+    /// Unix timestamp in milliseconds
+    pub timestamp_ms: u64,
+    /// Log level
+    pub level: LogLevel,
+    /// Target (module path)
+    pub target: String,
+    /// Log message
+    pub message: String,
+}
