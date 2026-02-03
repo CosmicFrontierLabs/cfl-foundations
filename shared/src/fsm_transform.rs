@@ -10,7 +10,17 @@ use std::io::{BufReader, BufWriter};
 use std::path::Path;
 use thiserror::Error;
 
-use super::{invert_matrix, FsmAxisCalibration, FsmSingularMatrixError};
+/// Minimum determinant for matrix inversion
+const MIN_DETERMINANT: f64 = 1e-10;
+
+/// Invert a 2x2 matrix, returning error if singular
+fn invert_matrix(m: &Matrix2<f64>) -> Result<Matrix2<f64>, FsmTransformError> {
+    let det = m.determinant();
+    if det.abs() < MIN_DETERMINANT {
+        return Err(FsmTransformError::SingularMatrix(det));
+    }
+    Ok(m.try_inverse().unwrap())
+}
 
 /// Error during transform operations
 #[derive(Error, Debug)]
@@ -24,8 +34,8 @@ pub enum FsmTransformError {
     Json(#[from] serde_json::Error),
 
     /// Transform matrix is singular (cannot compute inverse)
-    #[error("singular matrix: {0}")]
-    SingularMatrix(#[from] FsmSingularMatrixError),
+    #[error("singular matrix: determinant {0} below threshold")]
+    SingularMatrix(f64),
 }
 
 /// Persistent FSM calibration transform
@@ -66,19 +76,18 @@ pub struct FsmTransform {
 }
 
 impl FsmTransform {
-    /// Create a new transform from calibration results
+    /// Create a new transform from matrix values.
+    ///
+    /// # Arguments
+    /// * `fsm_to_sensor` - 2x2 matrix as [m00, m01, m10, m11] (row-major)
+    /// * `intercept_pixels` - Reference centroid position [x, y]
     ///
     /// # Errors
-    /// Returns error if the calibration matrix is singular (cannot be inverted)
-    pub fn from_calibration(calibration: &FsmAxisCalibration) -> Result<Self, FsmTransformError> {
-        let fsm_to_sensor = [
-            calibration.fsm_to_sensor[(0, 0)],
-            calibration.fsm_to_sensor[(0, 1)],
-            calibration.fsm_to_sensor[(1, 0)],
-            calibration.fsm_to_sensor[(1, 1)],
-        ];
-
-        // Validate matrix is invertible
+    /// Returns error if the matrix is singular (cannot be inverted)
+    pub fn new(
+        fsm_to_sensor: [f64; 4],
+        intercept_pixels: [f64; 2],
+    ) -> Result<Self, FsmTransformError> {
         let matrix = Matrix2::new(
             fsm_to_sensor[0],
             fsm_to_sensor[1],
@@ -89,10 +98,7 @@ impl FsmTransform {
 
         Ok(Self {
             fsm_to_sensor,
-            intercept_pixels: [
-                calibration.intercept_pixels.x,
-                calibration.intercept_pixels.y,
-            ],
+            intercept_pixels,
             calibration_timestamp: Some(chrono::Utc::now().to_rfc3339()),
             description: None,
         })

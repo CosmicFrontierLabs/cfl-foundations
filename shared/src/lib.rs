@@ -19,6 +19,7 @@ pub mod barker;
 pub mod cached_star_catalog;
 pub mod camera_interface;
 pub mod dark_frame;
+pub mod fsm_transform;
 pub mod image_proc;
 pub mod image_size;
 pub mod optical_alignment;

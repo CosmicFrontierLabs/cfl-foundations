@@ -22,7 +22,6 @@
 pub mod config;
 pub mod executor;
 pub mod matrix;
-pub mod transform;
 
 pub use config::{FsmAxisCalibration, FsmCalibrationConfig};
 pub use executor::{
@@ -33,4 +32,32 @@ pub use hardware::FsmInterface;
 pub use matrix::{
     build_transform_matrix, invert_matrix, FsmDegenerateAxesError, FsmSingularMatrixError,
 };
-pub use transform::{FsmTransform, FsmTransformError};
+// Re-export FsmTransform from shared crate
+pub use shared::fsm_transform::{FsmTransform, FsmTransformError};
+
+/// Extension trait for creating FsmTransform from calibration data
+pub trait FsmTransformFromCalibration {
+    /// Create a transform from calibration results
+    fn from_calibration(
+        calibration: &FsmAxisCalibration,
+    ) -> Result<FsmTransform, FsmTransformError>;
+}
+
+impl FsmTransformFromCalibration for FsmTransform {
+    fn from_calibration(
+        calibration: &FsmAxisCalibration,
+    ) -> Result<FsmTransform, FsmTransformError> {
+        FsmTransform::new(
+            [
+                calibration.fsm_to_sensor[(0, 0)],
+                calibration.fsm_to_sensor[(0, 1)],
+                calibration.fsm_to_sensor[(1, 0)],
+                calibration.fsm_to_sensor[(1, 1)],
+            ],
+            [
+                calibration.intercept_pixels.x,
+                calibration.intercept_pixels.y,
+            ],
+        )
+    }
+}
