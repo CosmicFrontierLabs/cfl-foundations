@@ -42,6 +42,11 @@ name = "parse_dump"
 path = "src/exail/bin/parse_dump.rs"
 required-features = ["exail"]
 
+[[bin]]
+name = "nsv455_test_pattern"
+path = "src/bin/nsv455_test_pattern.rs"
+required-features = ["linux-bins"]
+
 [dependencies]
 anyhow = "1.0"
 async-stream = "0.3.6"

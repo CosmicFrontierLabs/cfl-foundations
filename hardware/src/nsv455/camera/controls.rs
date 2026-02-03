@@ -2,6 +2,39 @@ use shared::camera_interface::{CameraError, CameraResult};
 use std::collections::HashMap;
 use v4l::prelude::*;
 
+/// Test pattern modes supported by the NSV455/IMX455 sensor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(i32)]
+pub enum TestPattern {
+    /// Normal operation - no test pattern
+    #[default]
+    None = 0,
+    /// Vertical bar pattern
+    Vertical = 1,
+    /// Horizontal bar pattern
+    Horizontal = 2,
+    /// Gradient pattern
+    Gradient = 3,
+}
+
+impl TestPattern {
+    /// Convert from integer value to TestPattern
+    pub fn from_i32(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(TestPattern::None),
+            1 => Some(TestPattern::Vertical),
+            2 => Some(TestPattern::Horizontal),
+            3 => Some(TestPattern::Gradient),
+            _ => None,
+        }
+    }
+
+    /// Get the integer value for this test pattern
+    pub fn as_i32(self) -> i32 {
+        self as i32
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ControlType {
     Gain,
