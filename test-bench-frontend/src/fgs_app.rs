@@ -1,4 +1,5 @@
-use shared_wasm::RingBuffer;
+use std::collections::VecDeque;
+
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
@@ -16,8 +17,11 @@ pub use shared_wasm::{
     TrackingEnableRequest, TrackingSettings, TrackingState, TrackingStatus,
 };
 
-/// Maximum history entries for sparkline plots (at ~10Hz polling = ~10 seconds)
-const HISTORY_MAX: usize = 100;
+/// Time window for sparkline plots in seconds.
+const HISTORY_WINDOW_SECS: f64 = 10.0;
+
+/// Hard cap on stored points to prevent unbounded growth.
+const HISTORY_MAX_POINTS: usize = 10_000;
 
 /// Single tracking data point with position, SNR, and timestamp.
 #[derive(Clone, Copy, PartialEq)]
@@ -30,31 +34,36 @@ pub struct TrackingPoint {
 }
 
 /// Rolling history buffer for tracking data visualization.
-#[derive(Clone, PartialEq)]
+///
+/// Retains points within a fixed time window rather than a fixed sample count,
+/// so the sparkline duration stays consistent regardless of server update rate.
+#[derive(Clone, PartialEq, Default)]
 pub struct TrackingHistory {
-    points: RingBuffer<TrackingPoint>,
-}
-
-impl Default for TrackingHistory {
-    fn default() -> Self {
-        Self::new()
-    }
+    points: VecDeque<TrackingPoint>,
 }
 
 impl TrackingHistory {
-    fn new() -> Self {
-        Self {
-            points: RingBuffer::new(HISTORY_MAX),
+    fn push(&mut self, x: f64, y: f64, snr: f64, timestamp_sec: u64, timestamp_nanos: u64) {
+        let t = timestamp_sec as f64 + (timestamp_nanos as f64) / 1_000_000_000.0;
+        self.points.push_back(TrackingPoint { x, y, snr, t });
+
+        // Evict points outside the time window
+        while self
+            .points
+            .front()
+            .is_some_and(|oldest| t - oldest.t > HISTORY_WINDOW_SECS)
+        {
+            self.points.pop_front();
+        }
+
+        // Hard cap as safety bound
+        while self.points.len() > HISTORY_MAX_POINTS {
+            self.points.pop_front();
         }
     }
 
-    fn push(&mut self, x: f64, y: f64, snr: f64, timestamp_sec: u64, timestamp_nanos: u64) {
-        let t = timestamp_sec as f64 + (timestamp_nanos as f64) / 1_000_000_000.0;
-        self.points.push(TrackingPoint { x, y, snr, t });
-    }
-
-    pub fn points(&self) -> &std::collections::VecDeque<TrackingPoint> {
-        self.points.as_deque()
+    pub fn points(&self) -> &VecDeque<TrackingPoint> {
+        &self.points
     }
 
     pub fn len(&self) -> usize {
@@ -198,7 +207,7 @@ impl Component for FgsFrontend {
             tracking_settings: None,
             tracking_settings_pending: false,
             show_tracking_settings: false,
-            tracking_history: TrackingHistory::new(),
+            tracking_history: TrackingHistory::default(),
             export_status: None,
             export_settings_pending: false,
             show_export_settings: false,

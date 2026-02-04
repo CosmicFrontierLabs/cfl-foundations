@@ -12,7 +12,6 @@ mod fsm;
 mod http_client;
 mod log;
 mod pattern;
-mod ring_buffer;
 mod star_detection;
 pub mod stats_scan;
 mod tracking;
@@ -28,7 +27,6 @@ pub use fsm::{FsmMoveRequest, FsmStatus};
 pub use http_client::HttpClientError;
 pub use log::{LogEntry, LogLevel};
 pub use pattern::{generate_centered_grid, PatternCommand};
-pub use ring_buffer::RingBuffer;
 pub use star_detection::{DetectedStar, StarDetectionResult, StarDetectionSettings};
 pub use stats_scan::{StatsError, StatsScan};
 pub use tracking::{
