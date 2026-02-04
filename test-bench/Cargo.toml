@@ -34,6 +34,10 @@ required-features = ["pi-fsm"]
 # FSM (Fast Steering Mirror) calibration controller - requires PI FSM hardware
 
 [[bin]]
+name = "fgs_timing_profile"
+path = "src/bin/fgs_timing_profile.rs"
+
+[[bin]]
 name = "dark_frame_analysis"
 path = "src/bin/dark_frame_analysis.rs"
 # Note: Supports mock camera by default, or real cameras with playerone/nsv455 features
@@ -103,6 +107,9 @@ meter-math = { version = "0.1.0", path = "../meter-math" }
 tokio-stream = { version = "0.1.18", features = ["sync"] }
 chrono = "0.4.43"
 rand_distr = "0.5.1"
+monocle_harness = { version = "0.1.0", path = "../monocle_harness" }
+env_logger = "0.11"
+starfield = "0.2.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gpiod = "0.3.0"

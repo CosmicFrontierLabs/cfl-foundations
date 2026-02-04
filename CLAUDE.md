@@ -154,7 +154,7 @@ Build on cfl-test-bench (fast ARM64 server) and deploy binaries to target device
 # Build on cfl-test-bench, deploy to Neutralino (orin-005)
 ./scripts/build-remote.sh --package test-bench --binary fgs_server --neut
 
-# Build on cfl-test-bench, deploy to NSV (orin-416)
+# Build on cfl-test-bench, deploy to NSV (orin-005)
 ./scripts/build-remote.sh --package test-bench --binary fgs_server --nsv
 
 # Build and deploy, then run immediately
