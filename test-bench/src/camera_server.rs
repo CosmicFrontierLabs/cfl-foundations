@@ -1318,7 +1318,7 @@ pub async fn analysis_loop<C: CameraInterface + Send + 'static>(state: Arc<AppSt
                         state.zoom_notify.notify_waiters();
                     }
 
-                    tracing::debug!(
+                    tracing::trace!(
                         "Pipeline: frame={}, interval={:.1}ms, age={:.1}ms, render={:.1}ms, total={:.1}ms",
                         frame_num,
                         analysis_interval.as_secs_f64() * 1000.0,
