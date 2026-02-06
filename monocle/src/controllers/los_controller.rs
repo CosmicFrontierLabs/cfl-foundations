@@ -511,8 +511,9 @@ mod tests {
     }
 }
 
-/// Tests that compare against the actual C implementation (linked at build time)
-#[cfg(test)]
+/// Tests that compare against the actual C implementation (linked at build time).
+/// Enable with: `cargo test -p monocle --features c-reference`
+#[cfg(all(test, feature = "c-reference"))]
 mod c_reference_tests {
     use super::*;
     use approx::assert_relative_eq;
