@@ -237,6 +237,13 @@ struct Args {
             Typical values: 1 for quick surveys, 5-10 for noise characterization."
     )]
     trials: u32,
+
+    #[arg(
+        long,
+        default_value_t = 42,
+        help = "Random seed for sky pointing generation"
+    )]
+    seed: u64,
 }
 
 /// Main function for telescope view simulation
@@ -268,8 +275,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         exposure_durations
     );
 
-    // Use only HWK4123 sensor for testing
-    let selected_sensors = [&*sensor_models::HWK4123];
+    let selected_sensors = [&*sensor_models::IMX455];
 
     // Get telescope from shared args
     let selected_telescope = args.shared.telescope.to_config();
@@ -396,8 +402,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Setting up experiments...");
     let mut all_experiments = Vec::new();
 
-    // Create randomizer with fixed seed for reproducible results
-    let mut randomizer = RandomEquatorial::with_seed(42);
+    let mut randomizer = RandomEquatorial::with_seed(args.seed);
 
     for i in 0..args.experiments {
         // Generate coordinates based on mode

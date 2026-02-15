@@ -43,8 +43,18 @@ use std::str::FromStr;
 /// - "1.0:5.0:-1.0" - Negative step requires start > stop
 pub fn parse_range(s: &str) -> Result<(f64, f64, f64), String> {
     let parts: Vec<&str> = s.split(':').collect();
+
+    // Allow a single value (e.g. "10000") as shorthand for a single-element range
+    if parts.len() == 1 {
+        let value = parts[0]
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| "Invalid value".to_string())?;
+        return Ok((value, value, 1.0));
+    }
+
     if parts.len() != 3 {
-        return Err("Range must be in format 'start:stop:step'".to_string());
+        return Err("Range must be 'value' or 'start:stop:step'".to_string());
     }
 
     let start = parts[0]
@@ -64,12 +74,12 @@ pub fn parse_range(s: &str) -> Result<(f64, f64, f64), String> {
         return Err("Step cannot be zero".to_string());
     }
 
-    if step > 0.0 && start >= stop {
-        return Err("For positive step, start must be less than stop".to_string());
+    if step > 0.0 && start > stop {
+        return Err("For positive step, start must not exceed stop".to_string());
     }
 
-    if step < 0.0 && start <= stop {
-        return Err("For negative step, start must be greater than stop".to_string());
+    if step < 0.0 && start < stop {
+        return Err("For negative step, start must not be less than stop".to_string());
     }
 
     Ok((start, stop, step))
