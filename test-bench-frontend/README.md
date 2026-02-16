@@ -6,7 +6,7 @@ Yew-based WebAssembly frontends for the meter-sim test bench servers.
 
 This package contains two web frontends:
 - **Calibrate Frontend**: Interactive pattern selector for `calibrate_serve`
-- **Camera Frontend**: Live camera monitoring for `cam_serve`
+- **FGS Frontend**: Fine guidance sensor monitoring for `fgs_server`
 
 Both frontends feature a terminal-green aesthetic and real-time updates.
 
@@ -36,7 +36,7 @@ rustup target add wasm32-unknown-unknown
 
 This builds both frontends and outputs to:
 - `test-bench-frontend/dist/calibrate/`
-- `test-bench-frontend/dist/camera/`
+- `test-bench-frontend/dist/fgs/`
 
 ### Build Individual Frontends
 
@@ -46,8 +46,8 @@ cd test-bench-frontend
 # Calibrate frontend only
 trunk build --release --config Trunk-calibrate.toml --filehash false
 
-# Camera frontend only
-trunk build --release --config Trunk-camera.toml --filehash false
+# FGS frontend only
+trunk build --release --config Trunk-fgs.toml --filehash false
 ```
 
 ### Development Mode
@@ -58,8 +58,8 @@ For faster rebuilds during development:
 # Watch and rebuild on changes
 trunk watch --config Trunk-calibrate.toml
 
-# Or for camera frontend
-trunk watch --config Trunk-camera.toml
+# Or for FGS frontend
+trunk watch --config Trunk-fgs.toml
 ```
 
 ## Output Structure
@@ -73,14 +73,14 @@ dist/
 │   ├── calibrate_wasm.js
 │   ├── calibrate_wasm_bg.wasm
 │   └── shared-styles.css
-└── camera/
+└── fgs/
     ├── index.html
-    ├── camera_wasm.js
-    ├── camera_wasm_bg.wasm
+    ├── fgs_wasm.js
+    ├── fgs_wasm_bg.wasm
     └── shared-styles.css
 ```
 
-The test bench servers (`calibrate_serve` and `cam_serve`) serve these files via the `/static/` endpoint.
+The test bench servers (`calibrate_serve` and `fgs_server`) serve these files via the `/static/` endpoint.
 
 ## Troubleshooting
 
@@ -113,10 +113,8 @@ rustup target add wasm32-unknown-unknown
 - `GET /config` - Current pattern configuration
 - `POST /config` - Update pattern configuration
 
-**Camera Frontend:**
-- `GET /jpeg` - Latest camera frame
-- `GET /stats` - Camera statistics (FPS, temps, etc.)
-- `GET /annotated` - Frame with AprilTag detection overlay
+**FGS Frontend:**
+- WebSocket stream for live status and image updates
 
 ## Development
 
@@ -127,8 +125,10 @@ src/
 ├── lib.rs              # Public exports
 ├── calibrate_app.rs    # Calibrate pattern UI component
 ├── calibrate_main.rs   # Calibrate WASM entry point
-├── camera_app.rs       # Camera monitor UI component
-└── camera_main.rs      # Camera WASM entry point
+├── fgs_app.rs          # FGS monitor UI component
+├── fgs_main.rs         # FGS WASM entry point
+├── fgs/                # FGS sub-components
+└── ws_image_stream.rs  # Reusable WebSocket image viewer
 ```
 
 Both frontends refresh automatically:
