@@ -163,9 +163,18 @@ impl PatternConfig {
             )),
             Self::PixelGrid { spacing } => Ok(patterns::pixel_grid::generate(size, *spacing)),
             Self::SiemensStar { spokes } => Ok(patterns::siemens_star::generate(size, *spokes)),
-            // Animated patterns start with black - animation fills them in
-            Self::RemoteControlled { .. } => {
-                Ok(ImageBuffer::from_pixel(width, height, Rgb([0, 0, 0])))
+            Self::RemoteControlled {
+                state,
+                pattern_size,
+            } => {
+                let mut buffer = vec![0u8; (width * height * 3) as usize];
+                patterns::remote_controlled::generate_into_buffer(
+                    &mut buffer,
+                    *pattern_size,
+                    state,
+                );
+                Ok(ImageBuffer::from_raw(width, height, buffer)
+                    .expect("buffer size matches dimensions"))
             }
         }
     }
