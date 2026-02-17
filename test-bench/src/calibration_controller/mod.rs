@@ -165,6 +165,16 @@ pub struct Args {
 
     #[arg(
         long,
+        default_value = "10",
+        help = "Number of initial measurements to discard after settling",
+        long_help = "Number of tracking measurements to discard at each grid position after \
+            the settle period. Early measurements may contain stale data from the previous \
+            position while the tracker re-acquires the new spot."
+    )]
+    pub discard_samples: usize,
+
+    #[arg(
+        long,
         help = "Enable live mode for continuous updating",
         long_help = "Run in live mode with a terminal UI that continuously cycles through \
             grid positions and displays real-time tracking feedback. Useful for system \

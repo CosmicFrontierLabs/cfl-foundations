@@ -3,7 +3,7 @@
 //! Runs through each grid position once, collecting measurements and
 //! estimating the display-to-sensor affine transform.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use shared::optical_alignment::{estimate_affine_transform, PointCorrespondence};
 
@@ -55,29 +55,20 @@ pub async fn run(args: &Args) -> Result<(), Box<dyn std::error::Error + Send + S
         // Wait for settle
         tokio::time::sleep(settle_duration).await;
 
-        // Collect measurements (x, y, diameter)
-        let mut measurements: Vec<(f64, f64, f64)> = Vec::new();
-        let start = Instant::now();
-
-        while measurements.len() < args.measurements_per_position {
-            if start.elapsed() > timeout {
-                eprintln!(
-                    "  Timeout waiting for measurements ({} of {} received)",
-                    measurements.len(),
-                    args.measurements_per_position
-                );
-                break;
-            }
-
-            let msgs = tracking_collector.poll().unwrap_or_default();
-            for msg in msgs {
-                measurements.push((msg.x, msg.y, msg.shape.diameter));
-            }
-
-            if measurements.len() < args.measurements_per_position {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
+        // Discard initial measurements (stale data from previous position)
+        if let Err(e) = tracking_collector.collect_n(args.discard_samples, timeout) {
+            eprintln!("  Discard phase incomplete: {e}");
         }
+
+        // Collect measurements (x, y, diameter)
+        let measurements: Vec<(f64, f64, f64)> =
+            match tracking_collector.collect_n(args.measurements_per_position, timeout) {
+                Ok(msgs) => msgs.iter().map(|m| (m.x, m.y, m.shape.diameter)).collect(),
+                Err(e) => {
+                    eprintln!("  Collection incomplete: {e}");
+                    Vec::new()
+                }
+            };
 
         if measurements.is_empty() {
             eprintln!("  No measurements received, skipping position");

@@ -129,12 +129,15 @@ pub async fn run(args: &Args) -> Result<(), Box<dyn std::error::Error + Send + S
                     return Ok(());
                 }
 
+                // Discard initial measurements (stale data from previous position)
+                let _ = tracking_collector.collect_n(args.discard_samples, timeout);
+
                 // Collect measurements
-                let start = Instant::now();
                 let mut collected = 0;
+                let collect_start = Instant::now();
 
                 while collected < args.measurements_per_position {
-                    if start.elapsed() > timeout {
+                    if collect_start.elapsed() > timeout {
                         break;
                     }
 
