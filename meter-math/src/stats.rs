@@ -101,7 +101,7 @@ pub fn median(values: &[f64]) -> Result<f64, String> {
 
     valid_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-    let median_value = if valid_values.len() % 2 == 0 {
+    let median_value = if valid_values.len().is_multiple_of(2) {
         let mid = valid_values.len() / 2;
         (valid_values[mid - 1] + valid_values[mid]) / 2.0
     } else {

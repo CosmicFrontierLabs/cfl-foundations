@@ -211,13 +211,13 @@ impl CameraInterface for SimulatorCamera {
 
         // Check alignment constraints
         let (h_align, v_align) = self.roi_alignment;
-        if h_align > 1 && roi.min_col % h_align != 0 {
+        if h_align > 1 && !roi.min_col.is_multiple_of(h_align) {
             return Err(CameraError::InvalidROI(format!(
                 "ROI horizontal offset {} must be aligned to {} pixels",
                 roi.min_col, h_align
             )));
         }
-        if v_align > 1 && roi.min_row % v_align != 0 {
+        if v_align > 1 && !roi.min_row.is_multiple_of(v_align) {
             return Err(CameraError::InvalidROI(format!(
                 "ROI vertical offset {} must be aligned to {} pixels",
                 roi.min_row, v_align

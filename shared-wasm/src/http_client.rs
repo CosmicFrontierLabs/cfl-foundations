@@ -100,6 +100,25 @@ mod platform {
 
             Ok(())
         }
+
+        pub async fn post_empty(&self, path: &str) -> Result<(), HttpClientError> {
+            use gloo_net::http::Request;
+
+            let url = format!("{}{}", self.base_url, path);
+            let response = Request::post(&url).send().await?;
+
+            if !response.ok() {
+                return Err(HttpClientError::ServerError {
+                    status: response.status(),
+                    message: response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string()),
+                });
+            }
+
+            Ok(())
+        }
     }
 }
 
@@ -166,6 +185,25 @@ mod platform {
         ) -> Result<(), HttpClientError> {
             let url = format!("{}{}", self.base_url, path);
             let response = self.client.post(&url).json(body).send().await?;
+
+            let status = response.status();
+            if !status.is_success() {
+                let message = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "Unknown error".to_string());
+                return Err(HttpClientError::ServerError {
+                    status: status.as_u16(),
+                    message,
+                });
+            }
+
+            Ok(())
+        }
+
+        pub async fn post_empty(&self, path: &str) -> Result<(), HttpClientError> {
+            let url = format!("{}{}", self.base_url, path);
+            let response = self.client.post(&url).send().await?;
 
             let status = response.status();
             if !status.is_success() {

@@ -197,6 +197,16 @@ impl CalibrateServerClient {
         self.set_config(&config).await
     }
 
+    // === Keepalive ===
+
+    /// Reset the OLED watchdog timer without changing the pattern.
+    ///
+    /// Sends a lightweight POST to `/keepalive` that prevents the display
+    /// from blanking during long-running operations.
+    pub async fn keepalive(&self) -> Result<(), CalibrateError> {
+        self.http.post_empty("/keepalive").await
+    }
+
     // === Image URLs ===
 
     /// Get the URL for JPEG pattern endpoint.

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Used to command what pattern the OLED display should show
 /// via REST API or ZMQ.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 pub enum PatternCommand {
     /// Display a single Gaussian spot at the specified position.
@@ -38,13 +38,8 @@ pub enum PatternCommand {
     },
 
     /// Clear display to black.
+    #[default]
     Clear,
-}
-
-impl Default for PatternCommand {
-    fn default() -> Self {
-        Self::Clear
-    }
 }
 
 impl PatternCommand {

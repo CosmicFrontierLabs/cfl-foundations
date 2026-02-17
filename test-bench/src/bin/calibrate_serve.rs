@@ -374,6 +374,15 @@ async fn update_pattern_config(
     }
 }
 
+/// Reset the OLED watchdog timer without changing the pattern.
+///
+/// Lightweight endpoint for keepalive pings that prevent the display from
+/// blanking during long-running operations.
+async fn keepalive_handler(State(state): State<Arc<AppState>>) -> StatusCode {
+    state.watchdog.reset();
+    StatusCode::OK
+}
+
 /// Handle pattern commands via REST API.
 ///
 /// This endpoint accepts PatternCommand JSON and updates the RemoteControlled pattern state.
@@ -466,6 +475,7 @@ async fn run_web_server(state: Arc<AppState>, port: u16, bind_address: String) -
         .route("/config", axum::routing::post(update_pattern_config))
         .route("/pattern", get(get_pattern_command))
         .route("/pattern", axum::routing::post(post_pattern_command))
+        .route("/keepalive", axum::routing::post(keepalive_handler))
         .route("/logs", get(ws_log_endpoint))
         .fallback(get(serve_calibrate_frontend))
         .with_state(state.clone());

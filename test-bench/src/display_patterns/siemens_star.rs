@@ -21,7 +21,7 @@ pub fn generate(size: PixelShape, num_spokes: u32) -> ImageBuffer<Rgb<u8>, Vec<u
 
             let spoke_index = (normalized_angle * num_spokes as f64).floor() as u32;
 
-            if spoke_index % 2 == 0 {
+            if spoke_index.is_multiple_of(2) {
                 img.put_pixel(x, y, Rgb([255, 255, 255]));
             }
         }

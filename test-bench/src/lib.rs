@@ -1,5 +1,6 @@
 pub mod calibration_controller;
 pub mod camera_init;
+pub mod display_keepalive;
 pub mod display_patterns;
 pub mod embedded_assets;
 pub mod fgs_ws_client;

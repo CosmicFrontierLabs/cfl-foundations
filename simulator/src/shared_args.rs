@@ -456,7 +456,7 @@ impl std::fmt::Display for DurationArg {
         let duration = self.0;
         let total_ms = duration.as_millis();
 
-        if total_ms >= 1000 && total_ms % 1000 == 0 {
+        if total_ms >= 1000 && total_ms.is_multiple_of(1000) {
             write!(f, "{}s", total_ms / 1000)
         } else if total_ms >= 1000 {
             write!(f, "{:.3}s", duration.as_secs_f64())
