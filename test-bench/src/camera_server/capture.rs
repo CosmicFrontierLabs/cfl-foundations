@@ -380,7 +380,9 @@ fn fgs_worker<C: CameraInterface + 'static>(
                         aspect_ratio_max: 2.5,
                         saturation_value: tracking_config.saturation_value,
                         saturation_search_radius: 3.0,
-                        minimum_edge_distance: 40.0,
+                        minimum_edge_distance: (settings.roi_size as f64 / 2.0)
+                            + roi_h_alignment.max(roi_v_alignment) as f64 / 2.0
+                            + 1.0,
                         bad_pixel_map: tracking_config.bad_pixel_map.clone(),
                         minimum_bad_pixel_distance: 5.0,
                     },
