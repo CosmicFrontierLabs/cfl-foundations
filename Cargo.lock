@@ -304,6 +304,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -2503,6 +2504,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sgp4"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9467b9a7be8485ed8be0f336d399c8f32c0fcd60686e7dd2ed3dab75c9a73eb3"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "shared"
 version = "0.1.0"
 dependencies = [
@@ -2656,9 +2668,9 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "starfield"
-version = "0.2.3"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d1da925e5d997bbfc1f019c7f9b3a7b70c395b9bd4909f9a113514ec4bc9bd4"
+checksum = "e158470f36d5b9842de2cce6d602890a5d95a3c6f0afbbd669a20756a6ad6413"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
@@ -2666,9 +2678,11 @@ dependencies = [
  "clap",
  "flate2",
  "image 0.24.9",
+ "indicatif",
  "lazy_static",
  "log",
  "md5",
+ "memmap2",
  "nalgebra",
  "ndarray",
  "num",
@@ -2678,9 +2692,11 @@ dependencies = [
  "reqwest 0.11.27",
  "serde",
  "serde_json",
+ "sgp4",
  "term_size",
  "thiserror 1.0.69",
  "time",
+ "uom",
 ]
 
 [[package]]
