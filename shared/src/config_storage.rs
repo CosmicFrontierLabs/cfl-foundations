@@ -4,7 +4,6 @@
 //! All config is stored in ~/.cf_config/ by default.
 
 use crate::bad_pixel_map::BadPixelMap;
-use crate::fsm_transform::{FsmTransform, FsmTransformLoadError};
 use crate::optical_alignment::OpticalAlignment;
 use std::path::{Path, PathBuf};
 
@@ -181,60 +180,6 @@ impl ConfigStorage {
         std::fs::remove_file(path)?;
         Ok(true)
     }
-
-    // =========================================================================
-    // FSM Transform
-    // =========================================================================
-
-    /// Get the FSM transform file path.
-    ///
-    /// One transform per device - stored at ~/.cf_config/fsm_transform.json
-    fn fsm_transform_path(&self) -> PathBuf {
-        self.root_path.join("fsm_transform.json")
-    }
-
-    /// Get the FSM transform if it exists.
-    ///
-    /// Returns None if no transform exists.
-    /// Returns Some(Err) if the file exists but cannot be loaded.
-    pub fn get_fsm_transform(&self) -> Option<Result<FsmTransform, FsmTransformLoadError>> {
-        let path = self.fsm_transform_path();
-
-        if !path.exists() {
-            return None;
-        }
-
-        Some(FsmTransform::load(&path))
-    }
-
-    /// Save the FSM transform.
-    ///
-    /// Creates the config directory if it doesn't exist.
-    /// Returns the path where the transform was saved.
-    pub fn save_fsm_transform(
-        &self,
-        transform: &FsmTransform,
-    ) -> Result<PathBuf, FsmTransformLoadError> {
-        std::fs::create_dir_all(&self.root_path)?;
-
-        let path = self.fsm_transform_path();
-        transform.save(&path)?;
-        Ok(path)
-    }
-
-    /// Delete the FSM transform.
-    ///
-    /// Returns Ok(true) if the file was deleted, Ok(false) if it didn't exist.
-    pub fn delete_fsm_transform(&self) -> std::io::Result<bool> {
-        let path = self.fsm_transform_path();
-
-        if !path.exists() {
-            return Ok(false);
-        }
-
-        std::fs::remove_file(path)?;
-        Ok(true)
-    }
 }
 
 impl Default for ConfigStorage {
@@ -394,64 +339,6 @@ mod tests {
         assert!(storage.get_optical_alignment().is_none());
 
         let deleted_again = storage.delete_optical_alignment().unwrap();
-        assert!(!deleted_again);
-
-        std::fs::remove_dir_all(storage.root_path()).ok();
-    }
-
-    #[test]
-    fn test_fsm_transform_path() {
-        let storage = create_test_storage();
-        let path = storage.fsm_transform_path();
-
-        assert!(path.to_str().unwrap().ends_with("fsm_transform.json"));
-    }
-
-    #[test]
-    fn test_save_and_load_fsm_transform() {
-        let storage = create_test_storage();
-
-        let transform = FsmTransform::new([0.1, 0.0, 0.0, 0.1], [512.0, 512.0]).unwrap();
-
-        let path = storage.save_fsm_transform(&transform).unwrap();
-        assert!(path.exists());
-
-        let loaded = storage
-            .get_fsm_transform()
-            .expect("Transform should exist")
-            .expect("Transform should load successfully");
-
-        // Verify by checking conversion behavior matches
-        let (dx1, dy1) = transform.angle_delta_to_pix_delta(100.0, 0.0);
-        let (dx2, dy2) = loaded.angle_delta_to_pix_delta(100.0, 0.0);
-        assert_relative_eq!(dx1, dx2, epsilon = 1e-10);
-        assert_relative_eq!(dy1, dy2, epsilon = 1e-10);
-
-        std::fs::remove_dir_all(storage.root_path()).ok();
-    }
-
-    #[test]
-    fn test_get_nonexistent_fsm_transform() {
-        let storage = create_test_storage();
-        let result = storage.get_fsm_transform();
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_delete_fsm_transform() {
-        let storage = create_test_storage();
-
-        let transform = FsmTransform::new([1.0, 0.0, 0.0, 1.0], [256.0, 256.0]).unwrap();
-        storage.save_fsm_transform(&transform).unwrap();
-
-        assert!(storage.get_fsm_transform().is_some());
-
-        let deleted = storage.delete_fsm_transform().unwrap();
-        assert!(deleted);
-
-        assert!(storage.get_fsm_transform().is_none());
-
-        let deleted_again = storage.delete_fsm_transform().unwrap();
         assert!(!deleted_again);
 
         std::fs::remove_dir_all(storage.root_path()).ok();
