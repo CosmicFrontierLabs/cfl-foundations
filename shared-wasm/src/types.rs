@@ -5,14 +5,6 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-/// Health check response from orin_monitor /health endpoint.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct HealthInfo {
-    pub status: String,
-    pub service: String,
-    pub timestamp: u64,
-}
-
 /// Timestamp structure aligned with V4L2 format.
 /// Represents time as seconds and nanoseconds since an epoch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
