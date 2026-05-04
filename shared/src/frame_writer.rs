@@ -210,6 +210,17 @@ fn save_as_png(payload: &ImagePayload, filepath: &Path) -> Result<()> {
 }
 
 fn save_as_fits(payload: &ImagePayload, filepath: &Path) -> Result<()> {
+    // FITS conventions:
+    //   - NAXIS1 = fastest-varying axis = image columns / x.
+    //   - NAXIS2 = slower axis = image rows / y, increasing upward
+    //     (origin is the bottom-left pixel).
+    // fitsio's `ImageDescription::dimensions` is in fast-to-slow order, so
+    // we pass [width, height] = [NAXIS1, NAXIS2].
+    //
+    // ndarray Array2 is row-major top-down (row 0 is the top of the image).
+    // To preserve orientation under standard FITS readers (astropy, ds9,
+    // AstroImageJ), we flip rows so the bottom ndarray row is written first
+    // (lowest NAXIS2) and the top row is written last (highest NAXIS2).
     let (width, height, data_type) = match payload {
         ImagePayload::U16(frame) => {
             let (h, w) = frame.dim();
@@ -238,11 +249,13 @@ fn save_as_fits(payload: &ImagePayload, filepath: &Path) -> Result<()> {
 
     match payload {
         ImagePayload::U16(frame) => {
-            let data: Vec<i32> = frame.iter().map(|&v| v as i32).collect();
+            let flipped = frame.slice(ndarray::s![..;-1, ..]);
+            let data: Vec<i32> = flipped.iter().map(|&v| v as i32).collect();
             i32::write_image(&mut fptr, &hdu, &data)?;
         }
         ImagePayload::F64(frame) => {
-            let data: Vec<f64> = frame.iter().cloned().collect();
+            let flipped = frame.slice(ndarray::s![..;-1, ..]);
+            let data: Vec<f64> = flipped.iter().copied().collect();
             f64::write_image(&mut fptr, &hdu, &data)?;
         }
         _ => unreachable!(),
@@ -386,6 +399,97 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(100));
 
         assert!(filepath.exists());
+    }
+
+    /// Walk HDUs and return the first one whose NAXIS > 0 (the image HDU).
+    /// fitsio's `create_image` emits a NAXIS=0 primary stub before the
+    /// image extension, so callers should not assume HDU 0 holds the data.
+    #[cfg(test)]
+    fn open_image_hdu(fptr: &fitsio::compat::fitsfile::FitsFile) -> fitsio::compat::hdu::FitsHdu {
+        let mut idx = 0;
+        loop {
+            let hdu = fptr
+                .hdu(idx)
+                .expect("ran out of HDUs without finding image");
+            let naxis = hdu.read_key::<i64>(fptr, "NAXIS").unwrap_or(0);
+            if naxis > 0 {
+                return hdu;
+            }
+            idx += 1;
+        }
+    }
+
+    #[test]
+    fn test_save_fits_naxis_order_and_orientation_u16() {
+        use fitsio::compat::fitsfile::FitsFile;
+        use fitsio::compat::images::ReadImage;
+
+        let temp_dir = TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("naxis_u16.fits");
+
+        // Non-square so a transposed write would be detectable. Place a
+        // distinctive marker at a known (row, col) in ndarray (top-down)
+        // coordinates so we can verify the on-disk FITS layout.
+        let rows = 32usize;
+        let cols = 64usize;
+        let marker_row = 0usize; // top row of the image
+        let marker_col = 10usize;
+        let marker_value: u16 = 4242;
+
+        let mut frame = Array2::<u16>::zeros((rows, cols));
+        frame[[marker_row, marker_col]] = marker_value;
+
+        save_frame(&ImagePayload::U16(frame), &filepath, FrameFormat::Fits).unwrap();
+
+        let fptr = FitsFile::open(&filepath).unwrap();
+        let hdu = open_image_hdu(&fptr);
+
+        let naxis1 = hdu.read_key::<i64>(&fptr, "NAXIS1").unwrap();
+        let naxis2 = hdu.read_key::<i64>(&fptr, "NAXIS2").unwrap();
+        assert_eq!(naxis1 as usize, cols, "NAXIS1 must be image width (cols)");
+        assert_eq!(naxis2 as usize, rows, "NAXIS2 must be image height (rows)");
+
+        // FITS storage is bottom-row-first. ndarray's top row (marker_row=0)
+        // therefore lands at NAXIS2 = rows (the last row in the buffer).
+        let buffer = i32::read_image(&fptr, &hdu).unwrap();
+        let expected_idx = (rows - 1 - marker_row) * cols + marker_col;
+        assert_eq!(buffer[expected_idx], marker_value as i32);
+        assert_eq!(
+            buffer[marker_col], 0,
+            "top of ndarray must not land at NAXIS2=1"
+        );
+    }
+
+    #[test]
+    fn test_save_fits_naxis_order_and_orientation_f64() {
+        use fitsio::compat::fitsfile::FitsFile;
+        use fitsio::compat::images::ReadImage;
+
+        let temp_dir = TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("naxis_f64.fits");
+
+        let rows = 17usize;
+        let cols = 41usize;
+        let marker_row = 3usize;
+        let marker_col = 29usize;
+        let marker_value: f64 = std::f64::consts::PI;
+
+        let mut frame = Array2::<f64>::zeros((rows, cols));
+        frame[[marker_row, marker_col]] = marker_value;
+
+        save_frame(&ImagePayload::F64(frame), &filepath, FrameFormat::Fits).unwrap();
+
+        let fptr = FitsFile::open(&filepath).unwrap();
+        let hdu = open_image_hdu(&fptr);
+
+        let naxis1 = hdu.read_key::<i64>(&fptr, "NAXIS1").unwrap();
+        let naxis2 = hdu.read_key::<i64>(&fptr, "NAXIS2").unwrap();
+        assert_eq!(naxis1 as usize, cols);
+        assert_eq!(naxis2 as usize, rows);
+
+        let buffer = f64::read_image(&fptr, &hdu).unwrap();
+        let expected_idx = (rows - 1 - marker_row) * cols + marker_col;
+        assert!((buffer[expected_idx] - marker_value).abs() < 1e-12);
     }
 
     #[test]
