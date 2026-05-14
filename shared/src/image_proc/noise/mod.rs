@@ -9,6 +9,7 @@ pub mod quantify;
 
 // Re-export commonly used functions for backward compatibility
 pub use generate::{
-    apply_poisson_photon_noise, generate_noise_with_precomputed_params, simple_normal_array,
+    apply_gaussian_read_noise, apply_poisson_photon_noise, generate_noise_with_precomputed_params,
+    simple_normal_array,
 };
 pub use quantify::estimate_noise_level;
