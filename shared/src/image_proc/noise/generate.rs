@@ -23,8 +23,9 @@
 //! # Performance
 //!
 //! All functions utilize parallel processing via rayon for efficient
-//! generation of large noise fields. Typical performance: ~100 MB/s
-//! on modern multi-core systems.
+//! generation of large noise fields. Per-chunk RNG is `SmallRng`
+//! (xoshiro256++) — see `algo::parallel` for the rationale. On a 5-core
+//! aarch64 box this lands a 61 MP Normal field in ~25 ms (~2.4 GP/s).
 //!
 //! # Usage
 //!
@@ -193,9 +194,9 @@ pub fn generate_noise_with_precomputed_params(
 ///
 /// Implementation mirrors [`apply_poisson_photon_noise`]: the image is split
 /// into `chunk_size` row blocks, each block gets a deterministic per-chunk
-/// `StdRng` derived from the base seed, and the Gaussian draws happen inside
-/// rayon's parallel iterator. This pattern keeps the output bit-identical
-/// for a given seed regardless of thread count.
+/// `SmallRng` (xoshiro256++) derived from the base seed, and the Gaussian
+/// draws happen inside rayon's parallel iterator. This pattern keeps the
+/// output bit-identical for a given seed regardless of thread count.
 ///
 /// # Arguments
 /// * `electron_image` - 2D array containing pre-read-noise electron counts per pixel
