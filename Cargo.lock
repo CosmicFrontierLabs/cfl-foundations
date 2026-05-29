@@ -1368,6 +1368,8 @@ dependencies = [
  "rand",
  "rand_distr",
  "scilib",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
@@ -1476,6 +1478,7 @@ dependencies = [
  "portable-atomic-util",
  "rawpointer",
  "rayon",
+ "serde",
 ]
 
 [[package]]

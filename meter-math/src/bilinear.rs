@@ -4,6 +4,7 @@
 //! 2D grids, with support for invalid data handling and configurable boundary behavior.
 
 use ndarray::Array2;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Error types for bilinear interpolation operations.
@@ -65,7 +66,14 @@ impl std::error::Error for InterpolationError {}
 /// - Irregular grid spacing (binary search for coordinates)
 /// - Invalid data handling (e.g., infinite values)
 /// - Configurable boundary behavior
-#[derive(Debug, Clone)]
+///
+/// # Serde invariant bypass
+///
+/// `Deserialize` reconstructs the fields directly and does **not** re-run the
+/// sorted-coords / matching-dimensions checks enforced by [`Self::new`]. Trust
+/// the deserialized form only when it originates from a serializer running
+/// against a value that was itself built via `new`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BilinearInterpolator {
     /// X-axis coordinates (must be sorted in ascending order)
     x_coords: Vec<f64>,
@@ -367,6 +375,27 @@ mod tests {
         assert_eq!(interp.y_coords(), y_coords.as_slice());
         assert_eq!(interp.data(), &data);
         assert!(interp.allow_extrapolation());
+    }
+
+    #[test]
+    fn test_serde_roundtrip_preserves_interpolation() {
+        let interp = create_simple_grid().with_extrapolation(true);
+
+        let json = serde_json::to_string(&interp).unwrap();
+        let restored: BilinearInterpolator = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.x_coords(), interp.x_coords());
+        assert_eq!(restored.y_coords(), interp.y_coords());
+        assert_eq!(restored.data(), interp.data());
+        assert_eq!(restored.allow_extrapolation(), interp.allow_extrapolation());
+
+        for (x, y) in [(0.0, 0.0), (0.5, 0.5), (1.5, 0.7), (-0.3, 2.4)] {
+            assert_relative_eq!(
+                restored.interpolate(x, y).unwrap(),
+                interp.interpolate(x, y).unwrap(),
+                epsilon = 1e-12,
+            );
+        }
     }
 
     #[test]
