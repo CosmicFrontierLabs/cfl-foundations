@@ -43,6 +43,7 @@
 
 use once_cell::sync::Lazy;
 use scilib::math::bessel;
+use serde::{Deserialize, Serialize};
 
 use crate::units::Wavelength;
 
@@ -81,7 +82,7 @@ const BESSEL_J1_FIRST_ZERO_APPROX: f64 = 3.83;
 /// - Gaussian approximation: ~10x faster, <5% error within FWHM
 /// - Triangle approximation: ~50x faster, good for rough estimates
 ///
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct AiryDisk {
     /// First zero location (first dark ring radius) in normalized units
     pub first_zero: f64,
@@ -373,7 +374,7 @@ pub static AIRY_DISK: Lazy<AiryDisk> = Lazy::new(AiryDisk::new);
 /// - Physical Airy radius = 1.22 × λ × f / D
 /// - Scale factor = physical_radius / normalized_radius
 ///
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct PixelScaledAiryDisk {
     disk: AiryDisk,
     radius_scale: f64,
@@ -724,6 +725,31 @@ mod tests {
         // Central region should capture significant fraction of PSF
         assert!(fraction > 0.8); // At least 80% in central region
         assert!(fraction <= 1.0); // Can't exceed 100%
+    }
+
+    #[test]
+    fn test_airy_disk_serde_roundtrip() {
+        let disk = AiryDisk::new();
+        let json = serde_json::to_string(&disk).unwrap();
+        let restored: AiryDisk = serde_json::from_str(&json).unwrap();
+        assert_relative_eq!(restored.first_zero, disk.first_zero, epsilon = 1e-15);
+        assert_relative_eq!(restored.fwhm, disk.fwhm, epsilon = 1e-15);
+    }
+
+    #[test]
+    fn test_pixel_scaled_airy_disk_serde_roundtrip() {
+        let psf = PixelScaledAiryDisk::with_fwhm(2.5, Wavelength::from_nanometers(650.0));
+        let json = serde_json::to_string(&psf).unwrap();
+        let restored: PixelScaledAiryDisk = serde_json::from_str(&json).unwrap();
+
+        assert_relative_eq!(restored.fwhm(), psf.fwhm(), epsilon = 1e-12);
+        assert_relative_eq!(restored.first_zero(), psf.first_zero(), epsilon = 1e-12);
+        assert_relative_eq!(
+            restored.reference_wavelength.as_nanometers(),
+            650.0,
+            epsilon = 1e-10,
+        );
+        assert_relative_eq!(restored.intensity(1.0), psf.intensity(1.0), epsilon = 1e-12,);
     }
 
     #[test]
