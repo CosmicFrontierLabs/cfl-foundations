@@ -444,6 +444,37 @@ mod tests {
         assert!(airy_disk < fov);
     }
 
+    /// `uom`'s `serde` feature emits each quantity as a bare `f64` in its SI
+    /// base unit. Downstream JSON schemas should treat the serialized values
+    /// accordingly:
+    ///   - `Length` / `Wavelength` → meters
+    ///   - `Temperature` → kelvin (not celsius — the `*_celsius` helpers are
+    ///     presentation only)
+    ///   - `Area` → square meters
+    ///   - `Angle` → radians (not degrees)
+    #[test]
+    fn test_serde_roundtrip_si_base_units() {
+        let len = Length::from_meters(1.5);
+        let temp = Temperature::from_celsius(20.0);
+        let area = Area::from_square_meters(2.0);
+        let ang = Angle::from_degrees(45.0);
+
+        assert_eq!(serde_json::to_string(&len).unwrap(), "1.5");
+        assert_eq!(serde_json::to_string(&temp).unwrap(), "293.15");
+        assert_eq!(serde_json::to_string(&area).unwrap(), "2.0");
+        assert_eq!(serde_json::to_string(&ang).unwrap(), "0.7853981633974483");
+
+        let len_back: Length = serde_json::from_str("1.5").unwrap();
+        let temp_back: Temperature = serde_json::from_str("293.15").unwrap();
+        let area_back: Area = serde_json::from_str("2.0").unwrap();
+        let ang_back: Angle = serde_json::from_str("0.7853981633974483").unwrap();
+
+        assert_relative_eq!(len_back.as_meters(), 1.5, epsilon = 1e-12);
+        assert_relative_eq!(temp_back.as_celsius(), 20.0, epsilon = 1e-10);
+        assert_relative_eq!(area_back.as_square_meters(), 2.0, epsilon = 1e-12);
+        assert_relative_eq!(ang_back.as_degrees(), 45.0, epsilon = 1e-12);
+    }
+
     #[test]
     fn test_angular_precision_limits() {
         // Test very small angles (sub-milliarcsecond precision)
