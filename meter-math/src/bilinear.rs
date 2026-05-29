@@ -128,6 +128,38 @@ impl BilinearInterpolator {
         self
     }
 
+    /// X-axis grid coordinates, in ascending order.
+    ///
+    /// Exposes the calibration grid to consumers that need to introspect
+    /// the underlying table (e.g. for metadata serialization or for
+    /// downstream resamplers that want to honor the original grid).
+    pub fn x_coords(&self) -> &[f64] {
+        &self.x_coords
+    }
+
+    /// Y-axis grid coordinates, in ascending order.
+    ///
+    /// Exposes the calibration grid to consumers that need to introspect
+    /// the underlying table (e.g. for metadata serialization or for
+    /// downstream resamplers that want to honor the original grid).
+    pub fn y_coords(&self) -> &[f64] {
+        &self.y_coords
+    }
+
+    /// 2D data array indexed as `[y_index, x_index]`.
+    ///
+    /// Exposes the calibration values backing the interpolator so
+    /// consumers can introspect the table without re-running
+    /// [`Self::interpolate`] across a grid.
+    pub fn data(&self) -> &Array2<f64> {
+        &self.data
+    }
+
+    /// Whether out-of-bounds queries extrapolate from the edge cells.
+    pub fn allow_extrapolation(&self) -> bool {
+        self.allow_extrapolation
+    }
+
     /// Find indices and interpolation weight for a coordinate value.
     ///
     /// Returns (lower_index, upper_index, weight) where weight is the
@@ -308,6 +340,33 @@ mod tests {
         assert_eq!(interp.interpolate(1.0, 0.0).unwrap(), 1.0);
         assert_eq!(interp.interpolate(0.0, 1.0).unwrap(), 1.0);
         assert_eq!(interp.interpolate(2.0, 2.0).unwrap(), 4.0);
+    }
+
+    #[test]
+    fn test_grid_accessors_expose_construction_inputs() {
+        // x_coords / y_coords / data accessors must round-trip the
+        // values passed to `new`, in the same order, with no copying
+        // beyond the borrow. Consumers that serialize the calibration
+        // table to metadata depend on this exact-shape guarantee.
+        let x_coords = vec![5.0, 15.0, 30.0, 60.0];
+        let y_coords = vec![-20.0, 0.0, 20.0];
+        let data = Array2::from_shape_vec(
+            (3, 4),
+            vec![
+                0.10, 0.12, 0.14, 0.18, // -20°C
+                0.20, 0.22, 0.24, 0.28, //   0°C
+                0.30, 0.32, 0.34, 0.38, //  20°C
+            ],
+        )
+        .unwrap();
+        let interp = BilinearInterpolator::new(x_coords.clone(), y_coords.clone(), data.clone())
+            .unwrap()
+            .with_extrapolation(true);
+
+        assert_eq!(interp.x_coords(), x_coords.as_slice());
+        assert_eq!(interp.y_coords(), y_coords.as_slice());
+        assert_eq!(interp.data(), &data);
+        assert!(interp.allow_extrapolation());
     }
 
     #[test]

@@ -23,8 +23,9 @@
 //! # Performance
 //!
 //! All functions utilize parallel processing via rayon for efficient
-//! generation of large noise fields. Typical performance: ~100 MB/s
-//! on modern multi-core systems.
+//! generation of large noise fields. Per-chunk RNG is `SmallRng`
+//! (xoshiro256++) — see `algo::parallel` for the rationale. On a 5-core
+//! aarch64 box this lands a 61 MP Normal field in ~25 ms (~2.4 GP/s).
 //!
 //! # Usage
 //!
@@ -181,6 +182,57 @@ pub fn generate_noise_with_precomputed_params(
     }
 }
 
+/// Add zero-mean Gaussian read noise to an electron image in parallel.
+///
+/// Read noise is the electronics-domain noise of a CCD/CMOS sensor — Johnson
+/// noise in the source-follower, kTC reset noise, ADC quantisation. Unlike
+/// Poisson shot noise it is *additive*, signal-independent, and well modelled
+/// by a zero-mean Gaussian with a per-pixel RMS in electrons. After sampling
+/// we clamp negatives to zero, since downstream consumers (quantisers, FITS
+/// writers, downstream Poisson-resampling) treat the array as an
+/// electron count.
+///
+/// Implementation mirrors [`apply_poisson_photon_noise`]: the image is split
+/// into `chunk_size` row blocks, each block gets a deterministic per-chunk
+/// `SmallRng` (xoshiro256++) derived from the base seed, and the Gaussian
+/// draws happen inside rayon's parallel iterator. This pattern keeps the
+/// output bit-identical for a given seed regardless of thread count.
+///
+/// # Arguments
+/// * `electron_image` - 2D array containing pre-read-noise electron counts
+///   per pixel. Consumed by this function; if the caller still needs the
+///   pre-noise version they must clone it explicitly before the call.
+/// * `read_noise_rms` - RMS of the per-pixel Gaussian, in electrons. `0.0`
+///   short-circuits and returns the input unchanged.
+/// * `rng_seed` - Optional seed for the per-chunk RNGs
+///
+/// # Returns
+/// * An `ndarray::Array2<f64>` with read noise added, clamped at zero
+pub fn apply_gaussian_read_noise(
+    electron_image: Array2<f64>,
+    read_noise_rms: f64,
+    rng_seed: Option<u64>,
+) -> Array2<f64> {
+    // Zero RMS is a no-op — return the input unchanged. No allocation.
+    if read_noise_rms <= 0.0 {
+        return electron_image;
+    }
+    let seed = rng_seed.unwrap_or(rng().next_u64());
+    let normal =
+        Normal::new(0.0_f64, read_noise_rms).expect("read noise RMS must be finite and >= 0");
+
+    process_array_in_parallel_chunks(
+        electron_image,
+        seed,
+        Some(64), // Match apply_poisson_photon_noise: 64 rows per chunk.
+        |chunk_view, rng| {
+            chunk_view.iter_mut().for_each(|pixel| {
+                *pixel = (*pixel + normal.sample(rng)).max(0.0);
+            });
+        },
+    )
+}
+
 /// Apply Poisson arrival time statistics to star photon image in parallel
 ///
 /// This function takes a mean electron image (star flux) and applies Poisson noise
@@ -188,24 +240,22 @@ pub fn generate_noise_with_precomputed_params(
 /// as the mean of a Poisson distribution.
 ///
 /// # Arguments
-/// * `mean_electron_image` - 2D array containing mean electron counts per pixel
+/// * `mean_electron_image` - 2D array containing mean electron counts per
+///   pixel. Consumed by this function; if the caller still needs the
+///   pre-noise version they must clone it explicitly before the call.
 /// * `rng_seed` - Optional seed for random number generator
 ///
 /// # Returns
 /// * An `ndarray::Array2<f64>` with Poisson-sampled electron counts
 pub fn apply_poisson_photon_noise(
-    mean_electron_image: &Array2<f64>,
+    mean_electron_image: Array2<f64>,
     rng_seed: Option<u64>,
 ) -> Array2<f64> {
-    let (_height, _width) = mean_electron_image.dim();
     let seed = rng_seed.unwrap_or(rng().next_u64());
-
-    // Clone the input array to get the same shape
-    let poisson_image = mean_electron_image.clone();
 
     // Process the array in parallel chunks with our helper function
     process_array_in_parallel_chunks(
-        poisson_image,
+        mean_electron_image,
         seed,
         Some(64), // Process 64 rows at a time
         |chunk_view, rng| {
@@ -268,5 +318,57 @@ mod tests {
                 assert_eq!(noise1[[i, j]], noise2[[i, j]]);
             }
         }
+    }
+
+    #[test]
+    fn apply_gaussian_read_noise_recovers_target_rms() {
+        // A large flat image with a known pedestal: after adding RMS=8 e-
+        // Gaussian noise, the empirical std should land near 8.
+        let pedestal = 500.0_f64;
+        let rms = 8.0_f64;
+        let image = Array2::from_elem((200, 200), pedestal);
+        let noisy = apply_gaussian_read_noise(image, rms, Some(7));
+
+        let mean_actual = noisy.mean().unwrap();
+        let std_actual = noisy.std(0.0);
+        assert_relative_eq!(mean_actual, pedestal, epsilon = 0.5);
+        assert_relative_eq!(std_actual, rms, epsilon = 0.3);
+    }
+
+    #[test]
+    fn apply_gaussian_read_noise_is_deterministic_for_seed() {
+        // Same seed => bit-identical output (regardless of thread count).
+        let image = Array2::from_elem((64, 64), 100.0);
+        let a = apply_gaussian_read_noise(image.clone(), 5.0, Some(42));
+        let b = apply_gaussian_read_noise(image, 5.0, Some(42));
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn apply_gaussian_read_noise_zero_rms_is_identity() {
+        // RMS=0 short-circuits — every pixel unchanged.
+        let image = Array2::from_elem((16, 16), 42.0);
+        let expected = image.clone();
+        let out = apply_gaussian_read_noise(image, 0.0, Some(0));
+        assert_eq!(expected, out);
+    }
+
+    #[test]
+    fn apply_gaussian_read_noise_clamps_at_zero() {
+        // A zero-pedestal image with a large RMS will see negative draws on
+        // ~half the pixels; the clamp must drop them to exactly 0.0.
+        let image = Array2::from_elem((128, 128), 0.0);
+        let out = apply_gaussian_read_noise(image, 5.0, Some(11));
+        let min = out.iter().cloned().fold(f64::INFINITY, f64::min);
+        assert!(min >= 0.0, "expected non-negative output, got min = {min}");
+        // At zero pedestal and RMS=5, about half of draws would be negative;
+        // after clamping the empirical mean is RMS/sqrt(2π) ≈ 2.0 e-, much
+        // larger than any plausible numerical drift.
+        let mean_actual = out.mean().unwrap();
+        assert_relative_eq!(
+            mean_actual,
+            5.0 / (2.0 * std::f64::consts::PI).sqrt(),
+            epsilon = 0.25
+        );
     }
 }
