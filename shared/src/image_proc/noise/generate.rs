@@ -207,7 +207,13 @@ pub fn generate_noise_with_precomputed_params(
 /// * `rng_seed` - Optional seed for the per-chunk RNGs
 ///
 /// # Returns
-/// * An `ndarray::Array2<f64>` with read noise added, clamped at zero
+/// * An `ndarray::Array2<f64>` with read noise added. Output **may be
+///   negative**: read noise is a symmetric electronics term, so clamping it
+///   at zero here would discard the downward half of every excursion and
+///   collapse a near-zero background onto a single floor value (which breaks
+///   robust, median/MAD-based noise estimators downstream). The physical
+///   floor is the ADC, applied later during quantization (after any
+///   black-level pedestal), not in this electron-space stage.
 pub fn apply_gaussian_read_noise(
     electron_image: Array2<f64>,
     read_noise_rms: f64,
@@ -227,7 +233,7 @@ pub fn apply_gaussian_read_noise(
         Some(64), // Match apply_poisson_photon_noise: 64 rows per chunk.
         |chunk_view, rng| {
             chunk_view.iter_mut().for_each(|pixel| {
-                *pixel = (*pixel + normal.sample(rng)).max(0.0);
+                *pixel += normal.sample(rng);
             });
         },
     )
@@ -354,21 +360,21 @@ mod tests {
     }
 
     #[test]
-    fn apply_gaussian_read_noise_clamps_at_zero() {
-        // A zero-pedestal image with a large RMS will see negative draws on
-        // ~half the pixels; the clamp must drop them to exactly 0.0.
+    fn apply_gaussian_read_noise_preserves_negative_excursions() {
+        // Read noise is symmetric and is NOT clamped at zero — the downward
+        // half of each excursion must survive (the floor is the ADC, applied
+        // downstream in quantization). A zero-pedestal image with a large RMS
+        // sees negative draws on ~half the pixels.
         let image = Array2::from_elem((128, 128), 0.0);
         let out = apply_gaussian_read_noise(image, 5.0, Some(11));
         let min = out.iter().cloned().fold(f64::INFINITY, f64::min);
-        assert!(min >= 0.0, "expected non-negative output, got min = {min}");
-        // At zero pedestal and RMS=5, about half of draws would be negative;
-        // after clamping the empirical mean is RMS/sqrt(2π) ≈ 2.0 e-, much
-        // larger than any plausible numerical drift.
-        let mean_actual = out.mean().unwrap();
-        assert_relative_eq!(
-            mean_actual,
-            5.0 / (2.0 * std::f64::consts::PI).sqrt(),
-            epsilon = 0.25
+        assert!(
+            min < 0.0,
+            "expected negative excursions to survive, got min = {min}"
         );
+        // Unclamped, the noise is mean-zero, so the empirical mean stays ~0
+        // (not the half-normal RMS/sqrt(2π) a clamp would produce).
+        let mean_actual = out.mean().unwrap();
+        assert_relative_eq!(mean_actual, 0.0, epsilon = 0.25);
     }
 }
