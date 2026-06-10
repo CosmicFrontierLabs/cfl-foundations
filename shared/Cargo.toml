@@ -17,14 +17,14 @@ system-info = []
 [dependencies]
 # Core math and arrays
 nalgebra = "0.32"
-ndarray = { version = "0.16", features = ["rayon"] }
+ndarray = { version = "0.17", features = ["rayon"] }
 num-traits = "0.2"
 num-complex = "0.4.6"
 float-cmp = "0.9"
 
 # Image processing
 image = "0.25"
-starfield = "0.12"
+starfield = "0.13"
 
 # Scientific computing
 rustfft = "6.3.0"
