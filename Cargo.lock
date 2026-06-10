@@ -1466,9 +1466,9 @@ dependencies = [
 
 [[package]]
 name = "ndarray"
-version = "0.16.1"
+version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "882ed72dce9365842bf196bdeedf5055305f11fc8c03dee7bb0194a6cad34841"
+checksum = "520080814a7a6b4a6e9070823bb24b4531daac8c4627e08ba5de8c5ef2f2752d"
 dependencies = [
  "matrixmultiply",
  "num-complex",
@@ -2438,9 +2438,9 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "starfield"
-version = "0.12.1"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42042be8ac3f550a5709b25c675b5f1e77d7c2f6f0986dbfec76c8bd9dca07c3"
+checksum = "065d0a9a42dae2090524cb239a24d6805f7f3d27cb43b0f81c2f06d7dd070abd"
 dependencies = [
  "base64",
  "byteorder",
