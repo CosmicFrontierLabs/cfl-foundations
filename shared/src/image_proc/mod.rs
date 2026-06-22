@@ -46,6 +46,7 @@ pub mod image;
 pub mod io;
 pub mod noise;
 pub mod overlay;
+pub mod resize;
 pub mod smear;
 pub mod source_snr;
 pub mod test_patterns;
