@@ -11,11 +11,18 @@
 //!
 //! 1. **Signal Measurement**: Sum of all pixel values within the aperture radius minus background contribution
 //! 2. **Background Estimation**: Median of pixels in annulus (2-3× aperture radius)
-//! 3. **Noise Estimation**: Median Absolute Deviation (MAD) in annulus, converted to RMS
-//! 4. **SNR Calculation**: (aperture_sum - background_contribution) / noise_rms
+//! 3. **Noise Estimation**: background noise from the Median Absolute Deviation
+//!    (MAD) in the annulus (read + background shot, converted to RMS), combined
+//!    in quadrature with the source's own **photon shot noise** (`√(signal
+//!    electrons)`, via the sensor gain)
+//! 4. **SNR Calculation**: `signal / √(background_noise² + gain·signal)`
 //!
-//! The use of MAD for noise estimation provides robustness against outliers from
-//! cosmic rays or neighboring sources in the background annulus.
+//! Including the source shot-noise term is essential: a real source is always
+//! photon-limited, so even on a perfectly quiet (or sub-quantization)
+//! background the SNR converges to the shot-noise limit `√(signal electrons)`
+//! rather than diverging to infinity. The use of MAD for the background term
+//! provides robustness against outliers from cosmic rays or neighboring
+//! sources in the annulus.
 
 use ndarray::ArrayView2;
 use thiserror::Error;
@@ -69,6 +76,8 @@ pub enum SnrError {
 /// * `aperture_radius` - Radius in pixels for the measurement aperture
 /// * `background_inner_radius` - Inner radius of background annulus in pixels
 /// * `background_outer_radius` - Outer radius of background annulus in pixels
+/// * `gain_dn_per_electron` - Sensor gain (DN per electron), used to convert
+///   the source signal to electrons for the photon shot-noise term
 ///
 /// # Returns
 ///
@@ -87,6 +96,7 @@ pub fn calculate_snr_at_position(
     aperture_radius: f64,
     background_inner_radius: f64,
     background_outer_radius: f64,
+    gain_dn_per_electron: f64,
 ) -> Result<f64, SnrError> {
     let (aperture_pixels, background_pixels) = collect_aperture_pixels(
         image,
@@ -130,17 +140,27 @@ pub fn calculate_snr_at_position(
 
     let mad = median(&deviations).map_err(|e| SnrError::StatsError(e.to_string()))?;
 
-    // Convert MAD to RMS noise estimate (σ ≈ 1.4826 × MAD for Gaussian noise)
-    let noise_rms = 1.4826 * mad;
+    // Convert MAD to an RMS background-noise estimate (σ ≈ 1.4826 × MAD for
+    // Gaussian noise). This empirically captures read noise + background shot
+    // noise from the annulus.
+    let background_noise = 1.4826 * mad;
 
-    if noise_rms <= 0.0 {
-        log::warn!(
-            "Zero or negative noise estimate (MAD={mad:.3}, RMS={noise_rms:.3}) at position ({x:.1}, {y:.1}), returning f64::MAX"
-        );
-        return Ok(f64::MAX);
+    // Add the source's own photon shot noise in quadrature. A source of
+    // `signal` DN carries `signal / gain` electrons whose Poisson variance is
+    // `signal / gain` electrons², i.e. `gain * signal` DN². This term is
+    // non-zero for any real source, so a perfectly quiet (or sub-quantization)
+    // background can no longer drive the SNR to infinity — it converges to the
+    // shot-noise limit √(signal electrons), which is the correct floor for a
+    // photon-limited measurement.
+    let shot_variance = gain_dn_per_electron.max(0.0) * signal.max(0.0);
+    let total_noise = (background_noise * background_noise + shot_variance).sqrt();
+
+    if total_noise <= 0.0 {
+        // No source flux and no measurable noise: nothing detectable here.
+        return Ok(0.0);
     }
 
-    Ok(signal / noise_rms)
+    Ok(signal / total_noise)
 }
 
 /// Calculate signal-to-noise ratio for a detected source using aperture photometry.
@@ -163,6 +183,8 @@ pub fn calculate_snr_at_position(
 /// * `aperture_radius` - Radius in pixels for the measurement aperture
 /// * `background_inner_radius` - Inner radius of background annulus in pixels
 /// * `background_outer_radius` - Outer radius of background annulus in pixels
+/// * `gain_dn_per_electron` - Sensor gain (DN per electron), used to convert
+///   the source signal to electrons for the photon shot-noise term
 ///
 /// # Returns
 ///
@@ -185,6 +207,7 @@ pub fn calculate_snr(
     aperture_radius: f64,
     background_inner_radius: f64,
     background_outer_radius: f64,
+    gain_dn_per_electron: f64,
 ) -> Result<f64, SnrError> {
     calculate_snr_at_position(
         detection.x,
@@ -193,6 +216,7 @@ pub fn calculate_snr(
         aperture_radius,
         background_inner_radius,
         background_outer_radius,
+        gain_dn_per_electron,
     )
 }
 
@@ -210,6 +234,8 @@ pub fn calculate_snr(
 /// * `aperture_radius` - Radius in pixels for the measurement aperture
 /// * `background_inner_radius` - Inner radius of background annulus in pixels
 /// * `background_outer_radius` - Outer radius of background annulus in pixels
+/// * `gain_dn_per_electron` - Sensor gain (DN per electron), used to convert
+///   the source signal to electrons for the photon shot-noise term
 ///
 /// # Returns
 ///
@@ -227,6 +253,7 @@ pub fn filter_by_snr(
     aperture_radius: f64,
     background_inner_radius: f64,
     background_outer_radius: f64,
+    gain_dn_per_electron: f64,
 ) -> bool {
     calculate_snr(
         detection,
@@ -234,6 +261,7 @@ pub fn filter_by_snr(
         aperture_radius,
         background_inner_radius,
         background_outer_radius,
+        gain_dn_per_electron,
     )
     .map(|snr| snr >= min_snr)
     .unwrap_or(false)
@@ -244,6 +272,10 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
     use ndarray::Array2;
+
+    /// Unit gain (1 DN/electron) keeps the shot-noise term numerically equal to
+    /// `signal` for the synthetic test images, so expectations stay readable.
+    const TEST_GAIN: f64 = 1.0;
 
     fn make_test_detection(x: f64, y: f64, flux: f64) -> StarDetection {
         StarDetection {
@@ -277,7 +309,7 @@ mod tests {
         image[[10, 11]] = 800.0;
 
         let detection = make_test_detection(10.0, 10.0, 4200.0);
-        let snr = calculate_snr(&detection, &image.view(), 2.0, 4.0, 6.0)
+        let snr = calculate_snr(&detection, &image.view(), 2.0, 4.0, 6.0, TEST_GAIN)
             .expect("SNR calculation should succeed");
 
         assert!(snr > 10.0, "Expected high SNR for bright star, got {}", snr);
@@ -294,7 +326,7 @@ mod tests {
 
         let detection = make_test_detection(5.0, 5.0, 0.0);
 
-        let snr = calculate_snr(&detection, &image.view(), 2.0, 4.0, 6.0)
+        let snr = calculate_snr(&detection, &image.view(), 2.0, 4.0, 6.0, TEST_GAIN)
             .expect("SNR calculation should succeed");
         assert!(
             snr < 5.0,
@@ -315,7 +347,7 @@ mod tests {
         image[[2, 2]] = 500.0;
 
         let detection = make_test_detection(2.0, 2.0, 500.0);
-        let snr = calculate_snr(&detection, &image.view(), 1.5, 3.0, 4.5)
+        let snr = calculate_snr(&detection, &image.view(), 1.5, 3.0, 4.5, TEST_GAIN)
             .expect("SNR calculation should succeed");
 
         assert!(snr > 0.0, "SNR should be positive for detection near edge");
@@ -338,7 +370,7 @@ mod tests {
         image[[15, 16]] = 1000.0;
 
         let detection = make_test_detection(15.0, 15.0, 5500.0);
-        let snr = calculate_snr(&detection, &image.view(), 2.0, 4.0, 6.0)
+        let snr = calculate_snr(&detection, &image.view(), 2.0, 4.0, 6.0, TEST_GAIN)
             .expect("SNR calculation should succeed");
 
         assert!(
@@ -349,7 +381,7 @@ mod tests {
     }
 
     #[test]
-    fn test_snr_max_for_noiseless_signal() {
+    fn test_snr_is_shot_noise_limited_on_noiseless_background() {
         let mut image = Array2::<f64>::zeros((20, 20));
 
         for i in 0..20 {
@@ -361,14 +393,18 @@ mod tests {
         image[[10, 10]] = 200.0;
 
         let detection = make_test_detection(10.0, 10.0, 200.0);
-        let snr = calculate_snr(&detection, &image.view(), 1.5, 3.0, 4.5)
+        let snr = calculate_snr(&detection, &image.view(), 1.5, 3.0, 4.5, TEST_GAIN)
             .expect("SNR calculation should succeed");
 
-        assert_eq!(
-            snr,
-            f64::MAX,
-            "SNR should be MAX for perfect signal with zero noise"
+        // The background is perfectly flat (MAD = 0), so the only noise is the
+        // source's own photon shot noise. With a 1.5 px aperture the background-
+        // subtracted signal is 100 DN, and at unit gain the shot-noise-limited
+        // SNR is signal / sqrt(signal) = sqrt(100) = 10 — finite, NOT f64::MAX.
+        assert!(
+            snr.is_finite(),
+            "SNR must be finite on a noiseless background (shot-noise limited), got {snr}"
         );
+        assert_relative_eq!(snr, 10.0, max_relative = 1e-9);
     }
 
     #[test]
@@ -389,7 +425,7 @@ mod tests {
         image[[15, 16]] = 800.0;
 
         let detection = make_test_detection(15.0, 15.0, 4200.0);
-        let snr = calculate_snr(&detection, &image.view(), 2.0, 4.0, 6.0)
+        let snr = calculate_snr(&detection, &image.view(), 2.0, 4.0, 6.0, TEST_GAIN)
             .expect("SNR calculation should succeed");
 
         assert!(
@@ -415,7 +451,7 @@ mod tests {
         image[[11, 10]] = 900.0;
 
         let detection = make_test_detection(10.5, 10.3, 2800.0);
-        let snr = calculate_snr(&detection, &image.view(), 2.0, 4.0, 6.0)
+        let snr = calculate_snr(&detection, &image.view(), 2.0, 4.0, 6.0, TEST_GAIN)
             .expect("SNR calculation should succeed");
 
         assert!(
@@ -441,7 +477,7 @@ mod tests {
         let detection = make_test_detection(10.0, 10.0, 1000.0);
 
         assert!(
-            filter_by_snr(&detection, &image.view(), 5.0, 2.0, 4.0, 6.0),
+            filter_by_snr(&detection, &image.view(), 5.0, 2.0, 4.0, 6.0, TEST_GAIN),
             "High SNR detection should pass filter"
         );
     }
@@ -462,7 +498,7 @@ mod tests {
         let detection = make_test_detection(15.0, 15.0, 110.0);
 
         assert!(
-            !filter_by_snr(&detection, &image.view(), 50.0, 2.0, 4.0, 6.0),
+            !filter_by_snr(&detection, &image.view(), 50.0, 2.0, 4.0, 6.0, TEST_GAIN),
             "Low SNR detection should fail filter"
         );
     }
@@ -489,9 +525,9 @@ mod tests {
 
         let detection = make_test_detection(20.0, 20.0, 10000.0);
 
-        let snr_small = calculate_snr(&detection, &image.view(), 1.5, 3.0, 4.5)
+        let snr_small = calculate_snr(&detection, &image.view(), 1.5, 3.0, 4.5, TEST_GAIN)
             .expect("SNR calculation should succeed");
-        let snr_large = calculate_snr(&detection, &image.view(), 4.0, 8.0, 12.0)
+        let snr_large = calculate_snr(&detection, &image.view(), 4.0, 8.0, 12.0, TEST_GAIN)
             .expect("SNR calculation should succeed");
 
         assert!(
@@ -516,7 +552,7 @@ mod tests {
         image[[2, 2]] = 1000.0;
 
         let detection = make_test_detection(2.0, 2.0, 1000.0);
-        let result = calculate_snr(&detection, &image.view(), 2.0, 4.0, 6.0);
+        let result = calculate_snr(&detection, &image.view(), 2.0, 4.0, 6.0, TEST_GAIN);
 
         assert!(
             result.is_err(),
@@ -550,7 +586,7 @@ mod tests {
         for &radius in &radii {
             let inner = radius * 2.0;
             let outer = radius * 3.0;
-            let snr = calculate_snr(&detection, &image.view(), radius, inner, outer)
+            let snr = calculate_snr(&detection, &image.view(), radius, inner, outer, TEST_GAIN)
                 .expect("SNR calculation should succeed");
             assert!(
                 snr > 0.0,
@@ -615,6 +651,7 @@ mod tests {
             aperture_radius,
             background_inner,
             background_outer,
+            TEST_GAIN,
         )
         .expect("SNR calculation should succeed");
 
@@ -628,8 +665,11 @@ mod tests {
             1.0 - (-aperture_radius * aperture_radius / (2.0 * SPOT_SIGMA * SPOT_SIGMA)).exp();
         let expected_signal = total_gaussian_flux * aperture_fraction;
 
-        // Noise = background noise sigma (MAD converts back to sigma via 1.4826 factor)
-        let expected_noise = NOISE_SIGMA;
+        // Noise = background noise (MAD → σ ≈ NOISE_SIGMA) and the source's own
+        // photon shot noise (variance = gain × signal) added in quadrature. With
+        // ~6990 DN of signal the shot term dominates, so this is a photon-limited
+        // measurement: SNR ≈ √(signal/gain) rather than signal / NOISE_SIGMA.
+        let expected_noise = (NOISE_SIGMA * NOISE_SIGMA + TEST_GAIN * expected_signal).sqrt();
 
         let expected_snr = expected_signal / expected_noise;
 
