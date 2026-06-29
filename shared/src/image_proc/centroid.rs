@@ -120,17 +120,12 @@ pub fn compute_centroid_from_mask_with_saturation(
         if mask_val {
             let intensity = image[[row, col]];
 
-            // Check for saturation (on the raw, un-subtracted intensity)
+            // Check for saturation
             if intensity > saturation_cutoff {
                 n_saturated += 1;
             }
 
-            // Use background-subtracted intensity as the weight, so the moments
-            // track the source rather than a sky pedestal. Without subtraction,
-            // a large mask over a bright background is dominated by the
-            // symmetric pedestal mass and the centroid is pinned at the mask
-            // center even as the source moves. `background` is the caller's
-            // sky estimate (DN); pass 0.0 for already-background-subtracted data.
+            // Use intensity as weight
             let weight = (intensity - background).max(0.0);
             m00 += weight;
             m10 += col as f64 * weight;
