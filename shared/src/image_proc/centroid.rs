@@ -63,6 +63,8 @@ impl CentroidResult {
 ///
 /// * `image` - Sub-image containing the object (AABB size)
 /// * `mask` - Binary mask (same size as image) with true where pixels belong to object
+/// * `background` - Sky/background level (DN) subtracted from each pixel before
+///   weighting; pass `0.0` for already-background-subtracted data
 ///
 /// # Returns
 ///
@@ -70,8 +72,9 @@ impl CentroidResult {
 pub fn compute_centroid_from_mask(
     image: &ArrayView2<f64>,
     mask: &ArrayView2<bool>,
+    background: f64,
 ) -> CentroidResult {
-    compute_centroid_from_mask_with_saturation(image, mask, SATURATION_16BIT)
+    compute_centroid_from_mask_with_saturation(image, mask, SATURATION_16BIT, background)
 }
 
 /// Calculate centroid and shape moments with custom saturation threshold
@@ -85,6 +88,8 @@ pub fn compute_centroid_from_mask(
 /// * `image` - Sub-image containing the object (AABB size)
 /// * `mask` - Binary mask (same size as image) with true where pixels belong to object
 /// * `saturation_cutoff` - Intensity threshold for counting saturated pixels
+/// * `background` - Sky/background level (DN) subtracted from each pixel before
+///   weighting; pass `0.0` for already-background-subtracted data
 ///
 /// # Returns
 ///
@@ -93,6 +98,7 @@ pub fn compute_centroid_from_mask_with_saturation(
     image: &ArrayView2<f64>,
     mask: &ArrayView2<bool>,
     saturation_cutoff: f64,
+    background: f64,
 ) -> CentroidResult {
     assert_eq!(
         image.shape(),
@@ -120,12 +126,13 @@ pub fn compute_centroid_from_mask_with_saturation(
             }
 
             // Use intensity as weight
-            m00 += intensity;
-            m10 += col as f64 * intensity;
-            m01 += row as f64 * intensity;
-            m20 += (col as f64).powi(2) * intensity;
-            m02 += (row as f64).powi(2) * intensity;
-            m11 += (row as f64) * (col as f64) * intensity;
+            let weight = (intensity - background).max(0.0);
+            m00 += weight;
+            m10 += col as f64 * weight;
+            m01 += row as f64 * weight;
+            m20 += (col as f64).powi(2) * weight;
+            m02 += (row as f64).powi(2) * weight;
+            m11 += (row as f64) * (col as f64) * weight;
         }
     }
 
@@ -199,7 +206,7 @@ mod tests {
         image_mut[[1, 1]] = 100.0;
         mask[[1, 1]] = true;
 
-        let result = compute_centroid_from_mask(&image_mut.view(), &mask.view());
+        let result = compute_centroid_from_mask(&image_mut.view(), &mask.view(), 0.0);
 
         assert_relative_eq!(result.x, 1.0, epsilon = 1e-10);
         assert_relative_eq!(result.y, 1.0, epsilon = 1e-10);
@@ -223,7 +230,7 @@ mod tests {
         image[[3, 2]] = 50.0;
         mask[[3, 2]] = true;
 
-        let result = compute_centroid_from_mask(&image.view(), &mask.view());
+        let result = compute_centroid_from_mask(&image.view(), &mask.view(), 0.0);
 
         assert_relative_eq!(result.x, 2.0, epsilon = 1e-10);
         assert_relative_eq!(result.y, 2.0, epsilon = 1e-10);
@@ -254,7 +261,7 @@ mod tests {
         image[[4, 3]] = 25.0;
         mask[[4, 3]] = true;
 
-        let result = compute_centroid_from_mask(&image.view(), &mask.view());
+        let result = compute_centroid_from_mask(&image.view(), &mask.view(), 0.0);
 
         // Check centroid is at center
         assert!(
@@ -324,7 +331,7 @@ mod tests {
             }
         }
 
-        let result = compute_centroid_from_mask(&image.view(), &mask.view());
+        let result = compute_centroid_from_mask(&image.view(), &mask.view(), 0.0);
 
         // For circular pattern, aspect ratio should be close to 1.0
         assert!(
@@ -352,7 +359,7 @@ mod tests {
             mask[[i, i]] = true;
         }
 
-        let result = compute_centroid_from_mask(&image.view(), &mask.view());
+        let result = compute_centroid_from_mask(&image.view(), &mask.view(), 0.0);
 
         // For diagonal pattern, m_xy should be positive and significant
         assert!(
@@ -387,7 +394,8 @@ mod tests {
         mask[[3, 2]] = true;
 
         // Test with cutoff at 100.0
-        let result = compute_centroid_from_mask_with_saturation(&image.view(), &mask.view(), 100.0);
+        let result =
+            compute_centroid_from_mask_with_saturation(&image.view(), &mask.view(), 100.0, 0.0);
 
         // Should have 2 saturated pixels (150.0 and 200.0)
         assert_eq!(result.n_saturated.0, 100.0, "Cutoff should be 100.0");
@@ -399,7 +407,7 @@ mod tests {
 
         // Test with higher cutoff
         let result_high =
-            compute_centroid_from_mask_with_saturation(&image.view(), &mask.view(), 180.0);
+            compute_centroid_from_mask_with_saturation(&image.view(), &mask.view(), 180.0, 0.0);
         assert_eq!(result_high.n_saturated.0, 180.0, "Cutoff should be 180.0");
         assert_eq!(
             result_high.n_saturated.1, 1,
@@ -408,7 +416,7 @@ mod tests {
 
         // Test with low cutoff (all saturated)
         let result_low =
-            compute_centroid_from_mask_with_saturation(&image.view(), &mask.view(), 40.0);
+            compute_centroid_from_mask_with_saturation(&image.view(), &mask.view(), 40.0, 0.0);
         assert_eq!(result_low.n_saturated.0, 40.0, "Cutoff should be 40.0");
         assert_eq!(
             result_low.n_saturated.1, 5,
@@ -428,7 +436,7 @@ mod tests {
         mask[[1, 2]] = true;
 
         // Using default function should use SATURATION_16BIT as cutoff
-        let result = compute_centroid_from_mask(&image.view(), &mask.view());
+        let result = compute_centroid_from_mask(&image.view(), &mask.view(), 0.0);
 
         assert_eq!(
             result.n_saturated.0, SATURATION_16BIT,
@@ -438,6 +446,50 @@ mod tests {
             result.n_saturated.1, 1,
             "Should have 1 saturated pixel above 65535"
         );
+    }
+
+    #[test]
+    fn background_subtraction_tracks_source_over_pedestal() {
+        // A wide aperture mask over a bright background pedestal. Without
+        // background subtraction the symmetric pedestal mass dominates the
+        // intensity weights and pins the centroid near the mask center, even
+        // though the source sits well off-center. Supplying the background
+        // recovers the true source position.
+        let (h, w) = (64usize, 64usize);
+        let pedestal = 200.0;
+        let (mask_cx, mask_cy) = (32.0_f64, 32.0_f64);
+        let radius = 25.0_f64;
+        let (src_x, src_y) = (40.0_f64, 32.0_f64); // 8 px off the mask center
+        let sigma = 2.0_f64;
+
+        let mut image = Array2::from_elem((h, w), pedestal);
+        for r in 0..h {
+            for c in 0..w {
+                let dx = c as f64 - src_x;
+                let dy = r as f64 - src_y;
+                image[[r, c]] += 8000.0 * (-(dx * dx + dy * dy) / (2.0 * sigma * sigma)).exp();
+            }
+        }
+        let mask = Array2::from_shape_fn((h, w), |(r, c)| {
+            let dx = c as f64 - mask_cx;
+            let dy = r as f64 - mask_cy;
+            (dx * dx + dy * dy).sqrt() <= radius
+        });
+
+        // No subtraction: the pedestal pulls the centroid far off the source,
+        // toward the mask center.
+        let raw = compute_centroid_from_mask(&image.view(), &mask.view(), 0.0);
+        assert!(
+            (raw.x - src_x).abs() > 3.0,
+            "without background subtraction the centroid ({:.2}) should be pulled \
+             off the source ({src_x}) toward the mask center ({mask_cx})",
+            raw.x
+        );
+
+        // With the pedestal supplied as background: tracks the real source.
+        let sub = compute_centroid_from_mask(&image.view(), &mask.view(), pedestal);
+        assert_relative_eq!(sub.x, src_x, epsilon = 0.2);
+        assert_relative_eq!(sub.y, src_y, epsilon = 0.2);
     }
 
     #[test]
@@ -483,7 +535,7 @@ mod tests {
 
         // Warmup iterations
         for _ in 0..100 {
-            let _ = compute_centroid_from_mask(&image.view(), &mask.view());
+            let _ = compute_centroid_from_mask(&image.view(), &mask.view(), 0.0);
         }
 
         // Benchmark iterations with detailed timing
@@ -491,7 +543,7 @@ mod tests {
 
         for _ in 0..ITERATIONS {
             let start = Instant::now();
-            let _result = compute_centroid_from_mask(&image.view(), &mask.view());
+            let _result = compute_centroid_from_mask(&image.view(), &mask.view(), 0.0);
             let duration = start.elapsed();
             timings.push(duration);
         }
@@ -527,7 +579,7 @@ mod tests {
         println!("===============================================\n");
 
         // Verify result is reasonable
-        let final_result = compute_centroid_from_mask(&image.view(), &mask.view());
+        let final_result = compute_centroid_from_mask(&image.view(), &mask.view(), 0.0);
         assert!(
             abs_diff_eq!(final_result.x, center_x, epsilon = 0.1),
             "Centroid x should be near center"

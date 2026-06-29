@@ -43,7 +43,7 @@ fn main() {
     // Warmup iterations
     println!("Warming up...");
     for _ in 0..100 {
-        let _ = compute_centroid_from_mask(&image.view(), &mask.view());
+        let _ = compute_centroid_from_mask(&image.view(), &mask.view(), 0.0);
     }
 
     // Benchmark iterations with detailed timing
@@ -52,7 +52,7 @@ fn main() {
 
     for _ in 0..ITERATIONS {
         let start = Instant::now();
-        let _result = compute_centroid_from_mask(&image.view(), &mask.view());
+        let _result = compute_centroid_from_mask(&image.view(), &mask.view(), 0.0);
         let duration = start.elapsed();
         timings.push(duration);
     }
@@ -91,7 +91,7 @@ fn main() {
     println!("===============================================\n");
 
     // Verify result is reasonable
-    let final_result = compute_centroid_from_mask(&image.view(), &mask.view());
+    let final_result = compute_centroid_from_mask(&image.view(), &mask.view(), 0.0);
     println!("Verification:");
     let x = final_result.x;
     let y = final_result.y;

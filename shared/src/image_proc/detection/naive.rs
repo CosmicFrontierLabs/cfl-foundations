@@ -222,8 +222,9 @@ pub fn calculate_star_centroid(
         labeled[[min_row + row, min_col + col]] == label
     });
 
-    // Compute centroid using the new function
-    let centroid_result = compute_centroid_from_mask(&sub_image, &mask.view());
+    // Compute centroid. Detection uses a tight connected-component mask (not a
+    // wide aperture), so there is no symmetric background pedestal to subtract.
+    let centroid_result = compute_centroid_from_mask(&sub_image, &mask.view(), 0.0);
 
     // Convert relative coordinates to absolute image coordinates
     StarDetection {
