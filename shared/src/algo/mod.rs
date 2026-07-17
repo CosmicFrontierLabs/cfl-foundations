@@ -13,6 +13,6 @@ pub mod parallel;
 pub mod psd;
 
 pub use lookup_table::{LookupError, LookupTable};
-pub use misc::{dec_dms_to_deg, interp, normalize, ra_hms_to_deg, InterpError};
+pub use misc::{dec_dms_to_deg, normalize, ra_hms_to_deg};
 pub use motion::{MotionModel, XAxisSpinner, XYWobble};
 pub use parallel::process_array_in_parallel_chunks;
