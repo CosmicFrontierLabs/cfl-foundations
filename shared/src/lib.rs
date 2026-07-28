@@ -10,17 +10,14 @@
 //! - `tracking`: Tracking data collection and messages
 //! - `pattern-client`: Pattern generator client
 //! - `frame-writer`: FITS file writing support
-//! - `config-storage`: Configuration persistence
 //! - `system-info`: System information types
 
 pub mod algo;
-pub mod bad_pixel_map;
 pub mod barker;
 pub mod cached_star_catalog;
 pub mod dark_frame;
 pub mod image_proc;
 pub mod image_size;
-pub mod optical_alignment;
 pub mod range_arg;
 pub mod ring_buffer;
 pub mod star_projector;
@@ -29,9 +26,6 @@ pub mod units;
 pub mod viz;
 
 // Feature-gated modules
-#[cfg(feature = "config-storage")]
-pub mod config_storage;
-
 #[cfg(feature = "frame-writer")]
 pub mod frame_writer;
 

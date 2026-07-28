@@ -8,10 +8,9 @@ license = "MIT OR Apache-2.0"
 
 [features]
 default = ["full"]
-full = ["tracking", "frame-writer", "config-storage", "system-info"]
+full = ["tracking", "frame-writer", "system-info"]
 tracking = []
 frame-writer = ["dep:fitsio"]
-config-storage = []
 system-info = []
 
 [dependencies]
