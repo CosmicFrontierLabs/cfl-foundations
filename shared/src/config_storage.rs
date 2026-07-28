@@ -41,8 +41,17 @@ impl ConfigStorage {
         self.root_path.join("bad_pixel_maps")
     }
 
-    /// Generate filename for a bad pixel map given model and serial number
-    fn bad_pixel_map_filename(&self, model: &str, serial: &str) -> PathBuf {
+    /// Path of a stored artifact that belongs to one camera.
+    ///
+    /// `kind` names the directory holding that class of artifact. The camera's
+    /// model and serial are joined with a dash, so neither may contain one —
+    /// the separator is what makes the two halves recoverable when listing.
+    ///
+    /// Callers that store per-camera calibration use this so the naming rule
+    /// has a single owner; a second copy of it would be free to drift, and a
+    /// reader looking in the wrong place cannot tell a missing calibration from
+    /// one it failed to find.
+    pub fn camera_artifact_path(&self, kind: &str, model: &str, serial: &str) -> PathBuf {
         assert!(
             !model.contains('-'),
             "Model name cannot contain dash character"
@@ -55,8 +64,14 @@ impl ConfigStorage {
         let model_safe = model.replace(' ', "_");
         // Sanitize serial for filesystem safety (replace / with _)
         let serial_safe = serial.replace('/', "_");
-        let filename = format!("{model_safe}-{serial_safe}.json");
-        self.bad_pixel_maps_dir().join(filename)
+        self.root_path
+            .join(kind)
+            .join(format!("{model_safe}-{serial_safe}.json"))
+    }
+
+    /// Generate filename for a bad pixel map given model and serial number
+    fn bad_pixel_map_filename(&self, model: &str, serial: &str) -> PathBuf {
+        self.camera_artifact_path("bad_pixel_maps", model, serial)
     }
 
     /// Get bad pixel map for a given camera model and serial number.
@@ -190,6 +205,34 @@ impl Default for ConfigStorage {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// The bad-pixel path must keep coming from the shared rule, so a second
+    /// artifact kind cannot quietly diverge in how it names a camera.
+    #[test]
+    fn per_camera_artifacts_share_one_naming_rule() {
+        let store = ConfigStorage::with_path(PathBuf::from("/tmp/store"));
+        assert_eq!(
+            store.bad_pixel_map_filename("NSV455", "SN005"),
+            store.camera_artifact_path("bad_pixel_maps", "NSV455", "SN005"),
+        );
+        assert_eq!(
+            store.camera_artifact_path("fsm_transforms", "NSV455", "SN005"),
+            PathBuf::from("/tmp/store/fsm_transforms/NSV455-SN005.json"),
+        );
+    }
+
+    /// A space in a model name and a slash in a serial both appear on real
+    /// hardware and neither is safe in a filename.
+    #[test]
+    fn model_and_serial_are_made_filename_safe() {
+        let store = ConfigStorage::with_path(PathBuf::from("/tmp/store"));
+        assert_eq!(
+            store.camera_artifact_path("fsm_transforms", "Player One", "A/B"),
+            PathBuf::from("/tmp/store/fsm_transforms/Player_One-A_B.json"),
+        );
+    }
+
     use super::*;
     use approx::assert_relative_eq;
     use std::time::{SystemTime, UNIX_EPOCH};
