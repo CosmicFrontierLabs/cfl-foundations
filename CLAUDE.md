@@ -34,6 +34,7 @@ scripts/install-hooks.sh
 ```
 
 ## Workspace Structure
+- **clock**: Injectable monotonic timekeeping with system and deterministic mock clocks
 - **meter-math**: Linear algebra, ICP matching, splines, statistics
 - **shared**: Image processing, camera interfaces, star detection, visualization
 - **shared-wasm**: WASM-compatible API types and WebSocket client for frontends

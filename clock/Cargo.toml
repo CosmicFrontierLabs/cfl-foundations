@@ -1,0 +1,8 @@
+[package]
+name = "clock"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Injectable monotonic timekeeping with system and deterministic mock clocks"
+repository.workspace = true
+license.workspace = true
