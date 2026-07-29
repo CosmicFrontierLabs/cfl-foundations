@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "clock",
     "meter-math",
     "shared",
     "shared-wasm",
