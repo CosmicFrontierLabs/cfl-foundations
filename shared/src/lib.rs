@@ -20,7 +20,6 @@ pub mod image_proc;
 pub mod image_size;
 pub mod range_arg;
 pub mod ring_buffer;
-pub mod star_projector;
 pub mod test_util;
 pub mod units;
 pub mod viz;
