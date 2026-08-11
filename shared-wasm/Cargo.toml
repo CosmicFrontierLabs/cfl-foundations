@@ -1,0 +1,13 @@
+[package]
+name = "shared-wasm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+num-traits = "0.2.19"
+serde = { version = "1.0.228", features = ["derive"] }
+thiserror = "2.0.18"

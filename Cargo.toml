@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "clock",
+    "meter-math",
+    "shared",
+    "shared-wasm",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = []
+description = "Shared foundation crates for CFL space telescope software"
+repository = "https://github.com/CosmicFrontierLabs/cfl-foundations"
+license = "MIT"
