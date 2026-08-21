@@ -179,6 +179,105 @@ fn union_labels(labels: &mut [usize], label1: usize, label2: usize) -> usize {
     }
 }
 
+/// Label four-connected foreground pixels, optionally collecting each final
+/// component's bounds during the relabeling pass.
+fn connected_components_where<F>(
+    height: usize,
+    width: usize,
+    mut is_foreground: F,
+    collect_bboxes: bool,
+) -> (Array2<usize>, Vec<AABB>)
+where
+    F: FnMut(usize, usize) -> bool,
+{
+    let mut labels = Array2::zeros((height, width));
+    let mut label_count = 0;
+    let mut parent_table = vec![0];
+
+    for row in 0..height {
+        for col in 0..width {
+            if !is_foreground(row, col) {
+                continue;
+            }
+
+            let above = if row > 0 { labels[[row - 1, col]] } else { 0 };
+            let left = if col > 0 { labels[[row, col - 1]] } else { 0 };
+
+            labels[[row, col]] = match (above, left) {
+                (0, 0) => {
+                    label_count += 1;
+                    parent_table.push(label_count);
+                    label_count
+                }
+                (label, 0) | (0, label) => label,
+                (above, left) => {
+                    let label = above.min(left);
+                    if above != left {
+                        union_labels(&mut parent_table, above, left);
+                    }
+                    label
+                }
+            };
+        }
+    }
+
+    for label in 1..parent_table.len() {
+        find_root(&mut parent_table, label);
+    }
+
+    let mut relabel_map = vec![0; parent_table.len()];
+    let mut next_label = 1;
+    for label in 1..parent_table.len() {
+        let root = parent_table[label];
+        if relabel_map[root] == 0 {
+            relabel_map[root] = next_label;
+            next_label += 1;
+        }
+        relabel_map[label] = relabel_map[root];
+    }
+
+    let mut bboxes = if collect_bboxes {
+        vec![AABB::new(); next_label]
+    } else {
+        Vec::new()
+    };
+
+    for row in 0..height {
+        for col in 0..width {
+            let old_label = labels[[row, col]];
+            if old_label == 0 {
+                continue;
+            }
+
+            let label = relabel_map[old_label];
+            labels[[row, col]] = label;
+            if collect_bboxes {
+                bboxes[label].expand_to_include(row, col);
+            }
+        }
+    }
+
+    if collect_bboxes {
+        bboxes.remove(0);
+    }
+    (labels, bboxes)
+}
+
+/// Label pixels at or above `threshold` and collect component bounds without
+/// materializing a separate full-frame threshold image.
+pub(crate) fn connected_components_above_threshold(
+    image: &ArrayView2<f64>,
+    threshold: f64,
+) -> (Array2<usize>, Vec<AABB>) {
+    let (height, width) = image.dim();
+    connected_components_where(
+        height,
+        width,
+        |row, col| image[[row, col]] >= threshold,
+        true,
+    )
+}
+
 /// Connected component labeling using optimized two-pass algorithm with union-find.
 ///
 /// Groups connected pixels into distinct objects with unique integer labels.
@@ -213,78 +312,13 @@ fn union_labels(labels: &mut [usize], label1: usize, label2: usize) -> usize {
 /// Uses 4-connectivity and optimized union-find for efficient processing.
 pub fn connected_components(binary_image: &ArrayView2<f64>) -> Array2<usize> {
     let (height, width) = binary_image.dim();
-    let mut labels = Array2::zeros((height, width));
-    let mut label_count = 0;
-
-    // First pass: assign initial labels and build equivalence classes
-    // We need space for label_count + 1 entries (label 0 is background)
-    let mut parent_table = vec![0]; // Will grow as we add labels
-
-    for i in 0..height {
-        for j in 0..width {
-            if binary_image[[i, j]] > 0.0 {
-                // Check 4-connected neighbors (up and left)
-                let mut neighbor_labels = Vec::new();
-
-                if i > 0 && labels[[i - 1, j]] > 0 {
-                    neighbor_labels.push(labels[[i - 1, j]]);
-                }
-
-                if j > 0 && labels[[i, j - 1]] > 0 {
-                    neighbor_labels.push(labels[[i, j - 1]]);
-                }
-
-                if neighbor_labels.is_empty() {
-                    // No neighbors with labels, create a new label
-                    label_count += 1;
-                    labels[[i, j]] = label_count;
-
-                    // Initialize parent pointer to self (each label starts as its own root)
-                    parent_table.push(label_count);
-                } else {
-                    // Use the smallest neighbor label
-                    let min_label = *neighbor_labels.iter().min().unwrap();
-                    labels[[i, j]] = min_label;
-
-                    // Set label equivalences for all neighbors
-                    for &neighbor_label in &neighbor_labels {
-                        if neighbor_label != min_label {
-                            union_labels(&mut parent_table, min_label, neighbor_label);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Flatten the parent_table (path compression)
-    for i in 1..parent_table.len() {
-        find_root(&mut parent_table, i);
-    }
-
-    // Create a mapping from old labels to new consecutive labels
-    let mut relabel_map = vec![0; parent_table.len()];
-    let mut next_label = 1;
-
-    for i in 1..parent_table.len() {
-        let root = parent_table[i];
-        if relabel_map[root] == 0 {
-            relabel_map[root] = next_label;
-            next_label += 1;
-        }
-        relabel_map[i] = relabel_map[root];
-    }
-
-    // Second pass: relabel the image
-    for i in 0..height {
-        for j in 0..width {
-            if labels[[i, j]] > 0 {
-                labels[[i, j]] = relabel_map[labels[[i, j]]];
-            }
-        }
-    }
-
-    labels
+    connected_components_where(
+        height,
+        width,
+        |row, col| binary_image[[row, col]] > 0.0,
+        false,
+    )
+    .0
 }
 
 /// Extract axis-aligned bounding boxes for all labeled objects.
@@ -322,6 +356,33 @@ pub fn get_bounding_boxes(labeled_image: &ArrayView2<usize>) -> Vec<AABB> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fused_thresholding_matches_the_composed_pipeline() {
+        let image = Array2::from_shape_vec(
+            (7, 9),
+            vec![
+                0.0, 0.5, 0.5, 0.0, 2.0, 0.0, 0.0, 0.0, 1.0, //
+                0.0, 0.5, 0.0, 0.0, 2.0, 2.0, 0.0, 1.0, 1.0, //
+                0.0, 0.0, 0.5, 0.0, 0.0, 2.0, 0.0, 1.0, 0.0, //
+                3.0, 3.0, 0.0, 4.0, 4.0, 4.0, 0.0, 0.0, 0.0, //
+                3.0, 0.0, 0.0, 4.0, 0.0, 4.0, 0.0, 5.0, 0.0, //
+                3.0, 3.0, 0.0, 4.0, 4.0, 4.0, 0.0, 5.0, 5.0, //
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 5.0,
+            ],
+        )
+        .unwrap();
+
+        for threshold in [0.0, 0.5, 1.0, 2.5, f64::INFINITY, f64::NAN] {
+            let binary = apply_threshold(&image.view(), threshold);
+            let expected_labels = connected_components(&binary.view());
+            let expected_bboxes = get_bounding_boxes(&expected_labels.view());
+            let (labels, bboxes) = connected_components_above_threshold(&image.view(), threshold);
+
+            assert_eq!(labels, expected_labels, "threshold {threshold:?}");
+            assert_eq!(bboxes, expected_bboxes, "threshold {threshold:?}");
+        }
+    }
 
     #[test]
     fn test_merge_overlapping_boxes() {

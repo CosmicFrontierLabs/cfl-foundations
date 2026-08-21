@@ -264,19 +264,11 @@ pub fn calculate_star_centroid(
 /// Core detection function using threshold segmentation and moment analysis.
 /// Returns StarDetection objects with sub-pixel centroid precision.
 pub fn detect_stars(image: &ArrayView2<f64>, threshold: Option<f64>) -> Vec<StarDetection> {
-    use super::thresholding::{
-        apply_threshold, connected_components, get_bounding_boxes, otsu_threshold,
-    };
+    use super::thresholding::{connected_components_above_threshold, otsu_threshold};
 
     // Apply threshold using Otsu's method if threshold not provided
     let thresh = threshold.unwrap_or_else(|| otsu_threshold(image));
-    let binary = apply_threshold(image, thresh);
-
-    // Perform connected components labeling
-    let labeled = connected_components(&binary.view());
-
-    // Get bounding boxes for all regions
-    let bboxes = get_bounding_boxes(&labeled.view());
+    let (labeled, bboxes) = connected_components_above_threshold(image, thresh);
 
     // Calculate centroids and moments for each region
     let mut stars = Vec::with_capacity(bboxes.len());
