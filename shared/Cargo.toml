@@ -23,7 +23,7 @@ float-cmp = "0.9"
 
 # Image processing
 image = "0.25"
-starfield = "0.13"
+starfield = "0.16"
 
 # Scientific computing
 rustfft = "6.3.0"
