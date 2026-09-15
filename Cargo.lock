@@ -2853,12 +2853,12 @@ dependencies = [
 
 [[package]]
 name = "starfield-datastore"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fffeaf1976ea29a6c942f4a5f317aa5b97b546a4ef05442972dff435b7e28178"
+checksum = "5b1093446464015f6b9299f60b47cef200cc0a7ff15a58a5504ce2615eb71bba"
 dependencies = [
  "fs2",
- "indicatif 0.17.11",
+ "indicatif 0.18.6",
  "reqwest",
  "serde",
  "serde_json",
