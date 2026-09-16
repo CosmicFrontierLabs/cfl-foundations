@@ -1,0 +1,24 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 12 * * 1'  # Weekly on Monday at noon UTC
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Install cargo-audit
+      run: cargo install cargo-audit --locked
+
+    # Vulnerabilities fail the job; unmaintained/unsound advisories are
+    # reported as warnings and do not. The ones present today are listed in
+    # CosmicFrontierLabs/cfl-foundations#7.
+    - name: Run security audit
+      run: cargo audit
