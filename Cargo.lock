@@ -2785,18 +2785,18 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "starfield"
-version = "0.17.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d7f80aa8d56b1728fd5bfc1afbc0707c71fe2a446e436d14b6abdc54c4b3de9"
+checksum = "24ad236483af25a849a45b84d83b9e4a55906d58d05ec00c09da948374218c00"
 dependencies = [
  "starfield-core",
 ]
 
 [[package]]
 name = "starfield-core"
-version = "0.17.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3754ce4285c128ede9ed86d8f66fed0eb5efe633afd3952684a21fe2341413ea"
+checksum = "4e9e802f92f2070cacc14b0b5dfb36d64640b4ba922cc86b8060e03dc9c7f29f"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
