@@ -62,7 +62,7 @@ shared-wasm = { version = "0.1.0", path = "../shared-wasm" }
 meter-math = { version = "0.1.0", path = "../meter-math" }
 rand_chacha = "0.9"
 chrono = "0.4.43"
-fitsio = { version = "0.9.2", package = "fitsio-pure", features = ["compat"], optional = true }
+fitsio = { version = "0.14", package = "fitsio-pure", features = ["compat"], optional = true }
 
 [dev-dependencies]
 approx = "0.5"

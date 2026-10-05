@@ -710,11 +710,13 @@ checksum = "3e0f1c7c3a72c66fd80abe965175f7523475c0489a87d3ff9d6e8c87d87a9d2d"
 
 [[package]]
 name = "fitsio-pure"
-version = "0.9.4"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ca48d4628ccda1011fb25581b6001eb61490d27d4433029db65bd63aa9096da"
+checksum = "71ac9582e925cc4ceb19225de2de07ccf45bbb09cb580e5a85a14bf8ab0abc96"
 dependencies = [
  "bytemuck",
+ "libm",
+ "miniz_oxide 0.9.1",
 ]
 
 [[package]]

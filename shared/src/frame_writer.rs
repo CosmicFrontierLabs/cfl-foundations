@@ -214,8 +214,8 @@ fn save_as_fits(payload: &ImagePayload, filepath: &Path) -> Result<()> {
     //   - NAXIS1 = fastest-varying axis = image columns / x.
     //   - NAXIS2 = slower axis = image rows / y, increasing upward
     //     (origin is the bottom-left pixel).
-    // fitsio's `ImageDescription::dimensions` is in fast-to-slow order, so
-    // we pass [width, height] = [NAXIS1, NAXIS2].
+    // fitsio's `ImageDescription::dimensions` is row-major, slow-to-fast, so
+    // we pass [height, width] = [NAXIS2, NAXIS1].
     //
     // ndarray Array2 is row-major top-down (row 0 is the top of the image).
     // To preserve orientation under standard FITS readers (astropy, ds9,
@@ -235,7 +235,7 @@ fn save_as_fits(payload: &ImagePayload, filepath: &Path) -> Result<()> {
 
     let image_description = ImageDescription {
         data_type,
-        dimensions: vec![width, height],
+        dimensions: vec![height, width],
     };
 
     let mut fptr = FitsFile::create(filepath)
